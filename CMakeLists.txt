@@ -13,18 +13,27 @@ find_package(directxtk12 CONFIG REQUIRED)
 find_package(directxmath CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
-# Configure gainput
-set(GAINPUT_BUILD_SHARED OFF)
-set(GAINPUT_TESTS OFF)
-set(GAINPUT_SAMPLES OFF)
-add_subdirectory(lib/gainput)
+include(FetchContent)
+
+# Fetch gainput. GAINPUT_BUILD_SHARED must stay ON - gainput's CMakeLists.txt
+# unconditionally calls target_link_libraries(gainput ...) on Windows regardless of
+# whether the shared target was built, so disabling it causes a CMake error.
+set(GAINPUT_BUILD_SHARED ON CACHE BOOL "" FORCE)
+set(GAINPUT_TESTS OFF CACHE BOOL "" FORCE)
+set(GAINPUT_SAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    gainput
+    GIT_REPOSITORY https://github.com/jkuhlmann/gainput.git
+    GIT_TAG 2be0a50089eafcc6fccb66142180082e48f27f4c
+)
+FetchContent_MakeAvailable(gainput)
+target_include_directories(gainputstatic PUBLIC ${gainput_SOURCE_DIR}/lib/include)
 target_compile_definitions(gainputstatic PRIVATE _CRT_SECURE_NO_WARNINGS)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(gainputstatic PRIVATE -Wno-deprecated-declarations)
 endif()
 
 # Fetch tinyobjloader
-include(FetchContent)
 FetchContent_Declare(
     tinyobjloader
     GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
