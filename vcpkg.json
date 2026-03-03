@@ -1,0 +1,7 @@
+{
+    "dependencies": [
+        "directxtk12",
+        "directxmath",
+        "spdlog"
+    ]
+}

@@ -1,0 +1,4 @@
+#include "resource.h"
+
+IDR_TEAPOT_OBJ RCDATA "resources/teapot.obj"
+IDR_TEAPOT_MTL RCDATA "resources/teapot.mtl"

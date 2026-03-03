@@ -1,0 +1,159 @@
+cmake_minimum_required(VERSION 3.28)
+project(dx12_experiments LANGUAGES CXX C)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+# Use static CRT for MSVC and Clang-cl (so no VCRUNTIME dlls are required)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+# -------------------------------
+# Dependencies
+# -------------------------------
+find_package(directxtk12 CONFIG REQUIRED)
+find_package(directxmath CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+
+# Configure gainput
+set(GAINPUT_BUILD_SHARED OFF)
+set(GAINPUT_TESTS OFF)
+set(GAINPUT_SAMPLES OFF)
+add_subdirectory(lib/gainput)
+target_compile_definitions(gainputstatic PRIVATE _CRT_SECURE_NO_WARNINGS)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(gainputstatic PRIVATE -Wno-deprecated-declarations)
+endif()
+
+# Fetch tinyobjloader
+include(FetchContent)
+FetchContent_Declare(
+    tinyobjloader
+    GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
+    GIT_TAG afdd3fa785ac556d12e2e0d99f3bbf6239ab5f31
+)
+FetchContent_MakeAvailable(tinyobjloader)
+
+# -------------------------------
+# Find DXC shader compiler
+# -------------------------------
+find_program(DXC_EXECUTABLE dxc
+    HINTS "$ENV{WindowsSdkDir}/bin/$ENV{WindowsSDKVersion}/x64"
+    "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64"
+)
+if(NOT DXC_EXECUTABLE)
+    message(FATAL_ERROR "Could not find dxc.exe (DirectX Shader Compiler)")
+endif()
+message(STATUS "Found DXC: ${DXC_EXECUTABLE}")
+
+# Compile HLSL shaders to .h
+function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME)
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
+    set(OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}_cso.h")
+    add_custom_command(
+        OUTPUT ${OUTPUT_FILE}
+        COMMAND ${DXC_EXECUTABLE} -T ${SHADER_TYPE}_${SHADER_MODEL} -E main
+        -Fh ${OUTPUT_FILE} -Vn ${VAR_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
+        COMMENT "Compiling ${SHADER_FILE} -> ${SHADER_NAME}_cso.h"
+        VERBATIM
+    )
+    set(${OUTPUT_VAR} ${OUTPUT_FILE} PARENT_SCOPE)
+endfunction()
+
+# -------------------------------
+# Targets
+# -------------------------------
+add_executable(main
+    src/main.cpp
+    src/application.cpp
+    src/command_queue.cpp
+    src/window.cpp
+    src/logging.cpp
+    src/camera.cpp
+    src/input.cpp
+    resources.rc
+)
+target_sources(main
+    PRIVATE
+    FILE_SET cxx_modules TYPE CXX_MODULES
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/modules
+    FILES
+    src/modules/logging.ixx
+    src/modules/common.ixx
+    src/modules/input.ixx
+    src/modules/camera.ixx
+    src/modules/command_queue.ixx
+    src/modules/application.ixx
+    src/modules/window.ixx
+)
+target_compile_features(main PRIVATE cxx_std_23)
+set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+# -------------------------------
+# Shader compilation
+# -------------------------------
+compile_shader(src/vertex_shader.hlsl vs 6_0 VS_HDR g_vertex_shader)
+compile_shader(src/pixel_shader.hlsl ps 6_0 PS_HDR g_pixel_shader)
+add_custom_target(shaders DEPENDS ${VS_HDR} ${PS_HDR})
+add_dependencies(main shaders)
+
+# -------------------------------
+# Compiler options (base + per-config)
+# -------------------------------
+target_include_directories(main PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    message(STATUS "Clang detected, configuring compile flags")
+    target_compile_options(main PRIVATE
+        -Wall -Wno-c++98-compat -fcolor-diagnostics
+        $<$<CONFIG:Debug>:-O0 -g>
+        $<$<CONFIG:Release>:-O2>
+        $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+    )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    message(STATUS "MSVC detected, configuring compile flags")
+    target_compile_options(main PRIVATE
+        /W3
+        $<$<CONFIG:Debug>:/Od /Zi>
+        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:RelWithDebInfo>:/O2 /Zi>
+    )
+else()
+    message(WARNING "Unknown compiler: ${CMAKE_CXX_COMPILER_ID}")
+    target_compile_options(main PRIVATE -Wall)
+endif()
+
+# -------------------------------
+# Platform & configuration defines
+# -------------------------------
+target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+target_compile_definitions(main PRIVATE
+    $<$<CONFIG:Debug>:_DEBUG>
+    $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
+    $<$<CONFIG:Release>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
+    $<$<CONFIG:RelWithDebInfo>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
+)
+
+# -------------------------------
+# Outputs & linking
+# -------------------------------
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_link_options(main PRIVATE "LINKER:/SUBSYSTEM:WINDOWS" "LINKER:/ignore:importeddllmain")
+else()
+    target_link_options(main PRIVATE /SUBSYSTEM:WINDOWS)
+endif()
+
+target_link_libraries(main PRIVATE
+    d3d12.lib dxgi.lib dxguid.lib uuid.lib
+    d3dcompiler.lib
+    kernel32.lib user32.lib
+    comdlg32.lib advapi32.lib shell32.lib
+    ole32.lib oleaut32.lib
+    runtimeobject.lib
+    Microsoft::DirectXTK12
+    spdlog::spdlog
+    gainputstatic
+    tinyobjloader
+)

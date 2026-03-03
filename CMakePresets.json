@@ -1,0 +1,66 @@
+{
+  "version": 9,
+  "configurePresets": [
+    {
+      "hidden": true,
+      "name": ".vcpkg",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static"
+      }
+    },
+    {
+      "hidden": true,
+      "name": ".common",
+      "cacheVariables": {
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
+      },
+      "environment": {
+        "CLICOLOR_FORCE": "1"
+      },
+      "generator": "Ninja Multi-Config"
+    },
+    {
+      "name": "windows-clang",
+      "binaryDir": "./build",
+      "inherits": [ ".common", ".vcpkg" ],
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_FLAGS": "-fdiagnostics-color=always"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "binaryDir": "./build",
+      "inherits": [ ".common", ".vcpkg" ],
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_C_COMPILER": "cl"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-clang-debug",
+      "configuration": "Debug",
+      "configurePreset": "windows-clang"
+    },
+    {
+      "name": "windows-clang-release",
+      "configuration": "Release",
+      "configurePreset": "windows-clang"
+    },
+    {
+      "name": "windows-msvc-debug",
+      "configuration": "Debug",
+      "configurePreset": "windows-msvc"
+    },
+    {
+      "name": "windows-msvc-release",
+      "configuration": "Release",
+      "configurePreset": "windows-msvc"
+    }
+  ]
+}
