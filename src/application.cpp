@@ -29,6 +29,11 @@ module;
 #include "resource.h"
 #include "vertex_shader_cso.h"
 #include "pixel_shader_cso.h"
+#include "fullscreen_vs_cso.h"
+#include "bloom_prefilter_ps_cso.h"
+#include "bloom_downsample_ps_cso.h"
+#include "bloom_upsample_ps_cso.h"
+#include "bloom_composite_ps_cso.h"
 
 module application;
 
@@ -216,6 +221,98 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     );
 }
 
+void Application::createBloomResources(uint32_t width, uint32_t height)
+{
+    width = std::max(1u, width);
+    height = std::max(1u, height);
+
+    const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
+
+    // Create HDR scene render target
+    {
+        D3D12_CLEAR_VALUE clearVal = {};
+        clearVal.Format = hdrFormat;
+        clearVal.Color[0] = 0.4f;
+        clearVal.Color[1] = 0.6f;
+        clearVal.Color[2] = 0.9f;
+        clearVal.Color[3] = 1.0f;
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+            hdrFormat, width, height, 1, 1, 1, 0,
+            D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+        );
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
+            IID_PPV_ARGS(&this->hdrRenderTarget)
+        ));
+    }
+
+    // Create individual bloom mip textures
+    uint32_t mipW = std::max(1u, width / 2);
+    uint32_t mipH = std::max(1u, height / 2);
+    for (uint32_t i = 0; i < bloomMipCount; ++i) {
+        D3D12_CLEAR_VALUE clearVal = {};
+        clearVal.Format = hdrFormat;
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+            hdrFormat, mipW, mipH, 1, 1, 1, 0,
+            D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+        );
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
+            IID_PPV_ARGS(&this->bloomMips[i])
+        ));
+        mipW = std::max(1u, mipW / 2);
+        mipH = std::max(1u, mipH / 2);
+    }
+
+    // Create bloom RTV heap: 1 HDR RT + bloomMipCount mip RTVs
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.NumDescriptors = 1 + bloomMipCount;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&this->bloomRtvHeap)));
+    }
+
+    // Create shader-visible SRV heap: 1 HDR scene + bloomMipCount bloom mip SRVs
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.NumDescriptors = 1 + bloomMipCount;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&this->srvHeap)));
+    }
+    this->srvDescSize =
+        device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    UINT rtvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(bloomRtvHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(srvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    // HDR RT: RTV at index 0, SRV at index 0
+    device->CreateRenderTargetView(hdrRenderTarget.Get(), nullptr, rtvHandle);
+    rtvHandle.Offset(rtvInc);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = hdrFormat;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(hdrRenderTarget.Get(), &srvDesc, srvHandle);
+    srvHandle.Offset(srvDescSize);
+
+    // Bloom mips: RTVs at index 1..5, SRVs at index 1..5
+    for (uint32_t i = 0; i < bloomMipCount; ++i) {
+        device->CreateRenderTargetView(bloomMips[i].Get(), nullptr, rtvHandle);
+        rtvHandle.Offset(rtvInc);
+
+        device->CreateShaderResourceView(bloomMips[i].Get(), &srvDesc, srvHandle);
+        srvHandle.Offset(srvDescSize);
+    }
+}
+
 // Create swap chain which describes the sequence of buffers used for rendering
 ComPtr<IDXGISwapChain4> Application::createSwapChain()
 {
@@ -335,35 +432,25 @@ void Application::render()
     auto backBuffer = this->backBuffers[this->curBackBufIdx];
     auto cmdList = this->cmdQueue.getCmdList();
 
+    // --- Scene pass: render to HDR render target ---
     {
-        // Transition backbuffer to render target state, then clear
-        this->transitionResource(
-            cmdList, backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET
-        );
         FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(
-            this->rtvHeap->GetCPUDescriptorHandleForHeapStart(), this->curBackBufIdx,
-            this->rtvDescSize
-        );
-        this->clearRTV(cmdList, rtv, clearColor);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(bloomRtvHeap->GetCPUDescriptorHandleForHeapStart());
+        this->clearRTV(cmdList, hdrRtv, clearColor);
         auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
         this->clearDepth(cmdList, dsv);
 
-        // Set pipeline state and root signature
         cmdList->SetPipelineState(this->pipelineState.Get());
         cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
 
-        // Setup input assembler, rasterizer state
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmdList->IASetVertexBuffers(0, 1, &this->vertexBufferView);
         cmdList->IASetIndexBuffer(&this->indexBufferView);
         cmdList->RSSetViewports(1, &this->viewport);
         cmdList->RSSetScissorRects(1, &this->scissorRect);
 
-        // Bind the render targets
-        cmdList->OMSetRenderTargets(1, &rtv, true, &dsv);
+        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
 
-        // Update root params: MVP matrix into constant buffer for vert shader
         SceneConstantBuffer scb = {};
         scb.model = this->matModel;
         scb.viewProj = this->cam.view() * this->cam.proj();
@@ -374,23 +461,34 @@ void Application::render()
         scb.cameraPos = XMFLOAT4(camX, camY, camZ, 1.0f);
 
         scb.lightPos = XMFLOAT4(10.0f, 15.0f, -10.0f, 1.0f);
-        scb.lightColor = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-        scb.ambientColor = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
+        scb.lightColor = XMFLOAT4(3.0f, 3.0f, 3.0f, 1.0f);
+        scb.ambientColor = XMFLOAT4(0.15f, 0.15f, 0.15f, 1.0f);
 
         cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstantBuffer) / 4, &scb, 0);
-
-        // Draw
         cmdList->DrawIndexedInstanced(this->numIndices, 1, 0, 0, 0);
     }
 
-    // Present
+    // --- Bloom post-process (prefilter → downsample → upsample → composite to swap chain) ---
+    this->renderBloom(cmdList);
+
+    // --- Present ---
     {
-        // Transition backbuffer to present state
         this->transitionResource(
             cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT
         );
 
-        // Execute command list and present, then wait for completion
+        // Transition bloom resources back to RENDER_TARGET for next frame
+        this->transitionResource(
+            cmdList, hdrRenderTarget, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
+        for (uint32_t i = 0; i < bloomMipCount; ++i) {
+            this->transitionResource(
+                cmdList, bloomMips[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                D3D12_RESOURCE_STATE_RENDER_TARGET
+            );
+        }
+
         this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
 
         UINT syncInterval = this->vsync ? 1 : 0;
@@ -417,6 +515,131 @@ void Application::render()
             }
         }
     }
+}
+
+void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
+{
+    ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
+    cmdList->SetDescriptorHeaps(1, heaps);
+    cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    UINT rtvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    auto bloomRtvBase = bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    auto srvGpuBase = srvHeap->GetGPUDescriptorHandleForHeapStart();
+
+    auto getRtv = [&](uint32_t idx) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        return CD3DX12_CPU_DESCRIPTOR_HANDLE(bloomRtvBase, idx, rtvInc);
+    };
+    auto getSrvGpu = [&](uint32_t idx) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, idx, srvDescSize);
+    };
+
+    // Compute mip dimensions
+    uint32_t mipW[bloomMipCount], mipH[bloomMipCount];
+    mipW[0] = std::max(1u, clientWidth / 2);
+    mipH[0] = std::max(1u, clientHeight / 2);
+    for (uint32_t i = 1; i < bloomMipCount; ++i) {
+        mipW[i] = std::max(1u, mipW[i - 1] / 2);
+        mipH[i] = std::max(1u, mipH[i - 1] / 2);
+    }
+
+    struct BloomCB
+    {
+        float texelSizeX, texelSizeY;
+        float param0, param1;
+    };
+
+    // --- Prefilter: HDR scene → bloom mip 0 ---
+    transitionResource(
+        cmdList, hdrRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    cmdList->SetPipelineState(prefilterPSO.Get());
+    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));  // HDR scene
+    auto mip0Rtv = getRtv(1);  // bloom mip 0
+    cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
+    CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
+    D3D12_RECT sr = { 0, 0, (LONG)mipW[0], (LONG)mipH[0] };
+    cmdList->RSSetViewports(1, &vp);
+    cmdList->RSSetScissorRects(1, &sr);
+    BloomCB cb = { 1.0f / clientWidth, 1.0f / clientHeight, bloomThreshold, 0.5f };
+    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+    cmdList->DrawInstanced(3, 1, 0, 0);
+
+    // --- Downsample chain: mip N → mip N+1 ---
+    cmdList->SetPipelineState(downsamplePSO.Get());
+    for (uint32_t i = 0; i < bloomMipCount - 1; ++i) {
+        transitionResource(
+            cmdList, bloomMips[i], D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+
+        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(1 + i));  // bloom mip i
+        auto rtv = getRtv(2 + i);  // bloom mip i+1
+        cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+        vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
+        sr = { 0, 0, (LONG)mipW[i + 1], (LONG)mipH[i + 1] };
+        cmdList->RSSetViewports(1, &vp);
+        cmdList->RSSetScissorRects(1, &sr);
+        cb = { 1.0f / mipW[i], 1.0f / mipH[i], 0, 0 };
+        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+        cmdList->DrawInstanced(3, 1, 0, 0);
+    }
+
+    // --- Upsample chain: mip N+1 → mip N (additive) ---
+    cmdList->SetPipelineState(upsamplePSO.Get());
+    for (int i = bloomMipCount - 2; i >= 0; --i) {
+        // Source: mip i+1 (needs to be SRV)
+        transitionResource(
+            cmdList, bloomMips[i + 1], D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+        // Destination: mip i (needs to be RT — it still has downsample data, additive blend accumulates)
+        transitionResource(
+            cmdList, bloomMips[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
+
+        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(2 + i));  // bloom mip i+1
+        auto rtv = getRtv(1 + i);  // bloom mip i
+        cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+        vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
+        sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
+        cmdList->RSSetViewports(1, &vp);
+        cmdList->RSSetScissorRects(1, &sr);
+        cb = { 1.0f / mipW[i + 1], 1.0f / mipH[i + 1], 1.0f, 0 };
+        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+        cmdList->DrawInstanced(3, 1, 0, 0);
+    }
+
+    // --- Composite: HDR scene + bloom mip 0 → swap chain ---
+    // HDR RT already in PIXEL_SHADER_RESOURCE from prefilter step
+    transitionResource(
+        cmdList, bloomMips[0], D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
+    auto backBuffer = backBuffers[curBackBufIdx];
+    transitionResource(
+        cmdList, backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET
+    );
+
+    cmdList->SetPipelineState(compositePSO.Get());
+    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));  // HDR scene
+    cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(1));  // bloom mip 0
+    CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
+        rtvHeap->GetCPUDescriptorHandleForHeapStart(), curBackBufIdx, rtvDescSize
+    );
+    cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
+    vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)clientWidth, (float)clientHeight);
+    sr = { 0, 0, (LONG)clientWidth, (LONG)clientHeight };
+    cmdList->RSSetViewports(1, &vp);
+    cmdList->RSSetScissorRects(1, &sr);
+    cb = { 0, 0, bloomIntensity, 0 };
+    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+    cmdList->DrawInstanced(3, 1, 0, 0);
 }
 
 void Application::setFullscreen(bool val)
@@ -632,7 +855,7 @@ bool Application::loadContent()
     } pipelineStateStream;
     D3D12_RT_FORMAT_ARRAY rtvFormats = {};
     rtvFormats.NumRenderTargets = 1;
-    rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    rtvFormats.RTFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;  // HDR render target
     pipelineStateStream.pRootSignature = this->rootSignature.Get();
     pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
     pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -644,6 +867,88 @@ bool Application::loadContent()
                                                  &pipelineStateStream };
     chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
 
+    // --- Bloom root signature ---
+    {
+        CD3DX12_DESCRIPTOR_RANGE1 srvRange0;
+        srvRange0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0
+        CD3DX12_DESCRIPTOR_RANGE1 srvRange1;
+        srvRange1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1
+
+        CD3DX12_ROOT_PARAMETER1 bloomRootParams[3];
+        bloomRootParams[0].InitAsDescriptorTable(1, &srvRange0, D3D12_SHADER_VISIBILITY_PIXEL);
+        bloomRootParams[1].InitAsDescriptorTable(1, &srvRange1, D3D12_SHADER_VISIBILITY_PIXEL);
+        bloomRootParams[2].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);  // b0: 4 floats
+
+        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
+        staticSampler.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.ShaderRegister = 0;
+        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC bloomRootSigDesc;
+        bloomRootSigDesc.Init_1_1(
+            3, bloomRootParams, 1, &staticSampler,
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+                D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+                D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+                D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
+        );
+
+        ComPtr<ID3DBlob> bloomSigBlob, bloomErrBlob;
+        chkDX(D3DX12SerializeVersionedRootSignature(
+            &bloomRootSigDesc, featureData.HighestVersion, &bloomSigBlob, &bloomErrBlob
+        ));
+        chkDX(device->CreateRootSignature(
+            0, bloomSigBlob->GetBufferPointer(), bloomSigBlob->GetBufferSize(),
+            IID_PPV_ARGS(&this->bloomRootSignature)
+        ));
+    }
+
+    // --- Bloom PSOs ---
+    auto createBloomPSO = [&](const BYTE* psData, size_t psSize, DXGI_FORMAT rtFormat,
+                              bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature = bloomRootSignature.Get();
+        desc.VS = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
+        desc.PS = CD3DX12_SHADER_BYTECODE(psData, psSize);
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        if (additiveBlend) {
+            desc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+            desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            desc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        }
+        desc.DepthStencilState.DepthEnable = FALSE;
+        desc.DepthStencilState.StencilEnable = FALSE;
+        desc.SampleMask = UINT_MAX;
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = rtFormat;
+        desc.SampleDesc.Count = 1;
+
+        ComPtr<ID3D12PipelineState> pso;
+        chkDX(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso)));
+        return pso;
+    };
+
+    const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
+    this->prefilterPSO =
+        createBloomPSO(g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps), hdrFormat, false);
+    this->downsamplePSO =
+        createBloomPSO(g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps), hdrFormat, false);
+    this->upsamplePSO =
+        createBloomPSO(g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps), hdrFormat, true);
+    this->compositePSO = createBloomPSO(
+        g_bloom_composite_ps, sizeof(g_bloom_composite_ps), DXGI_FORMAT_R8G8B8A8_UNORM, false
+    );
+
     // Execute the created command list on the GPU
     uint64_t fenceValue = this->cmdQueue.execCmdList(cmdList);
     this->cmdQueue.waitForFenceVal(fenceValue);
@@ -651,6 +956,9 @@ bool Application::loadContent()
     // Resize / create the depth buffer
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
+
+    // Create HDR render target and bloom mip chain
+    this->createBloomResources(this->clientWidth, this->clientHeight);
 
     return this->contentLoaded;
 }
@@ -689,6 +997,7 @@ void Application::onResize(uint32_t width, uint32_t height)
             static_cast<float>(this->clientHeight)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
+        this->createBloomResources(this->clientWidth, this->clientHeight);
 
         this->flush();
     }

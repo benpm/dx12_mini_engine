@@ -103,7 +103,17 @@ target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # -------------------------------
 compile_shader(src/vertex_shader.hlsl vs 6_0 VS_HDR g_vertex_shader)
 compile_shader(src/pixel_shader.hlsl ps 6_0 PS_HDR g_pixel_shader)
-add_custom_target(shaders DEPENDS ${VS_HDR} ${PS_HDR})
+compile_shader(src/fullscreen_vs.hlsl vs 6_0 FULLSCREEN_VS_HDR g_fullscreen_vs)
+compile_shader(src/bloom_prefilter_ps.hlsl ps 6_0 BLOOM_PREFILTER_HDR g_bloom_prefilter_ps)
+compile_shader(src/bloom_downsample_ps.hlsl ps 6_0 BLOOM_DOWNSAMPLE_HDR g_bloom_downsample_ps)
+compile_shader(src/bloom_upsample_ps.hlsl ps 6_0 BLOOM_UPSAMPLE_HDR g_bloom_upsample_ps)
+compile_shader(src/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_composite_ps)
+add_custom_target(shaders DEPENDS
+    ${VS_HDR} ${PS_HDR}
+    ${FULLSCREEN_VS_HDR}
+    ${BLOOM_PREFILTER_HDR} ${BLOOM_DOWNSAMPLE_HDR}
+    ${BLOOM_UPSAMPLE_HDR} ${BLOOM_COMPOSITE_HDR}
+)
 add_dependencies(main shaders)
 
 # -------------------------------

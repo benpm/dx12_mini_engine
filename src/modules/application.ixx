@@ -77,6 +77,21 @@ export class Application
     bool contentLoaded = false;
     uint32_t numIndices = 0;
 
+    // Bloom / post-processing
+    static constexpr uint32_t bloomMipCount = 5;
+    ComPtr<ID3D12Resource> hdrRenderTarget;
+    ComPtr<ID3D12Resource> bloomMips[bloomMipCount];
+    ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;  // 1 HDR RT + bloomMipCount RTVs
+    ComPtr<ID3D12DescriptorHeap> srvHeap;       // shader-visible: 1 HDR + bloomMipCount SRVs
+    UINT srvDescSize = 0;
+    ComPtr<ID3D12RootSignature> bloomRootSignature;
+    ComPtr<ID3D12PipelineState> prefilterPSO;
+    ComPtr<ID3D12PipelineState> downsamplePSO;
+    ComPtr<ID3D12PipelineState> upsamplePSO;
+    ComPtr<ID3D12PipelineState> compositePSO;
+    float bloomThreshold = 0.7f;
+    float bloomIntensity = 1.0f;
+
     uint64_t frameFenceValues[nBuffers] = {};
 
     bool vsync = true;
@@ -127,4 +142,6 @@ export class Application
     void flush();
     bool loadContent();
     void onResize(uint32_t width, uint32_t height);
+    void createBloomResources(uint32_t width, uint32_t height);
+    void renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };
