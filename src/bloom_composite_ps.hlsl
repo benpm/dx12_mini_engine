@@ -4,14 +4,14 @@ SamplerState linearClamp : register(s0);
 
 cbuffer BloomConstants : register(b0)
 {
-    float2 texelSize;  // unused in composite but keeps constant buffer layout consistent
+    float2 texelSize;
     float bloomIntensity;
-    float _pad0;
+    uint tonemapMode;
 };
 
+// --- ACES Filmic (Narkowicz 2015) ---
 float3 ACESFilm(float3 x)
 {
-    // ACES filmic tone mapping (Narkowicz 2015)
     float a = 2.51f;
     float b = 0.03f;
     float c = 2.43f;
@@ -20,18 +20,133 @@ float3 ACESFilm(float3 x)
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// --- AgX (Troy Sobotka) ---
+static const float3x3 AgXInsetMatrix = float3x3(
+    0.856627153315983f,  0.137318972929847f, 0.11189821299995f,
+    0.0951212405381588f, 0.761241990602591f, 0.0767994186031903f,
+    0.0482516061458583f, 0.101439036467562f, 0.811302368396859f
+);
+static const float3x3 AgXOutsetMatrix = float3x3(
+     1.1271005818144368f,  -0.1413297634984383f,  -0.14132976349843826f,
+    -0.11060664309660323f,  1.157823702216272f,    -0.11060664309660294f,
+    -0.016493938717834573f,-0.016493938717834257f,  1.2519364065950405f
+);
+
+float3 AgXCore(float3 color)
+{
+    color = mul(AgXInsetMatrix, color);
+    color = max(color, 1e-10f);
+    color = clamp(log2(color), -12.47393f, 4.026069f);
+    color = (color + 12.47393f) / (4.026069f + 12.47393f);
+    color = clamp(color, 0.0f, 1.0f);
+
+    // 6th order polynomial approximation of AgX sigmoid
+    float3 x2 = color * color;
+    float3 x4 = x2 * x2;
+    color = +15.5f    * x4 * x2
+            - 40.14f  * x4 * color
+            + 31.96f  * x4
+            - 6.868f  * x2 * color
+            + 0.4298f * x2
+            + 0.1191f * color
+            - 0.00232f;
+    return color;
+}
+
+float3 AgXTonemap(float3 color)
+{
+    color = AgXCore(color);
+    color = mul(AgXOutsetMatrix, color);
+    color = pow(max(0.0f, color), 2.2f);
+    return saturate(color);
+}
+
+float3 AgXPunchy(float3 color)
+{
+    color = AgXCore(color);
+    // CDL: contrast boost + saturation
+    color = pow(color, 1.35f);
+    float luma = dot(color, float3(0.2126f, 0.7152f, 0.0722f));
+    color = luma + 1.4f * (color - luma);
+
+    color = mul(AgXOutsetMatrix, color);
+    color = pow(max(0.0f, color), 2.2f);
+    return saturate(color);
+}
+
+// --- Gran Turismo / Uchimura ---
+float UchimuraCurve(float x, float P, float a, float m, float l, float c, float b)
+{
+    float l0 = ((P - m) * l) / a;
+    float S0 = m + l0;
+    float S1 = m + a * l0;
+    float C2 = (a * P) / (P - S1);
+    float CP = -C2 / P;
+
+    float w0 = 1.0f - smoothstep(0.0f, m, x);
+    float w2 = step(m + l0, x);
+    float w1 = 1.0f - w0 - w2;
+
+    float T = m * pow(x / m, c) + b;
+    float S = P - (P - S1) * exp(CP * (x - S0));
+    float L = m + a * (x - m);
+
+    return T * w0 + L * w1 + S * w2;
+}
+
+float3 UchimuraTonemap(float3 x)
+{
+    const float P = 1.0f;   // max brightness
+    const float a = 1.0f;   // contrast
+    const float m = 0.22f;  // linear section start
+    const float l = 0.4f;   // linear section length
+    const float c = 1.33f;  // toe curvature
+    const float b = 0.0f;   // pedestal
+    return float3(
+        UchimuraCurve(x.r, P, a, m, l, c, b),
+        UchimuraCurve(x.g, P, a, m, l, c, b),
+        UchimuraCurve(x.b, P, a, m, l, c, b)
+    );
+}
+
+// --- Khronos PBR Neutral ---
+float3 PBRNeutralTonemap(float3 color)
+{
+    const float startCompression = 0.8f - 0.04f;
+    const float desaturation = 0.15f;
+
+    float x = min(color.r, min(color.g, color.b));
+    float offset = x < 0.08f ? x - 6.25f * x * x : 0.04f;
+    color -= offset;
+
+    float peak = max(color.r, max(color.g, color.b));
+    if (peak < startCompression) return color;
+
+    float d = 1.0f - startCompression;
+    float newPeak = 1.0f - d * d / (peak + d - startCompression);
+    color *= newPeak / peak;
+
+    float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
+    return lerp(color, newPeak * float3(1, 1, 1), g);
+}
+
 float4 main(float2 uv : TEXCOORD) : SV_Target
 {
     float3 scene = sceneTexture.Sample(linearClamp, uv).rgb;
     float3 bloom = bloomTexture.Sample(linearClamp, uv).rgb;
-
     float3 hdr = scene + bloom * bloomIntensity;
 
-    // Tone mapping (ACES filmic)
-    float3 ldr = ACESFilm(hdr);
+    float3 ldr;
+    switch (tonemapMode)
+    {
+        case 0:  ldr = ACESFilm(hdr); break;
+        case 1:  ldr = AgXTonemap(hdr); break;
+        case 2:  ldr = AgXPunchy(hdr); break;
+        case 3:  ldr = UchimuraTonemap(hdr); break;
+        case 4:  ldr = PBRNeutralTonemap(hdr); break;
+        default: ldr = AgXTonemap(hdr); break;
+    }
 
-    // Gamma correction (linear → sRGB)
-    ldr = pow(ldr, 1.0f / 2.2f);
-
+    ldr = pow(max(ldr, 0.0f), 1.0f / 2.2f);
     return float4(ldr, 1.0f);
 }

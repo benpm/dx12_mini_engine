@@ -33,6 +33,32 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(gainputstatic PRIVATE -Wno-deprecated-declarations)
 endif()
 
+# Fetch imgui (no CMakeLists.txt — build as static lib manually)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.92.6
+)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui_lib STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
+)
+target_include_directories(imgui_lib PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+target_link_libraries(imgui_lib PUBLIC d3d12 dxgi)
+target_compile_definitions(imgui_lib PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(imgui_lib PRIVATE -Wno-everything)
+endif()
+
 # Fetch tinyobjloader
 FetchContent_Declare(
     tinyobjloader
@@ -175,4 +201,5 @@ target_link_libraries(main PRIVATE
     spdlog::spdlog
     gainputstatic
     tinyobjloader
+    imgui_lib
 )

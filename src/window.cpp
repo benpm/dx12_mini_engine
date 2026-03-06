@@ -12,14 +12,23 @@ module;
 #include <algorithm>
 #include <iostream>
 #include <spdlog/spdlog.h>
+#include <imgui.h>
+#include <imgui_impl_win32.h>
 
 module window;
 
 import application;
 import input;
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
+);
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
+        return true;
+
     Application* app = Window::get()->app;
 
     if (app != nullptr && app->isInitialized && app->contentLoaded) {

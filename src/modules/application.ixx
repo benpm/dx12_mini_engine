@@ -91,6 +91,16 @@ export class Application
     ComPtr<ID3D12PipelineState> compositePSO;
     float bloomThreshold = 0.7f;
     float bloomIntensity = 1.0f;
+    int tonemapMode = 1;  // 0=ACES, 1=AgX, 2=AgX Punchy, 3=GT/Uchimura, 4=PBR Neutral
+
+    // ImGui
+    ComPtr<ID3D12DescriptorHeap> imguiSrvHeap;
+    UINT imguiSrvNextIndex = 0;
+
+    // GUI-controlled scene parameters
+    float bgColor[3] = { 0.4f, 0.6f, 0.9f };
+    float lightBrightness = 3.0f;
+    float ambientBrightness = 0.15f;
 
     uint64_t frameFenceValues[nBuffers] = {};
 
@@ -144,4 +154,7 @@ export class Application
     void onResize(uint32_t width, uint32_t height);
     void createBloomResources(uint32_t width, uint32_t height);
     void renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList);
+    void initImGui();
+    void shutdownImGui();
+    void renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };

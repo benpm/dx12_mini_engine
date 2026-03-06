@@ -34,6 +34,9 @@ module;
 #include "bloom_downsample_ps_cso.h"
 #include "bloom_upsample_ps_cso.h"
 #include "bloom_composite_ps_cso.h"
+#include <imgui.h>
+#include <imgui_impl_win32.h>
+#include <imgui_impl_dx12.h>
 
 module application;
 
@@ -112,12 +115,14 @@ Application::Application() : inputMap(inputManager, "input_map")
 
     this->loadContent();
     this->flush();
+    this->initImGui();
     this->isInitialized = true;
 }
 
 Application::~Application()
 {
     this->flush();
+    this->shutdownImGui();
 }
 
 void Application::transitionResource(
@@ -434,7 +439,7 @@ void Application::render()
 
     // --- Scene pass: render to HDR render target ---
     {
-        FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
+        FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(bloomRtvHeap->GetCPUDescriptorHandleForHeapStart());
         this->clearRTV(cmdList, hdrRtv, clearColor);
         auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -461,8 +466,11 @@ void Application::render()
         scb.cameraPos = XMFLOAT4(camX, camY, camZ, 1.0f);
 
         scb.lightPos = XMFLOAT4(10.0f, 15.0f, -10.0f, 1.0f);
-        scb.lightColor = XMFLOAT4(3.0f, 3.0f, 3.0f, 1.0f);
-        scb.ambientColor = XMFLOAT4(0.15f, 0.15f, 0.15f, 1.0f);
+        scb.lightColor = XMFLOAT4(lightBrightness, lightBrightness, lightBrightness, 1.0f);
+        scb.ambientColor = XMFLOAT4(
+            bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
+            bgColor[2] * ambientBrightness, 1.0f
+        );
 
         cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstantBuffer) / 4, &scb, 0);
         cmdList->DrawIndexedInstanced(this->numIndices, 1, 0, 0, 0);
@@ -470,6 +478,9 @@ void Application::render()
 
     // --- Bloom post-process (prefilter → downsample → upsample → composite to swap chain) ---
     this->renderBloom(cmdList);
+
+    // --- ImGui overlay (renders to swap chain back buffer, which is already in RENDER_TARGET) ---
+    this->renderImGui(cmdList);
 
     // --- Present ---
     {
@@ -637,9 +648,99 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     sr = { 0, 0, (LONG)clientWidth, (LONG)clientHeight };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    cb = { 0, 0, bloomIntensity, 0 };
-    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+    struct { float a, b, c; uint32_t d; } compositeCB = {
+        0, 0, bloomIntensity, (uint32_t)tonemapMode
+    };
+    cmdList->SetGraphicsRoot32BitConstants(2, 4, &compositeCB, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
+}
+
+void Application::initImGui()
+{
+    // Create SRV descriptor heap for ImGui
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.NumDescriptors = 16;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&imguiSrvHeap)));
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplWin32_Init(hWnd);
+
+    ImGui_ImplDX12_InitInfo initInfo = {};
+    initInfo.Device = device.Get();
+    initInfo.CommandQueue = cmdQueue.queue.Get();
+    initInfo.NumFramesInFlight = nBuffers;
+    initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    initInfo.SrvDescriptorHeap = imguiSrvHeap.Get();
+    initInfo.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* info,
+                                       D3D12_CPU_DESCRIPTOR_HANDLE* outCpu,
+                                       D3D12_GPU_DESCRIPTOR_HANDLE* outGpu) {
+        // Simple bump allocator — ImGui only allocates a few descriptors (font texture)
+        auto* app = static_cast<Application*>(info->UserData);
+        UINT inc =
+            app->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        *outCpu = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+            app->imguiSrvHeap->GetCPUDescriptorHandleForHeapStart(), app->imguiSrvNextIndex, inc
+        );
+        *outGpu = CD3DX12_GPU_DESCRIPTOR_HANDLE(
+            app->imguiSrvHeap->GetGPUDescriptorHandleForHeapStart(), app->imguiSrvNextIndex, inc
+        );
+        app->imguiSrvNextIndex++;
+    };
+    initInfo.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo*, D3D12_CPU_DESCRIPTOR_HANDLE,
+                                      D3D12_GPU_DESCRIPTOR_HANDLE) {
+        // No-op: descriptors freed when heap is destroyed
+    };
+    initInfo.UserData = this;
+    ImGui_ImplDX12_Init(&initInfo);
+}
+
+void Application::shutdownImGui()
+{
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+}
+
+void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
+{
+    ImGui_ImplDX12_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::Begin("Settings");
+
+    if (ImGui::CollapsingHeader("Bloom", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat("Threshold", &bloomThreshold, 0.0f, 3.0f);
+        ImGui::SliderFloat("Intensity", &bloomIntensity, 0.0f, 5.0f);
+    }
+
+    if (ImGui::CollapsingHeader("Tonemapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* tonemappers[] = { "ACES Filmic", "AgX", "AgX Punchy", "Gran Turismo", "PBR Neutral" };
+        ImGui::Combo("Tonemapper", &tonemapMode, tonemappers, IM_ARRAYSIZE(tonemappers));
+    }
+
+    if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::ColorEdit3("Background", bgColor);
+        ImGui::SliderFloat("Light Brightness", &lightBrightness, 0.0f, 20.0f);
+        ImGui::SliderFloat("Ambient Brightness", &ambientBrightness, 0.0f, 2.0f);
+    }
+
+    ImGui::End();
+    ImGui::Render();
+
+    ID3D12DescriptorHeap* heaps[] = { imguiSrvHeap.Get() };
+    cmdList->SetDescriptorHeaps(1, heaps);
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList.Get());
 }
 
 void Application::setFullscreen(bool val)
