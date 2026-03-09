@@ -1,48 +1,136 @@
-# CLAUDE.md
+# AGENTS.md — DX12 Mini Engine
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI agents (Claude Code, Codex, etc.) working in this repository.
 
-## Build Commands
+---
+
+## Build
 
 ```bash
-# Requires VCPKG_ROOT env var pointing to vcpkg installation
-export VCPKG_ROOT="C:/Users/ben/Documents/vcpkg"
+# Prerequisites: VCPKG_ROOT must point to vcpkg installation
+export VCPKG_ROOT="/c/Users/ben/vcpkg"
 
-# Configure (Ninja Multi-Config + Clang)
-cmake --preset windows-clang
+# Configure (Ninja Multi-Config, Clang 22 from LLVM)
+VCPKG_ROOT=/c/Users/ben/vcpkg cmake --preset windows-clang
 
-# Build Debug / Release
-cmake --build build --config Debug
-cmake --build build --config Release
+# Build
+VCPKG_ROOT=/c/Users/ben/vcpkg cmake --build build --config Debug
+VCPKG_ROOT=/c/Users/ben/vcpkg cmake --build build --config Release
 
-# Run
-./build/Debug/main.exe
+# Test (runs 10 frames, saves screenshot.png, exits)
+./build/Debug/main.exe --test
 ```
 
-Presets: `windows-clang` (primary), `windows-msvc` (fallback). Shaders compiled via DXC to .cso at build time.
+### Toolchain notes
+- **Compiler**: `C:/Program Files/LLVM/bin/clang++.exe` (v22). Do NOT use Git's clang (v18 — too old for VS 18 STL).
+- **VS**: Visual Studio 18 (2027 Preview, MSVC 14.50) — only version installed.
+- **vcpkg**: `/c/Users/ben/vcpkg` (x64-windows-static triplet).
+- **Presets**: `windows-clang` (primary), `windows-msvc` (fallback).
+- Shaders compiled via DXC to `.cso` headers at build time.
+
+### After any change: build then run `--test` and inspect `screenshot.png`
+
+---
 
 ## Architecture
 
-This is a from-scratch DirectX 12 rendering engine (C++23, Clang) currently rendering a colored cube with orbit camera controls.
+From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
-**Core classes:**
+### Module files (`src/modules/*.ixx`)
+| Module | Purpose |
+|--------|---------|
+| `window.ixx` | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
+| `application.ixx` | Main Application class declaration (see below) |
+| `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
+| `camera.ixx` | Base Camera + OrbitCamera (spherical yaw/pitch/radius) |
+| `input.ixx` | Button/Key enums, gainput integration |
+| `common.ixx` | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals |
+| `logging.ixx` | spdlog setup with custom error sink |
 
-- **Window** (singleton) — HWND creation, DXGI adapter selection, ID3D12Device2 creation, tearing support detection. Must be initialized before Application.
-- **Application** — Owns the render loop: swap chain (triple-buffered), PSO, root signature, vertex/index buffers, depth buffer. `update()` handles input/camera, `render()` draws and presents.
-- **CommandQueue** — Wraps ID3D12CommandQueue with fence-based CPU/GPU synchronization and command allocator pooling. Allocators are recycled when their fence value completes.
-- **Camera / OrbitCamera** — View/projection matrix generation. OrbitCamera uses spherical coordinates (yaw, pitch, radius) driven by mouse input.
-- **UploadBuffer** — Linear page-based allocator for GPU upload heaps. Used for one-time CPU-to-GPU data transfers.
-- **DescriptorAllocator** (WIP) — Free-list descriptor allocation from CPU-visible heaps with RAII handles.
+### Application class (`src/application.cpp`)
+Owns the entire render loop:
+- **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
+- **HDR render target**: `R11G11B10_FLOAT`, rendered to first, then bloom chain → composite.
+- **Scene graph**: `vector<GpuMesh>` + `vector<Material>` — multiple objects/materials per frame.
+- **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
+- **Root signature**: single inline constants parameter, 60 DWORDs (`SceneConstantBuffer`).
+- **Per-draw**: model transform + PBR material params uploaded via `SetGraphicsRoot32BitConstants`.
 
-**Math/utility types** (`common.hpp`): `vec2/3/4` (XMVECTOR wrappers), `mat4` (XMMATRIX wrapper) with operator overloads. Custom literals: `_deg` (degrees->radians), `_KB`, `_MB`. `align()` for power-of-2 alignment. `chkDX()` macro throws on HRESULT failure.
+### Rendering pipeline
 
-**Input** uses gainput library (submodule in `lib/gainput/`) for keyboard, mouse, and raw input.
+```
+update()  →  render()
+              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls)
+              ├─ Bloom prefilter  → downsample chain → upsample chain
+              ├─ Composite        (HDR + bloom → swap chain backbuffer)
+              └─ ImGui overlay    (directly to backbuffer)
+```
 
-**Rendering pipeline:** Root signature uses inline 32-bit constants (MVP matrix at b0). Single draw call of 36 indices (cube). Depth testing with D32_FLOAT.
+**Bloom**: 5-mip chain — prefilter (Karis average, soft threshold), 4× downsample, 4× upsample (tent filter, additive blend).
+
+**Tonemappers** (selectable in UI): ACES Filmic, AgX, AgX Punchy, Gran Turismo / Uchimura, PBR Neutral.
+
+### PBR / BSRDF shader (`src/pixel_shader.hlsl`)
+Cook-Torrance BRDF:
+- **NDF**: GGX / Trowbridge-Reitz
+- **Geometry**: Smith + Schlick-GGX
+- **Fresnel**: Schlick approximation
+- **Inputs** (from `SceneConstantBuffer`): albedo RGBA, roughness, metallic, emissive color + strength
+- Single punctual light with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
+
+### Scene loading
+- **Default**: teapot OBJ embedded as Win32 resource (`IDR_TEAPOT_OBJ`/`IDR_TEAPOT_MTL`).
+- **GLB/glTF**: tinygltf v2.9.5 via FetchContent. Load from UI "Load GLB" panel (type path, press Load).
+  - Supports binary GLB and ASCII glTF.
+  - Extracts POSITION, NORMAL, TEXCOORD_0, indices (any component type).
+  - Loads PBR metallic-roughness material factors (base color, roughness, metallic, emissive).
+  - Traverses node hierarchy with TRS / matrix transforms.
+
+### ImGui UI panels
+- **Bloom**: threshold, intensity sliders.
+- **Tonemapping**: tonemapper combo.
+- **Scene**: background color, light brightness, ambient brightness.
+- **Material**: albedo, roughness, metallic, emissive color + strength. Material selector when GLB has multiple.
+- **Load GLB**: path input + Load button + Reset-to-Teapot button.
+
+---
+
+## Dependencies
+
+| Library | Source | Notes |
+|---------|--------|-------|
+| directxtk12, directxmath, spdlog | vcpkg (x64-windows-static) | |
+| gainput | FetchContent (git hash 2be0a50) | Input |
+| imgui v1.92.6 | FetchContent | Win32 + DX12 backend |
+| tinyobjloader | FetchContent (git hash afdd3fa) | OBJ loading |
+| tinygltf v2.9.5 | FetchContent | GLB/glTF loading |
+
+---
 
 ## Code Style
+- clang-format: Chromium base, 4-space indent, 100-col limit.
+- clang-tidy: bugprone, modernize, performance, readability checks.
+- Windows subsystem (no console) — use `spdlog` for all logging.
+- DX12 debug layer enabled in Debug builds.
 
-- Chromium-based clang-format with 4-space indent, custom brace wrapping, 100 col limit
-- clang-tidy enabled (bugprone, modernize, performance, readability checks)
-- Windows subsystem app (no console) — use spdlog for logging (stderr + file)
-- DX12 debug layer enabled in Debug builds
+---
+
+## Key Patterns / Pitfalls
+
+### GPU upload buffer lifetime
+Intermediate upload heaps from `UpdateSubresources` **must** stay alive until after `cmdQueue.waitForFenceVal()`. Pass a `vector<ComPtr<ID3D12Resource>>& temps` to `uploadMesh` and clear it only after the GPU wait.
+
+### XMMATRIX alignment
+`SceneConstantBuffer` contains `XMMATRIX` members — declare on the stack with `alignas(16)`:
+```cpp
+alignas(16) SceneConstantBuffer scb = {};
+```
+
+### No GPU ops inside renderImGui
+`renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`.
+
+### tinygltf in a separate TU
+`TINYGLTF_IMPLEMENTATION` and `STB_IMAGE_IMPLEMENTATION` must be in `src/gltf_impl.cpp` (not in `application.cpp`) to avoid `stb_image` / `Windows.h` macro conflicts in the module implementation file.
+
+### glTF matrix convention
+glTF matrices are column-major. When loading into `XMMATRIX` (row-major), transpose: put glTF column _i_ as XMMATRIX row _i_. For TRS nodes use `S * R * T` order in DirectXMath.
