@@ -15,6 +15,8 @@ module;
 #endif
 #include <gainput/gainput.h>
 #include <unordered_set>
+#include <vector>
+#include <string>
 
 export module application;
 
@@ -22,13 +24,20 @@ export import camera;
 export import command_queue;
 export import input;
 
-export struct VertexPosNormalColor
+// ---------------------------------------------------------------------------
+// GPU vertex layout (PBR)
+// ---------------------------------------------------------------------------
+export struct VertexPBR
 {
     XMFLOAT3 position;
     XMFLOAT3 normal;
-    XMFLOAT3 color;
+    XMFLOAT2 uv;
 };
 
+// ---------------------------------------------------------------------------
+// Scene constant buffer (passed as inline root constants)
+// 60 DWORDs — within the 64-DWORD limit per root parameter
+// ---------------------------------------------------------------------------
 export struct SceneConstantBuffer
 {
     XMMATRIX model;
@@ -37,78 +46,123 @@ export struct SceneConstantBuffer
     XMFLOAT4 lightPos;
     XMFLOAT4 lightColor;
     XMFLOAT4 ambientColor;
+    // PBR material
+    XMFLOAT4 albedo;
+    float    roughness;
+    float    metallic;
+    float    emissiveStrength;
+    float    _pad;
+    XMFLOAT4 emissive;
+};
+static_assert(sizeof(SceneConstantBuffer) / 4 <= 64, "SceneConstantBuffer exceeds 64-DWORD root constant limit");
+
+// ---------------------------------------------------------------------------
+// CPU-side material
+// ---------------------------------------------------------------------------
+export struct Material
+{
+    XMFLOAT4 albedo{0.8f, 0.8f, 0.8f, 1.0f};
+    float    roughness{0.4f};
+    float    metallic{0.0f};
+    float    emissiveStrength{0.0f};
+    float    _pad{0.0f};
+    XMFLOAT4 emissive{0.0f, 0.0f, 0.0f, 0.0f};
+    std::string name;
 };
 
+// ---------------------------------------------------------------------------
+// GPU mesh — one per glTF mesh primitive / OBJ shape
+// ---------------------------------------------------------------------------
+export struct GpuMesh
+{
+    ComPtr<ID3D12Resource>   vb;
+    ComPtr<ID3D12Resource>   ib;
+    D3D12_VERTEX_BUFFER_VIEW vbv{};
+    D3D12_INDEX_BUFFER_VIEW  ibv{};
+    uint32_t                 numIndices{0};
+    int                      materialIdx{0};
+    XMFLOAT4X4               transform{
+        1,0,0,0,
+        0,1,0,0,
+        0,0,1,0,
+        0,0,0,1
+    };
+};
+
+// ---------------------------------------------------------------------------
+// Application
+// ---------------------------------------------------------------------------
 export class Application
 {
    public:
     constexpr static uint8_t nBuffers = 3u;
-    bool useWarp = false;
-    uint32_t clientWidth = 1280;
-    uint32_t clientHeight = 720;
-    bool isInitialized = false;
-    HWND hWnd;
-    RECT windowRect;
-    std::unordered_set<Key> pressedKeys;
+    bool     useWarp       = false;
+    uint32_t clientWidth   = 1280;
+    uint32_t clientHeight  = 720;
+    bool     isInitialized = false;
+    HWND     hWnd;
+    RECT     windowRect;
+    std::unordered_set<Key>         pressedKeys;
     std::unordered_set<MouseButton> pressedMouseButtons;
     XMFLOAT2 mousePos;
     XMFLOAT2 mouseDelta;
-    ComPtr<ID3D12Device2> device;
-    CommandQueue cmdQueue;
-    ComPtr<IDXGISwapChain4> swapChain;
-    ComPtr<ID3D12Resource> backBuffers[nBuffers];
+    ComPtr<ID3D12Device2>       device;
+    CommandQueue                cmdQueue;
+    ComPtr<IDXGISwapChain4>     swapChain;
+    ComPtr<ID3D12Resource>      backBuffers[nBuffers];
     ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    UINT rtvDescSize;
-    UINT curBackBufIdx;
+    UINT    rtvDescSize;
+    UINT    curBackBufIdx;
 
-    ComPtr<ID3D12Resource> vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-    ComPtr<ID3D12Resource> indexBuffer;
-    D3D12_INDEX_BUFFER_VIEW indexBufferView;
-    ComPtr<ID3D12Resource> depthBuffer;
+    // Scene graph
+    std::vector<GpuMesh>  meshes;
+    std::vector<Material> materials;
+    int                   selectedMaterialIdx{0};
+
+    ComPtr<ID3D12Resource>       depthBuffer;
     ComPtr<ID3D12DescriptorHeap> dsvHeap;
-    ComPtr<ID3D12RootSignature> rootSignature;
-    ComPtr<ID3D12PipelineState> pipelineState;
+    ComPtr<ID3D12RootSignature>  rootSignature;
+    ComPtr<ID3D12PipelineState>  pipelineState;
     D3D12_VIEWPORT viewport;
-    D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    float fov = 45.0f;
-    XMMATRIX matModel;
-    OrbitCamera cam;
-    bool contentLoaded = false;
-    uint32_t numIndices = 0;
+    D3D12_RECT     scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    float          fov         = 45.0f;
+    XMMATRIX       matModel;
+    OrbitCamera    cam;
+    bool           contentLoaded = false;
 
     // Bloom / post-processing
     static constexpr uint32_t bloomMipCount = 5;
-    ComPtr<ID3D12Resource> hdrRenderTarget;
-    ComPtr<ID3D12Resource> bloomMips[bloomMipCount];
-    ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;  // 1 HDR RT + bloomMipCount RTVs
-    ComPtr<ID3D12DescriptorHeap> srvHeap;       // shader-visible: 1 HDR + bloomMipCount SRVs
+    ComPtr<ID3D12Resource>       hdrRenderTarget;
+    ComPtr<ID3D12Resource>       bloomMips[bloomMipCount];
+    ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;
+    ComPtr<ID3D12DescriptorHeap> srvHeap;
     UINT srvDescSize = 0;
-    ComPtr<ID3D12RootSignature> bloomRootSignature;
-    ComPtr<ID3D12PipelineState> prefilterPSO;
-    ComPtr<ID3D12PipelineState> downsamplePSO;
-    ComPtr<ID3D12PipelineState> upsamplePSO;
-    ComPtr<ID3D12PipelineState> compositePSO;
+    ComPtr<ID3D12RootSignature>  bloomRootSignature;
+    ComPtr<ID3D12PipelineState>  prefilterPSO;
+    ComPtr<ID3D12PipelineState>  downsamplePSO;
+    ComPtr<ID3D12PipelineState>  upsamplePSO;
+    ComPtr<ID3D12PipelineState>  compositePSO;
     float bloomThreshold = 0.7f;
     float bloomIntensity = 1.0f;
-    int tonemapMode = 1;  // 0=ACES, 1=AgX, 2=AgX Punchy, 3=GT/Uchimura, 4=PBR Neutral
+    int   tonemapMode    = 1;
 
     // ImGui
     ComPtr<ID3D12DescriptorHeap> imguiSrvHeap;
     UINT imguiSrvNextIndex = 0;
 
     // GUI-controlled scene parameters
-    float bgColor[3] = { 0.4f, 0.6f, 0.9f };
-    float lightBrightness = 3.0f;
+    float bgColor[3]        = {0.4f, 0.6f, 0.9f};
+    float lightBrightness   = 3.0f;
     float ambientBrightness = 0.15f;
+    char  gltfPathBuf[512]  = "";
 
     uint64_t frameFenceValues[nBuffers] = {};
 
-    bool vsync = true;
+    bool vsync            = true;
     bool tearingSupported = false;
-    bool fullscreen = false;
-    bool testMode = false;
-    int frameCount = 0;
+    bool fullscreen       = false;
+    bool testMode         = false;
+    int  frameCount       = 0;
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;
@@ -151,10 +205,19 @@ export class Application
     void setFullscreen(bool val);
     void flush();
     bool loadContent();
+    bool loadGltf(const std::string& path);
+    void clearScene();
     void onResize(uint32_t width, uint32_t height);
     void createBloomResources(uint32_t width, uint32_t height);
     void renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList);
     void initImGui();
     void shutdownImGui();
     void renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList);
+
+   private:
+    GpuMesh uploadMesh(
+        ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        const std::vector<VertexPBR>& vertices,
+        const std::vector<uint32_t>& indices
+    );
 };

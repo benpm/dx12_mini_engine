@@ -67,6 +67,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
+# Fetch tinygltf (header-only, bundles stb_image)
+FetchContent_Declare(
+    tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG v2.9.5
+)
+set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(tinygltf)
+
 # -------------------------------
 # Find DXC shader compiler
 # -------------------------------
@@ -100,6 +110,7 @@ endfunction()
 add_executable(main
     src/main.cpp
     src/application.cpp
+    src/gltf_impl.cpp
     src/command_queue.cpp
     src/window.cpp
     src/logging.cpp
@@ -122,7 +133,7 @@ target_sources(main
 )
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
-target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR})
 
 # -------------------------------
 # Shader compilation
