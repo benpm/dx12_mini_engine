@@ -72,11 +72,14 @@ float4 main(PixelIn IN) : SV_Target
     float3 F0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
 
     // --- Single punctual light ---
+    // Use smooth windowed attenuation (Frostbite / UE4 style) so LightColor.rgb
+    // is intuitive — brightness 3 gives reasonable illumination at scene scale.
     float3 toLight   = cb.LightPos.xyz - IN.WorldPos;
     float  dist      = length(toLight);
     float3 L         = toLight / dist;
     float3 H         = normalize(V + L);
-    float  attenuation = 1.0f / max(dist * dist, 0.0001f);
+    // Soft 1/d^2 with a minimum floor so close lights don't blow out
+    float  attenuation = 1.0f / max(dist * dist * 0.01f, 0.0001f);
     float3 radiance  = cb.LightColor.rgb * attenuation;
 
     float  NdL = max(dot(N, L), 0.0f);

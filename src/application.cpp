@@ -283,11 +283,14 @@ void Application::updateBufferResource(
 GpuMesh Application::uploadMesh(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     const std::vector<VertexPBR>& vertices,
-    const std::vector<uint32_t>& indices)
+    const std::vector<uint32_t>& indices,
+    std::vector<ComPtr<ID3D12Resource>>& temps)
 {
     GpuMesh mesh;
     mesh.numIndices = static_cast<uint32_t>(indices.size());
 
+    // Intermediate upload heaps: must survive until GPU executes the command list.
+    // Caller is responsible for keeping `temps` alive until after waitForFenceVal.
     ComPtr<ID3D12Resource> intermediateVB, intermediateIB;
     updateBufferResource(
         cmdList, &mesh.vb, &intermediateVB, vertices.size(), sizeof(VertexPBR), vertices.data()
@@ -304,12 +307,8 @@ GpuMesh Application::uploadMesh(
     mesh.ibv.Format         = DXGI_FORMAT_R32_UINT;
     mesh.ibv.SizeInBytes    = static_cast<UINT>(indices.size() * sizeof(uint32_t));
 
-    // Keep intermediate buffers alive until GPU finishes
-    // (they're kept alive by the ComPtr in the lambda capture — we rely on the
-    //  caller flushing before the function returns in loadContent / loadGltf)
-    (void)intermediateVB;  // released on function exit — OK because caller flushes
-    (void)intermediateIB;
-
+    temps.push_back(std::move(intermediateVB));
+    temps.push_back(std::move(intermediateIB));
     return mesh;
 }
 
@@ -416,6 +415,63 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 
 void Application::update()
 {
+    // Process deferred scene loads (set from ImGui, safe here before render commands)
+    if (pendingResetToTeapot) {
+        pendingResetToTeapot = false;
+        clearScene();
+        auto cl = cmdQueue.getCmdList();
+        std::vector<ComPtr<ID3D12Resource>> temps;
+
+        std::string objData = GetResourceString(IDR_TEAPOT_OBJ);
+        if (!objData.empty()) {
+            std::istringstream objStream(objData);
+            class RMR : public tinyobj::MaterialReader {
+            public:
+                bool operator()(const std::string&, std::vector<tinyobj::material_t>* mats,
+                    std::map<std::string,int>* map, std::string* warn, std::string* err) override {
+                    std::string mtl = GetResourceString(IDR_TEAPOT_MTL);
+                    if (mtl.empty()) { if (warn) *warn="no mtl"; return false; }
+                    std::istringstream s(mtl); tinyobj::LoadMtl(map, mats, &s, warn, err);
+                    return true;
+                }
+            };
+            RMR mr;
+            tinyobj::attrib_t attrib;
+            std::vector<tinyobj::shape_t> shapes;
+            std::vector<tinyobj::material_t> objMats;
+            std::string warn, err;
+            tinyobj::LoadObj(&attrib, &shapes, &objMats, &warn, &err, &objStream, &mr);
+            std::vector<VertexPBR> verts;
+            std::vector<uint32_t> idxs;
+            for (const auto& shape : shapes)
+                for (const auto& idx : shape.mesh.indices) {
+                    VertexPBR v{};
+                    v.position = {attrib.vertices[3*idx.vertex_index+0],
+                                  attrib.vertices[3*idx.vertex_index+1],
+                                  attrib.vertices[3*idx.vertex_index+2]};
+                    v.normal = idx.normal_index >= 0
+                        ? XMFLOAT3{attrib.normals[3*idx.normal_index+0],
+                                   attrib.normals[3*idx.normal_index+1],
+                                   attrib.normals[3*idx.normal_index+2]}
+                        : XMFLOAT3{0,1,0};
+                    v.uv = {0,0};
+                    verts.push_back(v); idxs.push_back((uint32_t)idxs.size());
+                }
+            Material defMat; defMat.name = "Teapot"; defMat.roughness = 0.3f;
+            materials.push_back(defMat);
+            GpuMesh m = uploadMesh(cl, verts, idxs, temps);
+            m.materialIdx = 0; meshes.push_back(std::move(m));
+        }
+        uint64_t fv = cmdQueue.execCmdList(cl);
+        cmdQueue.waitForFenceVal(fv);
+    }
+    if (!pendingGltfPath.empty()) {
+        std::string path = std::move(pendingGltfPath);
+        pendingGltfPath.clear();
+        if (!loadGltf(path))
+            spdlog::error("Failed to load GLB: {}", path);
+    }
+
     [[maybe_unused]] static double elapsedSeconds = 0.0;
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
@@ -470,7 +526,7 @@ void Application::render()
         cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
 
         // Build base scene CB (camera, lights — material filled per draw)
-        SceneConstantBuffer scb = {};
+        alignas(16) SceneConstantBuffer scb = {};
         scb.viewProj = this->cam.view() * this->cam.proj();
 
         float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
@@ -867,67 +923,12 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::InputText("Path", gltfPathBuf, sizeof(gltfPathBuf));
         if (ImGui::Button("Load")) {
             std::string path(gltfPathBuf);
-            if (!path.empty()) {
-                if (!loadGltf(path))
-                    spdlog::error("Failed to load GLB: {}", path);
-            }
+            if (!path.empty())
+                pendingGltfPath = path;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Reset to Teapot")) {
-            clearScene();
-            auto cmdList2 = cmdQueue.getCmdList();
-            // Reload teapot inline
-            std::string objData = GetResourceString(IDR_TEAPOT_OBJ);
-            if (!objData.empty()) {
-                std::istringstream objStream(objData);
-                class RMR : public tinyobj::MaterialReader {
-                public:
-                    bool operator()(const std::string&, std::vector<tinyobj::material_t>* mats,
-                        std::map<std::string,int>* map, std::string* warn, std::string* err) override {
-                        std::string mtl = GetResourceString(IDR_TEAPOT_MTL);
-                        if (mtl.empty()) { if (warn) *warn="no mtl"; return false; }
-                        std::istringstream s(mtl);
-                        tinyobj::LoadMtl(map, mats, &s, warn, err);
-                        return true;
-                    }
-                };
-                RMR mr;
-                tinyobj::attrib_t attrib;
-                std::vector<tinyobj::shape_t> shapes;
-                std::vector<tinyobj::material_t> objMats;
-                std::string warn, err;
-                tinyobj::LoadObj(&attrib, &shapes, &objMats, &warn, &err, &objStream, &mr);
-
-                std::vector<VertexPBR> verts;
-                std::vector<uint32_t> idxs;
-                for (const auto& shape : shapes) {
-                    for (const auto& idx : shape.mesh.indices) {
-                        VertexPBR v{};
-                        v.position = {
-                            attrib.vertices[3*idx.vertex_index+0],
-                            attrib.vertices[3*idx.vertex_index+1],
-                            attrib.vertices[3*idx.vertex_index+2]
-                        };
-                        v.normal = idx.normal_index >= 0
-                            ? XMFLOAT3{attrib.normals[3*idx.normal_index+0],
-                                       attrib.normals[3*idx.normal_index+1],
-                                       attrib.normals[3*idx.normal_index+2]}
-                            : XMFLOAT3{0,1,0};
-                        v.uv = {0,0};
-                        verts.push_back(v);
-                        idxs.push_back((uint32_t)idxs.size());
-                    }
-                }
-                Material defMat;
-                defMat.name = "Teapot";
-                materials.push_back(defMat);
-                GpuMesh m = uploadMesh(cmdList2, verts, idxs);
-                m.materialIdx = 0;
-                meshes.push_back(std::move(m));
-            }
-            uint64_t fv = cmdQueue.execCmdList(cmdList2);
-            cmdQueue.waitForFenceVal(fv);
-        }
+        if (ImGui::Button("Reset to Teapot"))
+            pendingResetToTeapot = true;
     }
 
     ImGui::End();
@@ -1010,6 +1011,7 @@ bool Application::loadGltf(const std::string& path)
 
     // Traverse node hierarchy, uploading mesh primitives
     auto cmdList = cmdQueue.getCmdList();
+    std::vector<ComPtr<ID3D12Resource>> uploadTemps;
 
     const int sceneIdx = model.defaultScene >= 0 ? model.defaultScene : 0;
     if (sceneIdx >= (int)model.scenes.size()) {
@@ -1066,7 +1068,7 @@ bool Application::loadGltf(const std::string& path)
                     for (size_t i = 0; i < numVerts; ++i) indices[i] = (uint32_t)i;
                 }
 
-                GpuMesh gpuMesh     = uploadMesh(cmdList, verts, indices);
+                GpuMesh gpuMesh     = uploadMesh(cmdList, verts, indices, uploadTemps);
                 int matIdx          = (prim.material >= 0 &&
                                        prim.material < (int)materials.size())
                                       ? prim.material : 0;
@@ -1142,6 +1144,7 @@ bool Application::loadContent()
 {
     spdlog::info("loadContent start");
     auto cmdList = this->cmdQueue.getCmdList();
+    std::vector<ComPtr<ID3D12Resource>> uploadTemps;  // kept alive until GPU wait
 
     // --- Load teapot OBJ (default scene) ---
     {
@@ -1209,7 +1212,7 @@ bool Application::loadContent()
         defMat.metallic  = 0.0f;
         materials.push_back(defMat);
 
-        GpuMesh m    = uploadMesh(cmdList, verts, indices);
+        GpuMesh m    = uploadMesh(cmdList, verts, indices, uploadTemps);
         m.materialIdx = 0;
         meshes.push_back(std::move(m));
     }

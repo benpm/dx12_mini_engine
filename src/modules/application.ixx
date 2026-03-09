@@ -155,6 +155,9 @@ export class Application
     float lightBrightness   = 3.0f;
     float ambientBrightness = 0.15f;
     char  gltfPathBuf[512]  = "";
+    // Deferred scene load (set from ImGui, executed at start of next update)
+    bool        pendingResetToTeapot{false};
+    std::string pendingGltfPath;
 
     uint64_t frameFenceValues[nBuffers] = {};
 
@@ -218,6 +221,7 @@ export class Application
     GpuMesh uploadMesh(
         ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const std::vector<VertexPBR>& vertices,
-        const std::vector<uint32_t>& indices
+        const std::vector<uint32_t>& indices,
+        std::vector<ComPtr<ID3D12Resource>>& temps
     );
 };
