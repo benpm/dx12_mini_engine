@@ -1,14 +1,15 @@
 If:
   PathMatch:
-    - .*\.(cpp|hpp|h)$
+    - .*\.(cpp|hpp|h|ixx)$
+  PathExclude:
+    - .*\.pch
+    - .*pch\.?
 
 CompileFlags:
   CompilationDatabase: build
-  Remove: [-O*, -f*, -m*, -W*, gl*, -std=*]
   Add:
     - -Ibuild/Debug
     - -Iinclude
-    - src/pch.hpp
     - -std=c++23
 
 Diagnostics:

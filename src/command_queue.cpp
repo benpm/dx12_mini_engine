@@ -52,8 +52,10 @@ uint64_t CommandQueue::execCmdList(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     // Retrieve command allocator from private data of command list
     ID3D12CommandAllocator* commandAllocator;
-    UINT dataSize = sizeof(commandAllocator);
-    chkDX(cmdList->GetPrivateData(__uuidof(ID3D12CommandAllocator), &dataSize, &commandAllocator));
+    UINT dataSize = sizeof(ID3D12CommandAllocator*);
+    chkDX(cmdList->GetPrivateData(
+        __uuidof(ID3D12CommandAllocator), &dataSize, static_cast<void*>(&commandAllocator)
+    ));
 
     ID3D12CommandList* const commandLists[] = { cmdList.Get() };
     this->queue->ExecuteCommandLists(_countof(commandLists), commandLists);
@@ -103,7 +105,7 @@ ComPtr<ID3D12CommandAllocator> CommandQueue::createCmdAlloc()
 {
     ComPtr<ID3D12CommandAllocator> allocator;
 
-    if (this->cmdAllocQueue.size() > 0 &&
+    if (!this->cmdAllocQueue.empty() &&
         this->isFenceComplete(this->cmdAllocQueue.front().fenceValue)) {
         allocator = this->cmdAllocQueue.front().commandAllocator;
         chkDX(allocator->Reset());

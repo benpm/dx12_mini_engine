@@ -3,9 +3,10 @@
 
 struct PixelIn
 {
-    float3 Normal   : NORMAL;
-    float3 WorldPos : POSITION;
-    float2 UV       : TEXCOORD0;
+    float3 Normal     : NORMAL;
+    float3 WorldPos   : POSITION;
+    float2 UV         : TEXCOORD0;
+    uint   DrawIndex  : BLENDINDICES0;
 };
 
 struct SceneCB
@@ -24,7 +25,7 @@ struct SceneCB
     float4 Emissive;
 };
 
-ConstantBuffer<SceneCB> cb : register(b0);
+StructuredBuffer<SceneCB> drawData : register(t0);
 
 static const float PI = 3.14159265359f;
 
@@ -59,6 +60,8 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 
 float4 main(PixelIn IN) : SV_Target
 {
+    SceneCB cb = drawData[IN.DrawIndex];
+
     float3 albedo    = cb.Albedo.rgb;
     float  roughness = clamp(cb.Roughness, 0.04f, 1.0f);
     float  metallic  = saturate(cb.Metallic);

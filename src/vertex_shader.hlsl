@@ -21,18 +21,21 @@ struct SceneCB
     float4 Emissive;
 };
 
-ConstantBuffer<SceneCB> cb : register(b0);
+StructuredBuffer<SceneCB> drawData : register(t0);
+cbuffer DrawIndex : register(b0) { uint drawIndex; };
 
 struct VertexOut
 {
-    float3 Normal   : NORMAL;
-    float3 WorldPos : POSITION;
-    float2 UV       : TEXCOORD0;
-    float4 Position : SV_Position;
+    float3 Normal     : NORMAL;
+    float3 WorldPos   : POSITION;
+    float2 UV         : TEXCOORD0;
+    uint   DrawIndex  : BLENDINDICES0;
+    float4 Position   : SV_Position;
 };
 
 VertexOut main(VertexIn IN)
 {
+    SceneCB cb = drawData[drawIndex];
     VertexOut OUT;
     float4 worldPos = mul(cb.Model, float4(IN.Position, 1.0f));
     OUT.WorldPos    = worldPos.xyz;
@@ -40,5 +43,6 @@ VertexOut main(VertexIn IN)
     // Normal to world space (assumes uniform scale; use inverse-transpose for non-uniform)
     OUT.Normal = normalize(mul((float3x3)cb.Model, IN.Normal));
     OUT.UV     = IN.UV;
+    OUT.DrawIndex = drawIndex;
     return OUT;
 }

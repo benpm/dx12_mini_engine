@@ -14,6 +14,7 @@ module;
     #pragma clang diagnostic pop
 #endif
 #include <gainput/gainput.h>
+#include <flecs.h>
 #include <unordered_set>
 #include <vector>
 #include <string>
@@ -22,6 +23,7 @@ export module application;
 
 export import camera;
 export import command_queue;
+export import ecs_components;
 export import input;
 
 // ---------------------------------------------------------------------------
@@ -35,8 +37,7 @@ export struct VertexPBR
 };
 
 // ---------------------------------------------------------------------------
-// Scene constant buffer (passed as inline root constants)
-// 60 DWORDs — within the 64-DWORD limit per root parameter
+// Per-draw data (stored in a StructuredBuffer, indexed by drawIndex)
 // ---------------------------------------------------------------------------
 export struct SceneConstantBuffer
 {
@@ -48,45 +49,25 @@ export struct SceneConstantBuffer
     XMFLOAT4 ambientColor;
     // PBR material
     XMFLOAT4 albedo;
-    float    roughness;
-    float    metallic;
-    float    emissiveStrength;
-    float    _pad;
+    float roughness;
+    float metallic;
+    float emissiveStrength;
+    float _pad;
     XMFLOAT4 emissive;
 };
-static_assert(sizeof(SceneConstantBuffer) / 4 <= 64, "SceneConstantBuffer exceeds 64-DWORD root constant limit");
 
 // ---------------------------------------------------------------------------
 // CPU-side material
 // ---------------------------------------------------------------------------
 export struct Material
 {
-    XMFLOAT4 albedo{0.8f, 0.8f, 0.8f, 1.0f};
-    float    roughness{0.4f};
-    float    metallic{0.0f};
-    float    emissiveStrength{0.0f};
-    float    _pad{0.0f};
-    XMFLOAT4 emissive{0.0f, 0.0f, 0.0f, 0.0f};
+    XMFLOAT4 albedo{ 0.8f, 0.8f, 0.8f, 1.0f };
+    float roughness{ 0.4f };
+    float metallic{ 0.0f };
+    float emissiveStrength{ 0.0f };
+    float _pad{ 0.0f };
+    XMFLOAT4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
     std::string name;
-};
-
-// ---------------------------------------------------------------------------
-// GPU mesh — one per glTF mesh primitive / OBJ shape
-// ---------------------------------------------------------------------------
-export struct GpuMesh
-{
-    ComPtr<ID3D12Resource>   vb;
-    ComPtr<ID3D12Resource>   ib;
-    D3D12_VERTEX_BUFFER_VIEW vbv{};
-    D3D12_INDEX_BUFFER_VIEW  ibv{};
-    uint32_t                 numIndices{0};
-    int                      materialIdx{0};
-    XMFLOAT4X4               transform{
-        1,0,0,0,
-        0,1,0,0,
-        0,0,1,0,
-        0,0,0,1
-    };
 };
 
 // ---------------------------------------------------------------------------
@@ -96,76 +77,95 @@ export class Application
 {
    public:
     constexpr static uint8_t nBuffers = 3u;
-    bool     useWarp       = false;
-    uint32_t clientWidth   = 1280;
-    uint32_t clientHeight  = 720;
-    bool     isInitialized = false;
-    HWND     hWnd;
-    RECT     windowRect;
-    std::unordered_set<Key>         pressedKeys;
+    bool useWarp = false;
+    uint32_t clientWidth = 1280;
+    uint32_t clientHeight = 720;
+    bool isInitialized = false;
+    HWND hWnd;
+    RECT windowRect;
+    std::unordered_set<Key> pressedKeys;
     std::unordered_set<MouseButton> pressedMouseButtons;
     XMFLOAT2 mousePos;
     XMFLOAT2 mouseDelta;
-    ComPtr<ID3D12Device2>       device;
-    CommandQueue                cmdQueue;
-    ComPtr<IDXGISwapChain4>     swapChain;
-    ComPtr<ID3D12Resource>      backBuffers[nBuffers];
+    ComPtr<ID3D12Device2> device;
+    CommandQueue cmdQueue;
+    ComPtr<IDXGISwapChain4> swapChain;
+    ComPtr<ID3D12Resource> backBuffers[nBuffers];
     ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    UINT    rtvDescSize;
-    UINT    curBackBufIdx;
+    UINT rtvDescSize;
+    UINT curBackBufIdx;
 
-    // Scene graph
-    std::vector<GpuMesh>  meshes;
+    // Scene data
     std::vector<Material> materials;
-    int                   selectedMaterialIdx{0};
+    int selectedMaterialIdx{ 0 };
 
-    ComPtr<ID3D12Resource>       depthBuffer;
+    // ECS
+    flecs::world ecsWorld;
+
+    // Mega vertex/index buffers
+    ComPtr<ID3D12Resource> megaVB;
+    ComPtr<ID3D12Resource> megaIB;
+    D3D12_VERTEX_BUFFER_VIEW megaVBV{};
+    D3D12_INDEX_BUFFER_VIEW megaIBV{};
+    uint32_t megaVBCapacity{ 0 };
+    uint32_t megaVBUsed{ 0 };
+    uint32_t megaIBCapacity{ 0 };
+    uint32_t megaIBUsed{ 0 };
+
+    // Per-draw structured buffer (triple-buffered upload heaps)
+    static constexpr uint32_t maxDrawsPerFrame = 4096;
+    ComPtr<ID3D12Resource> drawDataBuffer[nBuffers];
+    SceneConstantBuffer* drawDataMapped[nBuffers]{};
+    ComPtr<ID3D12DescriptorHeap> sceneSrvHeap;
+    UINT sceneSrvDescSize{ 0 };
+
+    ComPtr<ID3D12Resource> depthBuffer;
     ComPtr<ID3D12DescriptorHeap> dsvHeap;
-    ComPtr<ID3D12RootSignature>  rootSignature;
-    ComPtr<ID3D12PipelineState>  pipelineState;
+    ComPtr<ID3D12RootSignature> rootSignature;
+    ComPtr<ID3D12PipelineState> pipelineState;
     D3D12_VIEWPORT viewport;
-    D3D12_RECT     scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    float          fov         = 45.0f;
-    XMMATRIX       matModel;
-    OrbitCamera    cam;
-    bool           contentLoaded = false;
+    D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    float fov = 45.0f;
+    XMMATRIX matModel;
+    OrbitCamera cam;
+    bool contentLoaded = false;
 
     // Bloom / post-processing
     static constexpr uint32_t bloomMipCount = 5;
-    ComPtr<ID3D12Resource>       hdrRenderTarget;
-    ComPtr<ID3D12Resource>       bloomMips[bloomMipCount];
+    ComPtr<ID3D12Resource> hdrRenderTarget;
+    ComPtr<ID3D12Resource> bloomMips[bloomMipCount];
     ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;
     ComPtr<ID3D12DescriptorHeap> srvHeap;
     UINT srvDescSize = 0;
-    ComPtr<ID3D12RootSignature>  bloomRootSignature;
-    ComPtr<ID3D12PipelineState>  prefilterPSO;
-    ComPtr<ID3D12PipelineState>  downsamplePSO;
-    ComPtr<ID3D12PipelineState>  upsamplePSO;
-    ComPtr<ID3D12PipelineState>  compositePSO;
+    ComPtr<ID3D12RootSignature> bloomRootSignature;
+    ComPtr<ID3D12PipelineState> prefilterPSO;
+    ComPtr<ID3D12PipelineState> downsamplePSO;
+    ComPtr<ID3D12PipelineState> upsamplePSO;
+    ComPtr<ID3D12PipelineState> compositePSO;
     float bloomThreshold = 0.7f;
     float bloomIntensity = 1.0f;
-    int   tonemapMode    = 1;
+    int tonemapMode = 1;
 
     // ImGui
     ComPtr<ID3D12DescriptorHeap> imguiSrvHeap;
     UINT imguiSrvNextIndex = 0;
 
     // GUI-controlled scene parameters
-    float bgColor[3]        = {0.4f, 0.6f, 0.9f};
-    float lightBrightness   = 3.0f;
+    float bgColor[3] = { 0.1f, 0.1f, 0.1f };
+    float lightBrightness = 3.0f;
     float ambientBrightness = 0.15f;
-    char  gltfPathBuf[512]  = "";
+    char gltfPathBuf[512] = "";
     // Deferred scene load (set from ImGui, executed at start of next update)
-    bool        pendingResetToTeapot{false};
+    bool pendingResetToTeapot{ false };
     std::string pendingGltfPath;
 
     uint64_t frameFenceValues[nBuffers] = {};
 
-    bool vsync            = true;
+    bool vsync = true;
     bool tearingSupported = false;
-    bool fullscreen       = false;
-    bool testMode         = false;
-    int  frameCount       = 0;
+    bool fullscreen = false;
+    bool testMode = false;
+    int frameCount = 0;
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;
@@ -189,15 +189,6 @@ export class Application
         D3D12_CPU_DESCRIPTOR_HANDLE dsv,
         FLOAT depth = 1.0f
     );
-    void updateBufferResource(
-        ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        ID3D12Resource** pDestinationResource,
-        ID3D12Resource** pIntermediateResource,
-        size_t numElements,
-        size_t elementSize,
-        const void* bufferData = nullptr,
-        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE
-    );
     void resizeDepthBuffer(uint32_t width, uint32_t height);
     ComPtr<IDXGISwapChain4> createSwapChain();
     ComPtr<ID3D12DescriptorHeap>
@@ -217,11 +208,14 @@ export class Application
     void shutdownImGui();
     void renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList);
 
-   private:
-    GpuMesh uploadMesh(
+    void createMegaBuffers();
+    void createDrawDataBuffers();
+    MeshRef appendToMegaBuffers(
         ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const std::vector<VertexPBR>& vertices,
         const std::vector<uint32_t>& indices,
+        int materialIdx,
         std::vector<ComPtr<ID3D12Resource>>& temps
     );
+
 };

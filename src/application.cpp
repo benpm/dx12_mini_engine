@@ -18,6 +18,7 @@ module;
 #include <tiny_obj_loader.h>
 #include <sstream>
 #include <spdlog/spdlog.h>
+#include <flecs.h>
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wswitch"
@@ -26,6 +27,7 @@ module;
     #pragma clang diagnostic ignored "-Wmissing-field-initializers"
     #pragma clang diagnostic ignored "-Wsign-compare"
     #pragma clang diagnostic ignored "-Wnullability-completeness"
+    #pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
 #endif
 #include <tiny_gltf.h>
 #ifdef __clang__
@@ -60,12 +62,18 @@ import window;
 static std::string GetResourceString(int resourceId)
 {
     HRSRC hRes = FindResource(nullptr, MAKEINTRESOURCE(resourceId), RT_RCDATA);
-    if (!hRes) return "";
+    if (!hRes) {
+        return "";
+    }
     HGLOBAL hMem = LoadResource(nullptr, hRes);
-    if (!hMem) return "";
+    if (!hMem) {
+        return "";
+    }
     DWORD size = SizeofResource(nullptr, hRes);
     void* data = LockResource(hMem);
-    if (!data) return "";
+    if (!data) {
+        return "";
+    }
     return std::string(static_cast<const char*>(data), size);
 }
 
@@ -76,55 +84,56 @@ static XMMATRIX NodeTransform(const tinygltf::Node& node)
         const auto& m = node.matrix;
         // glTF column-major → XMMATRIX row-major (= transpose)
         return XMMATRIX(
-            (float)m[0],  (float)m[1],  (float)m[2],  (float)m[3],
-            (float)m[4],  (float)m[5],  (float)m[6],  (float)m[7],
-            (float)m[8],  (float)m[9],  (float)m[10], (float)m[11],
+            (float)m[0], (float)m[1], (float)m[2], (float)m[3], (float)m[4], (float)m[5],
+            (float)m[6], (float)m[7], (float)m[8], (float)m[9], (float)m[10], (float)m[11],
             (float)m[12], (float)m[13], (float)m[14], (float)m[15]
         );
     }
     XMMATRIX S = XMMatrixIdentity();
     XMMATRIX R = XMMatrixIdentity();
     XMMATRIX T = XMMatrixIdentity();
-    if (node.scale.size() == 3)
+    if (node.scale.size() == 3) {
         S = XMMatrixScaling((float)node.scale[0], (float)node.scale[1], (float)node.scale[2]);
+    }
     if (node.rotation.size() == 4) {
         XMVECTOR q = XMVectorSet(
-            (float)node.rotation[0], (float)node.rotation[1],
-            (float)node.rotation[2], (float)node.rotation[3]
+            (float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2],
+            (float)node.rotation[3]
         );
         R = XMMatrixRotationQuaternion(q);
     }
-    if (node.translation.size() == 3)
+    if (node.translation.size() == 3) {
         T = XMMatrixTranslation(
             (float)node.translation[0], (float)node.translation[1], (float)node.translation[2]
         );
+    }
     return S * R * T;
 }
 
 // Retrieve typed accessor data as a vector of floats (used for VEC2/VEC3)
-template<size_t N>
-static std::vector<std::array<float, N>> AccessorToFloatN(
-    const tinygltf::Model& model, int accessorIdx)
+template <size_t N> static std::vector<std::array<float, N>>
+AccessorToFloatN(const tinygltf::Model& model, int accessorIdx)
 {
     const auto& acc = model.accessors[accessorIdx];
-    const auto& bv  = model.bufferViews[acc.bufferView];
+    const auto& bv = model.bufferViews[acc.bufferView];
     const auto& buf = model.buffers[bv.buffer];
     const uint8_t* src = buf.data.data() + bv.byteOffset + acc.byteOffset;
     size_t stride = bv.byteStride ? bv.byteStride : (N * sizeof(float));
     std::vector<std::array<float, N>> out(acc.count);
     for (size_t i = 0; i < acc.count; ++i) {
         const float* f = reinterpret_cast<const float*>(src + i * stride);
-        for (size_t j = 0; j < N; ++j) out[i][j] = f[j];
+        for (size_t j = 0; j < N; ++j) {
+            out[i][j] = f[j];
+        }
     }
     return out;
 }
 
 // Convert any index accessor to uint32_t
-static std::vector<uint32_t> AccessorToIndices(
-    const tinygltf::Model& model, int accessorIdx)
+static std::vector<uint32_t> AccessorToIndices(const tinygltf::Model& model, int accessorIdx)
 {
     const auto& acc = model.accessors[accessorIdx];
-    const auto& bv  = model.bufferViews[acc.bufferView];
+    const auto& bv = model.bufferViews[acc.bufferView];
     const auto& buf = model.buffers[bv.buffer];
     const uint8_t* src = buf.data.data() + bv.byteOffset + acc.byteOffset;
     std::vector<uint32_t> out(acc.count);
@@ -179,27 +188,27 @@ Application::Application() : inputMap(inputManager, "input_map")
 
     spdlog::info("Setup gainput");
     this->keyboardID = inputManager.CreateDevice<gainput::InputDeviceKeyboard>();
-    this->mouseID    = inputManager.CreateDevice<gainput::InputDeviceMouse>();
+    this->mouseID = inputManager.CreateDevice<gainput::InputDeviceMouse>();
     this->rawMouseID = inputManager.CreateDevice<gainput::InputDeviceMouse>(
         gainput::InputDevice::AutoIndex, gainput::InputDevice::DV_RAW
     );
     inputManager.SetDisplaySize(1, 1);
-    this->inputMap.MapBool(Button::MoveForward,  this->keyboardID, gainput::KeyW);
-    this->inputMap.MapBool(Button::MoveForward,  this->keyboardID, gainput::KeyUp);
+    this->inputMap.MapBool(Button::MoveForward, this->keyboardID, gainput::KeyW);
+    this->inputMap.MapBool(Button::MoveForward, this->keyboardID, gainput::KeyUp);
     this->inputMap.MapBool(Button::MoveBackward, this->keyboardID, gainput::KeyS);
     this->inputMap.MapBool(Button::MoveBackward, this->keyboardID, gainput::KeyDown);
-    this->inputMap.MapBool(Button::MoveLeft,     this->keyboardID, gainput::KeyA);
-    this->inputMap.MapBool(Button::MoveLeft,     this->keyboardID, gainput::KeyLeft);
-    this->inputMap.MapBool(Button::MoveRight,    this->keyboardID, gainput::KeyD);
-    this->inputMap.MapBool(Button::MoveRight,    this->keyboardID, gainput::KeyRight);
-    this->inputMap.MapBool(Button::LeftClick,    this->mouseID,    gainput::MouseButtonLeft);
-    this->inputMap.MapBool(Button::RightClick,   this->mouseID,    gainput::MouseButtonRight);
-    this->inputMap.MapFloat(Button::AxisX,       this->mouseID,    gainput::MouseAxisX);
-    this->inputMap.MapFloat(Button::AxisY,       this->mouseID,    gainput::MouseAxisY);
-    this->inputMap.MapFloat(Button::AxisDeltaX,  this->mouseID,    gainput::MouseAxisX);
-    this->inputMap.MapFloat(Button::AxisDeltaY,  this->mouseID,    gainput::MouseAxisY);
-    this->inputMap.MapBool(Button::ScrollUp,     this->mouseID,    gainput::MouseButtonWheelUp);
-    this->inputMap.MapBool(Button::ScrollDown,   this->mouseID,    gainput::MouseButtonWheelDown);
+    this->inputMap.MapBool(Button::MoveLeft, this->keyboardID, gainput::KeyA);
+    this->inputMap.MapBool(Button::MoveLeft, this->keyboardID, gainput::KeyLeft);
+    this->inputMap.MapBool(Button::MoveRight, this->keyboardID, gainput::KeyD);
+    this->inputMap.MapBool(Button::MoveRight, this->keyboardID, gainput::KeyRight);
+    this->inputMap.MapBool(Button::LeftClick, this->mouseID, gainput::MouseButtonLeft);
+    this->inputMap.MapBool(Button::RightClick, this->mouseID, gainput::MouseButtonRight);
+    this->inputMap.MapFloat(Button::AxisX, this->mouseID, gainput::MouseAxisX);
+    this->inputMap.MapFloat(Button::AxisY, this->mouseID, gainput::MouseAxisY);
+    this->inputMap.MapFloat(Button::AxisDeltaX, this->mouseID, gainput::MouseAxisX);
+    this->inputMap.MapFloat(Button::AxisDeltaY, this->mouseID, gainput::MouseAxisY);
+    this->inputMap.MapBool(Button::ScrollUp, this->mouseID, gainput::MouseButtonWheelUp);
+    this->inputMap.MapBool(Button::ScrollDown, this->mouseID, gainput::MouseButtonWheelDown);
 
     this->loadContent();
     this->flush();
@@ -221,7 +230,8 @@ void Application::transitionResource(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     ComPtr<ID3D12Resource> resource,
     D3D12_RESOURCE_STATES beforeState,
-    D3D12_RESOURCE_STATES afterState)
+    D3D12_RESOURCE_STATES afterState
+)
 {
     CD3DX12_RESOURCE_BARRIER barrier =
         CD3DX12_RESOURCE_BARRIER::Transition(resource.Get(), beforeState, afterState);
@@ -231,7 +241,8 @@ void Application::transitionResource(
 void Application::clearRTV(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     D3D12_CPU_DESCRIPTOR_HANDLE rtv,
-    FLOAT clearColor[4])
+    FLOAT clearColor[4]
+)
 {
     cmdList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
 }
@@ -239,77 +250,173 @@ void Application::clearRTV(
 void Application::clearDepth(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     D3D12_CPU_DESCRIPTOR_HANDLE dsv,
-    FLOAT depth)
+    FLOAT depth
+)
 {
     cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, depth, 0, 0, nullptr);
 }
 
-void Application::updateBufferResource(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    ID3D12Resource** pDestinationResource,
-    ID3D12Resource** pIntermediateResource,
-    size_t numElements,
-    size_t elementSize,
-    const void* bufferData,
-    D3D12_RESOURCE_FLAGS flags)
+// ---------------------------------------------------------------------------
+// Mega-buffers + structured draw-data buffer
+// ---------------------------------------------------------------------------
+
+void Application::createMegaBuffers()
 {
-    const size_t bufSize = numElements * elementSize;
+    constexpr uint32_t initialVertexCapacity = 1'000'000;
+    constexpr uint32_t initialIndexCapacity = 4'000'000;
+
+    megaVBCapacity = initialVertexCapacity;
+    megaIBCapacity = initialIndexCapacity;
+    megaVBUsed = 0;
+    megaIBUsed = 0;
+
+    // Mega vertex buffer (default heap)
     {
-        const CD3DX12_HEAP_PROPERTIES pHeapProperties(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC pDesc = CD3DX12_RESOURCE_DESC::Buffer(bufSize, flags);
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        const CD3DX12_RESOURCE_DESC desc =
+            CD3DX12_RESOURCE_DESC::Buffer(megaVBCapacity * sizeof(VertexPBR));
         chkDX(device->CreateCommittedResource(
-            &pHeapProperties, D3D12_HEAP_FLAG_NONE, &pDesc, D3D12_RESOURCE_STATE_COPY_DEST,
-            nullptr, IID_PPV_ARGS(pDestinationResource)
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+            IID_PPV_ARGS(&megaVB)
         ));
     }
-    if (bufferData) {
-        const CD3DX12_HEAP_PROPERTIES pHeapProperties(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC pDesc = CD3DX12_RESOURCE_DESC::Buffer(bufSize);
+    megaVBV.BufferLocation = megaVB->GetGPUVirtualAddress();
+    megaVBV.SizeInBytes = megaVBCapacity * sizeof(VertexPBR);
+    megaVBV.StrideInBytes = sizeof(VertexPBR);
+
+    // Mega index buffer (default heap)
+    {
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        const CD3DX12_RESOURCE_DESC desc =
+            CD3DX12_RESOURCE_DESC::Buffer(megaIBCapacity * sizeof(uint32_t));
         chkDX(device->CreateCommittedResource(
-            &pHeapProperties, D3D12_HEAP_FLAG_NONE, &pDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
-            nullptr, IID_PPV_ARGS(pIntermediateResource)
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+            IID_PPV_ARGS(&megaIB)
         ));
-        D3D12_SUBRESOURCE_DATA subresourceData = {};
-        subresourceData.pData       = bufferData;
-        subresourceData.RowPitch    = bufSize;
-        subresourceData.SlicePitch  = subresourceData.RowPitch;
-        ::UpdateSubresources(
-            cmdList.Get(), *pDestinationResource, *pIntermediateResource, 0, 0, 1,
-            &subresourceData
-        );
     }
+    megaIBV.BufferLocation = megaIB->GetGPUVirtualAddress();
+    megaIBV.Format = DXGI_FORMAT_R32_UINT;
+    megaIBV.SizeInBytes = megaIBCapacity * sizeof(uint32_t);
+
+    spdlog::info(
+        "Created mega-buffers: VB {}MB, IB {}MB",
+        megaVBCapacity * sizeof(VertexPBR) / (1024 * 1024),
+        megaIBCapacity * sizeof(uint32_t) / (1024 * 1024)
+    );
 }
 
-GpuMesh Application::uploadMesh(
+void Application::createDrawDataBuffers()
+{
+    // Triple-buffered upload heaps for per-draw structured buffer
+    for (uint32_t i = 0; i < nBuffers; ++i) {
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+        const CD3DX12_RESOURCE_DESC desc =
+            CD3DX12_RESOURCE_DESC::Buffer(maxDrawsPerFrame * sizeof(SceneConstantBuffer));
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&drawDataBuffer[i])
+        ));
+        // Persistently map
+        void* mapped = nullptr;
+        chkDX(drawDataBuffer[i]->Map(0, nullptr, &mapped));
+        drawDataMapped[i] = static_cast<SceneConstantBuffer*>(mapped);
+    }
+
+    // SRV heap for draw-data buffers (one SRV per frame-in-flight)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.NumDescriptors = nBuffers;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&sceneSrvHeap)));
+    }
+    sceneSrvDescSize =
+        device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // Create one SRV per frame buffer
+    for (uint32_t i = 0; i < nBuffers; ++i) {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Buffer.FirstElement = 0;
+        srvDesc.Buffer.NumElements = maxDrawsPerFrame;
+        srvDesc.Buffer.StructureByteStride = sizeof(SceneConstantBuffer);
+        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
+            sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i),
+            sceneSrvDescSize
+        );
+        device->CreateShaderResourceView(drawDataBuffer[i].Get(), &srvDesc, handle);
+    }
+
+    spdlog::info("Created draw-data structured buffers ({} max draws)", maxDrawsPerFrame);
+}
+
+MeshRef Application::appendToMegaBuffers(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     const std::vector<VertexPBR>& vertices,
     const std::vector<uint32_t>& indices,
-    std::vector<ComPtr<ID3D12Resource>>& temps)
+    int materialIdx,
+    std::vector<ComPtr<ID3D12Resource>>& temps
+)
 {
-    GpuMesh mesh;
-    mesh.numIndices = static_cast<uint32_t>(indices.size());
+    uint32_t numVerts = static_cast<uint32_t>(vertices.size());
+    uint32_t numIndices = static_cast<uint32_t>(indices.size());
 
-    // Intermediate upload heaps: must survive until GPU executes the command list.
-    // Caller is responsible for keeping `temps` alive until after waitForFenceVal.
-    ComPtr<ID3D12Resource> intermediateVB, intermediateIB;
-    updateBufferResource(
-        cmdList, &mesh.vb, &intermediateVB, vertices.size(), sizeof(VertexPBR), vertices.data()
-    );
-    updateBufferResource(
-        cmdList, &mesh.ib, &intermediateIB, indices.size(), sizeof(uint32_t), indices.data()
-    );
+    // TODO: grow mega-buffers if capacity exceeded (for now, assert)
+    assert(megaVBUsed + numVerts <= megaVBCapacity && "Mega VB capacity exceeded");
+    assert(megaIBUsed + numIndices <= megaIBCapacity && "Mega IB capacity exceeded");
 
-    mesh.vbv.BufferLocation = mesh.vb->GetGPUVirtualAddress();
-    mesh.vbv.SizeInBytes    = static_cast<UINT>(vertices.size() * sizeof(VertexPBR));
-    mesh.vbv.StrideInBytes  = sizeof(VertexPBR);
+    // Upload vertex data via intermediate buffer
+    {
+        size_t byteSize = numVerts * sizeof(VertexPBR);
+        size_t dstOffset = megaVBUsed * sizeof(VertexPBR);
+        ComPtr<ID3D12Resource> upload;
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&upload)
+        ));
+        void* mapped = nullptr;
+        chkDX(upload->Map(0, nullptr, &mapped));
+        memcpy(mapped, vertices.data(), byteSize);
+        upload->Unmap(0, nullptr);
+        cmdList->CopyBufferRegion(megaVB.Get(), dstOffset, upload.Get(), 0, byteSize);
+        temps.push_back(std::move(upload));
+    }
 
-    mesh.ibv.BufferLocation = mesh.ib->GetGPUVirtualAddress();
-    mesh.ibv.Format         = DXGI_FORMAT_R32_UINT;
-    mesh.ibv.SizeInBytes    = static_cast<UINT>(indices.size() * sizeof(uint32_t));
+    // Upload index data via intermediate buffer
+    {
+        size_t byteSize = numIndices * sizeof(uint32_t);
+        size_t dstOffset = megaIBUsed * sizeof(uint32_t);
+        ComPtr<ID3D12Resource> upload;
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&upload)
+        ));
+        void* mapped = nullptr;
+        chkDX(upload->Map(0, nullptr, &mapped));
+        memcpy(mapped, indices.data(), byteSize);
+        upload->Unmap(0, nullptr);
+        cmdList->CopyBufferRegion(megaIB.Get(), dstOffset, upload.Get(), 0, byteSize);
+        temps.push_back(std::move(upload));
+    }
 
-    temps.push_back(std::move(intermediateVB));
-    temps.push_back(std::move(intermediateIB));
-    return mesh;
+    MeshRef ref;
+    ref.vertexOffset = megaVBUsed;
+    ref.indexOffset = megaIBUsed;
+    ref.indexCount = numIndices;
+    ref.materialIndex = materialIdx;
+
+    megaVBUsed += numVerts;
+    megaIBUsed += numIndices;
+
+    return ref;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,16 +427,15 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
 {
     assert(this->contentLoaded);
     this->flush();
-    width  = std::max(1u, width);
+    width = std::max(1u, width);
     height = std::max(1u, height);
 
     D3D12_CLEAR_VALUE optimizedClearValue = {};
-    optimizedClearValue.Format                   = DXGI_FORMAT_D32_FLOAT;
-    optimizedClearValue.DepthStencil             = {1.0f, 0};
+    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    optimizedClearValue.DepthStencil = { 1.0f, 0 };
     const CD3DX12_HEAP_PROPERTIES pHeapProperties(D3D12_HEAP_TYPE_DEFAULT);
     const CD3DX12_RESOURCE_DESC pDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
     );
     chkDX(device->CreateCommittedResource(
         &pHeapProperties, D3D12_HEAP_FLAG_NONE, &pDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE,
@@ -337,10 +443,10 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     ));
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-    dsvDesc.Format             = DXGI_FORMAT_D32_FLOAT;
-    dsvDesc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
-    dsvDesc.Flags              = D3D12_DSV_FLAG_NONE;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
     device->CreateDepthStencilView(
         this->depthBuffer.Get(), &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
     );
@@ -361,17 +467,17 @@ ComPtr<IDXGISwapChain4> Application::createSwapChain()
     chkDX(CreateDXGIFactory2(createFactoryFlags, IID_PPV_ARGS(&dxgiFactory4)));
 
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-    swapChainDesc.Width       = this->clientWidth;
-    swapChainDesc.Height      = this->clientHeight;
-    swapChainDesc.Format      = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapChainDesc.Stereo      = FALSE;
-    swapChainDesc.SampleDesc  = {1, 0};
+    swapChainDesc.Width = this->clientWidth;
+    swapChainDesc.Height = this->clientHeight;
+    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swapChainDesc.Stereo = FALSE;
+    swapChainDesc.SampleDesc = { 1, 0 };
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.BufferCount = this->nBuffers;
-    swapChainDesc.Scaling     = DXGI_SCALING_STRETCH;
-    swapChainDesc.SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    swapChainDesc.AlphaMode   = DXGI_ALPHA_MODE_UNSPECIFIED;
-    swapChainDesc.Flags       = this->tearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
+    swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+    swapChainDesc.Flags = this->tearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
     ComPtr<IDXGISwapChain1> swapChain1;
     chkDX(dxgiFactory4->CreateSwapChainForHwnd(
@@ -389,7 +495,7 @@ Application::createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescrip
     ComPtr<ID3D12DescriptorHeap> descriptorHeap;
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.NumDescriptors = numDescriptors;
-    desc.Type           = type;
+    desc.Type = type;
     chkDX(this->device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
     return descriptorHeap;
 }
@@ -405,7 +511,7 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
         chkDX(this->swapChain->GetBuffer(i, IID_PPV_ARGS(&backBuffer)));
         this->device->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
         this->backBuffers[i] = backBuffer;
-        rtvHandle.Offset(rtvDescriptorSize);
+        rtvHandle.Offset(static_cast<INT>(rtvDescriptorSize));
     }
 }
 
@@ -425,13 +531,26 @@ void Application::update()
         std::string objData = GetResourceString(IDR_TEAPOT_OBJ);
         if (!objData.empty()) {
             std::istringstream objStream(objData);
-            class RMR : public tinyobj::MaterialReader {
-            public:
-                bool operator()(const std::string&, std::vector<tinyobj::material_t>* mats,
-                    std::map<std::string,int>* map, std::string* warn, std::string* err) override {
+            class RMR : public tinyobj::MaterialReader
+            {
+               public:
+                bool operator()(
+                    const std::string&,
+                    std::vector<tinyobj::material_t>* mats,
+                    std::map<std::string, int>* map,
+                    std::string* warn,
+                    std::string* err
+                ) override
+                {
                     std::string mtl = GetResourceString(IDR_TEAPOT_MTL);
-                    if (mtl.empty()) { if (warn) *warn="no mtl"; return false; }
-                    std::istringstream s(mtl); tinyobj::LoadMtl(map, mats, &s, warn, err);
+                    if (mtl.empty()) {
+                        if (warn) {
+                            *warn = "no mtl";
+                        }
+                        return false;
+                    }
+                    std::istringstream s(mtl);
+                    tinyobj::LoadMtl(map, mats, &s, warn, err);
                     return true;
                 }
             };
@@ -443,24 +562,29 @@ void Application::update()
             tinyobj::LoadObj(&attrib, &shapes, &objMats, &warn, &err, &objStream, &mr);
             std::vector<VertexPBR> verts;
             std::vector<uint32_t> idxs;
-            for (const auto& shape : shapes)
+            for (const auto& shape : shapes) {
                 for (const auto& idx : shape.mesh.indices) {
                     VertexPBR v{};
-                    v.position = {attrib.vertices[3*idx.vertex_index+0],
-                                  attrib.vertices[3*idx.vertex_index+1],
-                                  attrib.vertices[3*idx.vertex_index+2]};
+                    v.position = { attrib.vertices[3 * idx.vertex_index + 0],
+                                   attrib.vertices[3 * idx.vertex_index + 1],
+                                   attrib.vertices[3 * idx.vertex_index + 2] };
                     v.normal = idx.normal_index >= 0
-                        ? XMFLOAT3{attrib.normals[3*idx.normal_index+0],
-                                   attrib.normals[3*idx.normal_index+1],
-                                   attrib.normals[3*idx.normal_index+2]}
-                        : XMFLOAT3{0,1,0};
-                    v.uv = {0,0};
-                    verts.push_back(v); idxs.push_back((uint32_t)idxs.size());
+                                   ? XMFLOAT3{ attrib.normals[3 * idx.normal_index + 0],
+                                               attrib.normals[3 * idx.normal_index + 1],
+                                               attrib.normals[3 * idx.normal_index + 2] }
+                                   : XMFLOAT3{ 0, 1, 0 };
+                    v.uv = { 0, 0 };
+                    verts.push_back(v);
+                    idxs.push_back((uint32_t)idxs.size());
                 }
-            Material defMat; defMat.name = "Teapot"; defMat.roughness = 0.3f;
+            }
+            Material defMat;
+            defMat.name = "Teapot";
+            defMat.roughness = 0.3f;
             materials.push_back(defMat);
-            GpuMesh m = uploadMesh(cl, verts, idxs, temps);
-            m.materialIdx = 0; meshes.push_back(std::move(m));
+            MeshRef meshRef = appendToMegaBuffers(cl, verts, idxs, 0, temps);
+            Transform tf;
+            ecsWorld.entity().set(tf).set(meshRef);
         }
         uint64_t fv = cmdQueue.execCmdList(cl);
         cmdQueue.waitForFenceVal(fv);
@@ -468,51 +592,54 @@ void Application::update()
     if (!pendingGltfPath.empty()) {
         std::string path = std::move(pendingGltfPath);
         pendingGltfPath.clear();
-        if (!loadGltf(path))
+        if (!loadGltf(path)) {
             spdlog::error("Failed to load GLB: {}", path);
+        }
     }
 
     [[maybe_unused]] static double elapsedSeconds = 0.0;
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
 
-    auto t1       = clock.now();
+    auto t1 = clock.now();
     auto deltaTime = t1 - t0;
-    t0            = t1;
-    [[maybe_unused]] const double dt = deltaTime.count() * 1e-9;
+    t0 = t1;
+    [[maybe_unused]] const double dt = static_cast<double>(deltaTime.count()) * 1e-9;
     elapsedSeconds += dt;
 
     const float w = static_cast<float>(this->clientWidth);
 
-    this->mouseDelta = {this->inputMap.GetFloatDelta(Button::AxisDeltaX),
-                        this->inputMap.GetFloatDelta(Button::AxisDeltaY)};
-    this->mousePos   = {this->inputMap.GetFloat(Button::AxisX),
-                        this->inputMap.GetFloat(Button::AxisY)};
+    this->mouseDelta = { this->inputMap.GetFloatDelta(Button::AxisDeltaX),
+                         this->inputMap.GetFloatDelta(Button::AxisDeltaY) };
+    this->mousePos = { this->inputMap.GetFloat(Button::AxisX),
+                       this->inputMap.GetFloat(Button::AxisY) };
 
     this->matModel = XMMatrixIdentity();
     if (this->inputMap.GetBool(Button::LeftClick)) {
         this->cam.pitch += (this->mouseDelta.y / w) * 180_deg;
-        this->cam.yaw   -= (this->mouseDelta.x / w) * 360_deg;
-        this->cam.pitch  = std::clamp(this->cam.pitch, -89.9_deg, 89.9_deg);
+        this->cam.yaw -= (this->mouseDelta.x / w) * 360_deg;
+        this->cam.pitch = std::clamp(this->cam.pitch, -89.9_deg, 89.9_deg);
     }
     if (this->inputMap.GetBool(Button::RightClick)) {
         this->cam.radius += this->mouseDelta.y / w;
     }
     this->cam.aspectRatio = w / static_cast<float>(this->clientHeight);
-    if (this->inputMap.GetBoolWasDown(Button::ScrollUp))
+    if (this->inputMap.GetBoolWasDown(Button::ScrollUp)) {
         this->cam.radius *= 1.25f;
-    if (this->inputMap.GetBoolWasDown(Button::ScrollDown))
+    }
+    if (this->inputMap.GetBoolWasDown(Button::ScrollDown)) {
         this->cam.radius *= 0.8f;
+    }
 }
 
 void Application::render()
 {
     auto backBuffer = this->backBuffers[this->curBackBufIdx];
-    auto cmdList    = this->cmdQueue.getCmdList();
+    auto cmdList = this->cmdQueue.getCmdList();
 
     // --- Scene pass: render to HDR render target ---
     {
-        FLOAT clearColor[] = {bgColor[0], bgColor[1], bgColor[2], 1.0f};
+        FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(bloomRtvHeap->GetCPUDescriptorHandleForHeapStart());
         this->clearRTV(cmdList, hdrRtv, clearColor);
         auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -525,39 +652,72 @@ void Application::render()
         cmdList->RSSetScissorRects(1, &this->scissorRect);
         cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
 
-        // Build base scene CB (camera, lights — material filled per draw)
-        alignas(16) SceneConstantBuffer scb = {};
-        scb.viewProj = this->cam.view() * this->cam.proj();
+        // Bind mega-buffers once
+        cmdList->IASetVertexBuffers(0, 1, &megaVBV);
+        cmdList->IASetIndexBuffer(&megaIBV);
 
+        // Bind scene SRV heap and draw-data structured buffer for this frame
+        ID3D12DescriptorHeap* sceneHeaps[] = { sceneSrvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, sceneHeaps);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+            sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(curBackBufIdx), sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+
+        // Build shared per-frame data
+        XMMATRIX viewProj = this->cam.view() * this->cam.proj();
         float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
         float camY = this->cam.radius * sin(this->cam.pitch);
         float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
-        scb.cameraPos = XMFLOAT4(camX, camY, camZ, 1.0f);
-
-        scb.lightPos   = XMFLOAT4(10.0f, 15.0f, -10.0f, 1.0f);
-        scb.lightColor = XMFLOAT4(lightBrightness, lightBrightness, lightBrightness, 1.0f);
-        scb.ambientColor = XMFLOAT4(
+        XMFLOAT4 cameraPos(camX, camY, camZ, 1.0f);
+        XMFLOAT4 lightPos(10.0f, 15.0f, -10.0f, 1.0f);
+        XMFLOAT4 lightColor(lightBrightness, lightBrightness, lightBrightness, 1.0f);
+        XMFLOAT4 ambientColor(
             bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
             bgColor[2] * ambientBrightness, 1.0f
         );
 
-        for (const auto& mesh : this->meshes) {
-            const Material& mat = this->materials[mesh.materialIdx];
+        // Fill structured buffer and collect draw commands
+        struct DrawCmd
+        {
+            uint32_t indexCount;
+            uint32_t indexOffset;
+            uint32_t vertexOffset;
+        };
+        std::vector<DrawCmd> drawCmds;
+        uint32_t drawIdx = 0;
+        SceneConstantBuffer* mapped = drawDataMapped[curBackBufIdx];
 
-            scb.model             = XMLoadFloat4x4(&mesh.transform) * this->matModel;
-            scb.albedo            = mat.albedo;
-            scb.roughness         = mat.roughness;
-            scb.metallic          = mat.metallic;
-            scb.emissiveStrength  = mat.emissiveStrength;
-            scb._pad              = 0.0f;
-            scb.emissive          = mat.emissive;
+        ecsWorld.each([&](const Transform& tf, const MeshRef& mesh) {
+            assert(drawIdx < maxDrawsPerFrame);
+            const Material& mat = this->materials[mesh.materialIndex];
 
-            cmdList->SetGraphicsRoot32BitConstants(
-                0, sizeof(SceneConstantBuffer) / 4, &scb, 0
+            SceneConstantBuffer& scb = mapped[drawIdx];
+            scb.model = XMLoadFloat4x4(&tf.world) * this->matModel;
+            scb.viewProj = viewProj;
+            scb.cameraPos = cameraPos;
+            scb.lightPos = lightPos;
+            scb.lightColor = lightColor;
+            scb.ambientColor = ambientColor;
+            scb.albedo = mat.albedo;
+            scb.roughness = mat.roughness;
+            scb.metallic = mat.metallic;
+            scb.emissiveStrength = mat.emissiveStrength;
+            scb._pad = 0.0f;
+            scb.emissive = mat.emissive;
+
+            drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
+            drawIdx++;
+        });
+
+        // Issue draws — only 1 root constant update per draw
+        for (uint32_t i = 0; i < drawIdx; ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+            cmdList->DrawIndexedInstanced(
+                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
-            cmdList->IASetVertexBuffers(0, 1, &mesh.vbv);
-            cmdList->IASetIndexBuffer(&mesh.ibv);
-            cmdList->DrawIndexedInstanced(mesh.numIndices, 1, 0, 0, 0);
         }
     }
 
@@ -567,8 +727,7 @@ void Application::render()
 
     {
         this->transitionResource(
-            cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PRESENT
+            cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT
         );
         this->transitionResource(
             cmdList, hdrRenderTarget, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -583,9 +742,8 @@ void Application::render()
 
         this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
 
-        UINT syncInterval  = this->vsync ? 1 : 0;
-        UINT presentFlags  = this->tearingSupported && !this->vsync
-                             ? DXGI_PRESENT_ALLOW_TEARING : 0;
+        UINT syncInterval = this->vsync ? 1 : 0;
+        UINT presentFlags = this->tearingSupported && !this->vsync ? DXGI_PRESENT_ALLOW_TEARING : 0;
         chkDX(this->swapChain->Present(syncInterval, presentFlags));
         this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
         this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
@@ -596,13 +754,13 @@ void Application::render()
                 spdlog::info("Saving screenshot and exiting...");
                 HRESULT hr = DirectX::SaveWICTextureToFile(
                     this->cmdQueue.queue.Get(), backBuffer.Get(), GUID_ContainerFormatPng,
-                    L"screenshot.png", D3D12_RESOURCE_STATE_PRESENT,
-                    D3D12_RESOURCE_STATE_PRESENT
+                    L"screenshot.png", D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT
                 );
-                if (FAILED(hr))
+                if (FAILED(hr)) {
                     spdlog::error(
                         "Failed to save screenshot! HRESULT: {:#010x}", static_cast<uint32_t>(hr)
                     );
+                }
                 Window::get()->doExit = true;
             }
         }
@@ -615,7 +773,7 @@ void Application::render()
 
 void Application::createBloomResources(uint32_t width, uint32_t height)
 {
-    width  = std::max(1u, width);
+    width = std::max(1u, width);
     height = std::max(1u, height);
 
     const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
@@ -623,18 +781,17 @@ void Application::createBloomResources(uint32_t width, uint32_t height)
     // HDR scene RT
     {
         D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format    = hdrFormat;
-        clearVal.Color[0]  = 0.4f;
-        clearVal.Color[1]  = 0.6f;
-        clearVal.Color[2]  = 0.9f;
-        clearVal.Color[3]  = 1.0f;
+        clearVal.Format = hdrFormat;
+        clearVal.Color[0] = 0.4f;
+        clearVal.Color[1] = 0.6f;
+        clearVal.Color[2] = 0.9f;
+        clearVal.Color[3] = 1.0f;
         const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
         const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
             hdrFormat, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
         );
         chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
             IID_PPV_ARGS(&this->hdrRenderTarget)
         ));
     }
@@ -649,8 +806,7 @@ void Application::createBloomResources(uint32_t width, uint32_t height)
             hdrFormat, mipW, mipH, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
         );
         chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
             IID_PPV_ARGS(&this->bloomMips[i])
         ));
         mipW = std::max(1u, mipW / 2);
@@ -660,14 +816,14 @@ void Application::createBloomResources(uint32_t width, uint32_t height)
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.NumDescriptors = 1 + bloomMipCount;
-        desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&this->bloomRtvHeap)));
     }
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.NumDescriptors = 1 + bloomMipCount;
-        desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&this->srvHeap)));
     }
     this->srvDescSize =
@@ -678,40 +834,40 @@ void Application::createBloomResources(uint32_t width, uint32_t height)
     CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(srvHeap->GetCPUDescriptorHandleForHeapStart());
 
     device->CreateRenderTargetView(hdrRenderTarget.Get(), nullptr, rtvHandle);
-    rtvHandle.Offset(rtvInc);
+    rtvHandle.Offset(static_cast<INT>(rtvInc));
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format                  = hdrFormat;
-    srvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Format = hdrFormat;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Texture2D.MipLevels     = 1;
+    srvDesc.Texture2D.MipLevels = 1;
     device->CreateShaderResourceView(hdrRenderTarget.Get(), &srvDesc, srvHandle);
-    srvHandle.Offset(srvDescSize);
+    srvHandle.Offset(static_cast<INT>(srvDescSize));
 
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
         device->CreateRenderTargetView(bloomMips[i].Get(), nullptr, rtvHandle);
-        rtvHandle.Offset(rtvInc);
+        rtvHandle.Offset(static_cast<INT>(rtvInc));
         device->CreateShaderResourceView(bloomMips[i].Get(), &srvDesc, srvHandle);
-        srvHandle.Offset(srvDescSize);
+        srvHandle.Offset(static_cast<INT>(srvDescSize));
     }
 }
 
 void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 {
-    ID3D12DescriptorHeap* heaps[] = {srvHeap.Get()};
+    ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    UINT rtvInc     = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    UINT rtvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     auto bloomRtvBase = bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
-    auto srvGpuBase   = srvHeap->GetGPUDescriptorHandleForHeapStart();
+    auto srvGpuBase = srvHeap->GetGPUDescriptorHandleForHeapStart();
 
-    auto getRtv    = [&](uint32_t idx) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        return CD3DX12_CPU_DESCRIPTOR_HANDLE(bloomRtvBase, idx, rtvInc);
+    auto getRtv = [&](uint32_t idx) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        return CD3DX12_CPU_DESCRIPTOR_HANDLE(bloomRtvBase, static_cast<INT>(idx), rtvInc);
     };
     auto getSrvGpu = [&](uint32_t idx) -> D3D12_GPU_DESCRIPTOR_HANDLE {
-        return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, idx, srvDescSize);
+        return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, static_cast<INT>(idx), srvDescSize);
     };
 
     uint32_t mipW[bloomMipCount], mipH[bloomMipCount];
@@ -722,7 +878,10 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         mipH[i] = std::max(1u, mipH[i - 1] / 2);
     }
 
-    struct BloomCB { float texelSizeX, texelSizeY, param0, param1; };
+    struct BloomCB
+    {
+        float texelSizeX, texelSizeY, param0, param1;
+    };
 
     // Prefilter
     transitionResource(
@@ -734,10 +893,11 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     auto mip0Rtv = getRtv(1);
     cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
     CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
-    D3D12_RECT sr = {0, 0, (LONG)mipW[0], (LONG)mipH[0]};
+    D3D12_RECT sr = { 0, 0, (LONG)mipW[0], (LONG)mipH[0] };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    BloomCB cb = {1.0f / clientWidth, 1.0f / clientHeight, bloomThreshold, 0.5f};
+    BloomCB cb = { 1.0f / static_cast<float>(clientWidth), 1.0f / static_cast<float>(clientHeight),
+                   bloomThreshold, 0.5f };
     cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 
@@ -752,10 +912,10 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         auto rtv = getRtv(2 + i);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
-        sr = {0, 0, (LONG)mipW[i + 1], (LONG)mipH[i + 1]};
+        sr = { 0, 0, (LONG)mipW[i + 1], (LONG)mipH[i + 1] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = {1.0f / mipW[i], 1.0f / mipH[i], 0, 0};
+        cb = { 1.0f / static_cast<float>(mipW[i]), 1.0f / static_cast<float>(mipH[i]), 0, 0 };
         cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }
@@ -775,10 +935,11 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         auto rtv = getRtv(1 + i);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
-        sr = {0, 0, (LONG)mipW[i], (LONG)mipH[i]};
+        sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = {1.0f / mipW[i + 1], 1.0f / mipH[i + 1], 1.0f, 0};
+        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]), 1.0f,
+               0 };
         cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }
@@ -796,14 +957,18 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));
     cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(1));
     CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
-        rtvHeap->GetCPUDescriptorHandleForHeapStart(), curBackBufIdx, rtvDescSize
+        rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx), rtvDescSize
     );
     cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
     vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)clientWidth, (float)clientHeight);
-    sr = {0, 0, (LONG)clientWidth, (LONG)clientHeight};
+    sr = { 0, 0, (LONG)clientWidth, (LONG)clientHeight };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    struct { float a, b, c; uint32_t d; } compositeCB = {0, 0, bloomIntensity, (uint32_t)tonemapMode};
+    struct
+    {
+        float a, b, c;
+        uint32_t d;
+    } compositeCB = { 0, 0, bloomIntensity, (uint32_t)tonemapMode };
     cmdList->SetGraphicsRoot32BitConstants(2, 4, &compositeCB, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 }
@@ -812,13 +977,75 @@ void Application::renderBloom(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 // ImGui
 // ---------------------------------------------------------------------------
 
+static void styleColorsDracula()
+{
+    auto& colors = ImGui::GetStyle().Colors;
+    colors[ImGuiCol_Text] = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.36f, 0.42f, 0.47f, 1.00f);
+    colors[ImGuiCol_WindowBg] = ImVec4(0.01f, 0.05f, 0.07f, 1.00f);
+    colors[ImGuiCol_ChildBg] = ImVec4(0.15f, 0.18f, 0.22f, 1.00f);
+    colors[ImGuiCol_PopupBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.94f);
+    colors[ImGuiCol_Border] = ImVec4(0.08f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.12f, 0.20f, 0.28f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.09f, 0.12f, 0.14f, 1.00f);
+    colors[ImGuiCol_TitleBg] = ImVec4(0.09f, 0.12f, 0.14f, 0.65f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.08f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.00f, 0.00f, 0.00f, 0.51f);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(0.15f, 0.18f, 0.22f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.02f, 0.02f, 0.02f, 0.39f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.20f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.18f, 0.22f, 0.25f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.09f, 0.21f, 0.31f, 1.00f);
+    colors[ImGuiCol_CheckMark] = ImVec4(0.28f, 0.56f, 1.00f, 1.00f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.28f, 0.56f, 1.00f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.37f, 0.61f, 1.00f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(0.20f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.28f, 0.56f, 1.00f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.06f, 0.53f, 0.98f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.20f, 0.25f, 0.29f, 0.55f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    colors[ImGuiCol_Separator] = ImVec4(0.20f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.10f, 0.40f, 0.75f, 0.78f);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(0.10f, 0.40f, 0.75f, 1.00f);
+    colors[ImGuiCol_ResizeGrip] = ImVec4(0.26f, 0.59f, 0.98f, 0.25f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
+    colors[ImGuiCol_Tab] = ImVec4(0.11f, 0.15f, 0.17f, 1.00f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.80f);
+    colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_TabUnfocused] = ImVec4(0.11f, 0.15f, 0.17f, 1.00f);
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.11f, 0.15f, 0.17f, 1.00f);
+    colors[ImGuiCol_PlotLines] = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
+    colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
+    colors[ImGuiCol_PlotHistogram] = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.60f, 0.00f, 1.00f);
+    colors[ImGuiCol_TextSelectedBg] = ImVec4(0.26f, 0.59f, 0.98f, 0.35f);
+    colors[ImGuiCol_DragDropTarget] = ImVec4(1.00f, 1.00f, 0.00f, 0.90f);
+    colors[ImGuiCol_NavHighlight] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
+    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
+
+    auto& style = ImGui::GetStyle();
+    style.TabRounding = 4;
+    style.ScrollbarRounding = 4;
+    style.WindowRounding = 7;
+    style.GrabRounding = 3;
+    style.FrameRounding = 3;
+    style.PopupRounding = 4;
+    style.ChildRounding = 4;
+}
+
 void Application::initImGui()
 {
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.NumDescriptors = 16;
-        desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&imguiSrvHeap)));
     }
 
@@ -826,28 +1053,58 @@ void Application::initImGui()
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(hWnd);
 
-    ImGui_ImplDX12_InitInfo initInfo      = {};
-    initInfo.Device                       = device.Get();
-    initInfo.CommandQueue                 = cmdQueue.queue.Get();
-    initInfo.NumFramesInFlight            = nBuffers;
-    initInfo.RTVFormat                    = DXGI_FORMAT_R8G8B8A8_UNORM;
-    initInfo.DSVFormat                    = DXGI_FORMAT_UNKNOWN;
-    initInfo.SrvDescriptorHeap            = imguiSrvHeap.Get();
+    // DPI scaling
+    float dpiScale = ImGui_ImplWin32_GetDpiScaleForHwnd(hWnd) * 1.0f;
+    ImGui::GetStyle().ScaleAllSizes(dpiScale);
+
+    // Font: try Roboto-Medium.ttf next to the exe, fall back to default
+    float fontSize = 13.0f * dpiScale;
+    {
+        // Build path relative to the running exe so it works regardless of cwd
+        char exePath[MAX_PATH] = {};
+        GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+        std::string fontPath = exePath;
+        auto lastSlash = fontPath.find_last_of("\\/");
+        if (lastSlash != std::string::npos) {
+            fontPath = fontPath.substr(0, lastSlash + 1);
+        }
+        fontPath += "Roboto-Medium.ttf";
+
+        ImFontConfig fontCfg;
+        fontCfg.OversampleH = 2;
+        fontCfg.OversampleV = 2;
+        if (GetFileAttributesA(fontPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            io.Fonts->AddFontFromFileTTF(fontPath.c_str(), fontSize, &fontCfg);
+        } else {
+            io.Fonts->AddFontDefault();
+            io.FontGlobalScale = dpiScale;
+        }
+    }
+
+    styleColorsDracula();
+
+    ImGui_ImplDX12_InitInfo initInfo = {};
+    initInfo.Device = device.Get();
+    initInfo.CommandQueue = cmdQueue.queue.Get();
+    initInfo.NumFramesInFlight = nBuffers;
+    initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    initInfo.SrvDescriptorHeap = imguiSrvHeap.Get();
     initInfo.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* info,
                                        D3D12_CPU_DESCRIPTOR_HANDLE* outCpu,
                                        D3D12_GPU_DESCRIPTOR_HANDLE* outGpu) {
         auto* app = static_cast<Application*>(info->UserData);
-        UINT inc  = app->device->GetDescriptorHandleIncrementSize(
-            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
-        );
+        UINT inc =
+            app->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         *outCpu = CD3DX12_CPU_DESCRIPTOR_HANDLE(
-            app->imguiSrvHeap->GetCPUDescriptorHandleForHeapStart(), app->imguiSrvNextIndex, inc
+            app->imguiSrvHeap->GetCPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(app->imguiSrvNextIndex), inc
         );
         *outGpu = CD3DX12_GPU_DESCRIPTOR_HANDLE(
-            app->imguiSrvHeap->GetGPUDescriptorHandleForHeapStart(), app->imguiSrvNextIndex, inc
+            app->imguiSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(app->imguiSrvNextIndex), inc
         );
         app->imguiSrvNextIndex++;
     };
@@ -870,71 +1127,84 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("Settings");
+    if (ImGui::BeginMainMenuBar()) {
+        // --- Bloom ---
+        if (ImGui::BeginMenu("Bloom")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::SliderFloat("Threshold", &bloomThreshold, 0.0f, 3.0f);
+            ImGui::SliderFloat("Intensity", &bloomIntensity, 0.0f, 5.0f);
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
 
-    // --- Bloom ---
-    if (ImGui::CollapsingHeader("Bloom", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderFloat("Threshold", &bloomThreshold, 0.0f, 3.0f);
-        ImGui::SliderFloat("Intensity",  &bloomIntensity, 0.0f, 5.0f);
-    }
+        // --- Tonemapping ---
+        if (ImGui::BeginMenu("Tonemap")) {
+            const char* tonemappers[] = { "ACES Filmic", "AgX", "AgX Punchy", "Gran Turismo",
+                                          "PBR Neutral" };
+            ImGui::PushItemWidth(180.0f);
+            ImGui::Combo("##tonemap", &tonemapMode, tonemappers, IM_ARRAYSIZE(tonemappers));
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
 
-    // --- Tonemapping ---
-    if (ImGui::CollapsingHeader("Tonemapping", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const char* tonemappers[] = {
-            "ACES Filmic", "AgX", "AgX Punchy", "Gran Turismo", "PBR Neutral"
-        };
-        ImGui::Combo("Tonemapper", &tonemapMode, tonemappers, IM_ARRAYSIZE(tonemappers));
-    }
+        // --- Scene lighting ---
+        if (ImGui::BeginMenu("Scene")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::ColorEdit3("Background", bgColor);
+            ImGui::SliderFloat("Light Brightness", &lightBrightness, 0.0f, 20.0f);
+            ImGui::SliderFloat("Ambient Brightness", &ambientBrightness, 0.0f, 2.0f);
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
 
-    // --- Scene lighting ---
-    if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::ColorEdit3("Background",       bgColor);
-        ImGui::SliderFloat("Light Brightness",   &lightBrightness,   0.0f, 20.0f);
-        ImGui::SliderFloat("Ambient Brightness", &ambientBrightness, 0.0f,  2.0f);
-    }
-
-    // --- Material editor ---
-    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (!materials.empty()) {
-            // Material selector (when GLB has multiple)
-            if (materials.size() > 1) {
-                std::vector<const char*> names;
-                names.reserve(materials.size());
-                for (const auto& m : materials) names.push_back(m.name.c_str());
-                ImGui::Combo(
-                    "Select", &selectedMaterialIdx, names.data(), (int)names.size()
-                );
+        // --- Material editor ---
+        if (ImGui::BeginMenu("Material")) {
+            ImGui::PushItemWidth(220.0f);
+            if (!materials.empty()) {
+                if (materials.size() > 1) {
+                    std::vector<const char*> names;
+                    names.reserve(materials.size());
+                    for (const auto& m : materials) {
+                        names.push_back(m.name.c_str());
+                    }
+                    ImGui::Combo("##matsel", &selectedMaterialIdx, names.data(), (int)names.size());
+                    ImGui::Separator();
+                }
+                Material& mat =
+                    materials[std::clamp(selectedMaterialIdx, 0, (int)materials.size() - 1)];
+                ImGui::ColorEdit4("Albedo", &mat.albedo.x);
+                ImGui::SliderFloat("Roughness", &mat.roughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("Metallic", &mat.metallic, 0.0f, 1.0f);
+                ImGui::ColorEdit3("Emissive", &mat.emissive.x);
+                ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 20.0f);
             }
-
-            Material& mat = materials[std::clamp(
-                selectedMaterialIdx, 0, (int)materials.size() - 1
-            )];
-
-            ImGui::ColorEdit4("Albedo",      &mat.albedo.x);
-            ImGui::SliderFloat("Roughness",  &mat.roughness,         0.0f, 1.0f);
-            ImGui::SliderFloat("Metallic",   &mat.metallic,          0.0f, 1.0f);
-            ImGui::ColorEdit3("Emissive",    &mat.emissive.x);
-            ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 20.0f);
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
         }
+
+        // --- Load GLB ---
+        if (ImGui::BeginMenu("Scene File")) {
+            ImGui::PushItemWidth(300.0f);
+            ImGui::InputText("##path", gltfPathBuf, sizeof(gltfPathBuf));
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            if (ImGui::MenuItem("Load")) {
+                if (gltfPathBuf[0] != '\0') {
+                    pendingGltfPath = gltfPathBuf;
+                }
+            }
+            if (ImGui::MenuItem("Reset to Teapot")) {
+                pendingResetToTeapot = true;
+            }
+            ImGui::EndMenu();
+        }
+
+        ImGui::EndMainMenuBar();
     }
 
-    // --- Load GLB ---
-    if (ImGui::CollapsingHeader("Load GLB", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::InputText("Path", gltfPathBuf, sizeof(gltfPathBuf));
-        if (ImGui::Button("Load")) {
-            std::string path(gltfPathBuf);
-            if (!path.empty())
-                pendingGltfPath = path;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Reset to Teapot"))
-            pendingResetToTeapot = true;
-    }
-
-    ImGui::End();
     ImGui::Render();
 
-    ID3D12DescriptorHeap* heaps[] = {imguiSrvHeap.Get()};
+    ID3D12DescriptorHeap* heaps[] = { imguiSrvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList.Get());
 }
@@ -946,9 +1216,15 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 void Application::clearScene()
 {
     flush();
-    meshes.clear();
     materials.clear();
     selectedMaterialIdx = 0;
+
+    // Reset mega-buffer offsets (reuse allocations)
+    megaVBUsed = 0;
+    megaIBUsed = 0;
+
+    // Clear all ECS entities with MeshRef
+    ecsWorld.delete_with<MeshRef>();
 }
 
 bool Application::loadGltf(const std::string& path)
@@ -961,12 +1237,15 @@ bool Application::loadGltf(const std::string& path)
 
     bool ok = false;
     if (path.size() >= 4 &&
-        (path.substr(path.size() - 4) == ".glb" || path.substr(path.size() - 4) == ".GLB"))
+        (path.substr(path.size() - 4) == ".glb" || path.substr(path.size() - 4) == ".GLB")) {
         ok = loader.LoadBinaryFromFile(&model, &err, &warn, path);
-    else
+    } else {
         ok = loader.LoadASCIIFromFile(&model, &err, &warn, path);
+    }
 
-    if (!warn.empty()) spdlog::warn("tinygltf: {}", warn);
+    if (!warn.empty()) {
+        spdlog::warn("tinygltf: {}", warn);
+    }
     if (!ok) {
         spdlog::error("tinygltf error: {}", err);
         return false;
@@ -985,19 +1264,15 @@ bool Application::loadGltf(const std::string& path)
             mat.name = gm.name.empty() ? "Material" : gm.name;
             const auto& pbr = gm.pbrMetallicRoughness;
             if (pbr.baseColorFactor.size() == 4) {
-                mat.albedo = {
-                    (float)pbr.baseColorFactor[0], (float)pbr.baseColorFactor[1],
-                    (float)pbr.baseColorFactor[2], (float)pbr.baseColorFactor[3]
-                };
+                mat.albedo = { (float)pbr.baseColorFactor[0], (float)pbr.baseColorFactor[1],
+                               (float)pbr.baseColorFactor[2], (float)pbr.baseColorFactor[3] };
             }
             mat.roughness = (float)pbr.roughnessFactor;
-            mat.metallic  = (float)pbr.metallicFactor;
+            mat.metallic = (float)pbr.metallicFactor;
             if (gm.emissiveFactor.size() == 3) {
-                mat.emissive = {
-                    (float)gm.emissiveFactor[0], (float)gm.emissiveFactor[1],
-                    (float)gm.emissiveFactor[2], 0.0f
-                };
-                float maxE = std::max({mat.emissive.x, mat.emissive.y, mat.emissive.z});
+                mat.emissive = { (float)gm.emissiveFactor[0], (float)gm.emissiveFactor[1],
+                                 (float)gm.emissiveFactor[2], 0.0f };
+                float maxE = std::max({ mat.emissive.x, mat.emissive.y, mat.emissive.z });
                 if (maxE > 0.001f) {
                     mat.emissiveStrength = maxE;
                     mat.emissive.x /= maxE;
@@ -1020,43 +1295,47 @@ bool Application::loadGltf(const std::string& path)
     }
 
     std::function<void(int, XMMATRIX)> visitNode = [&](int nodeIdx, XMMATRIX parentTf) {
-        const auto& node    = model.nodes[nodeIdx];
-        XMMATRIX    worldTf = NodeTransform(node) * parentTf;
+        const auto& node = model.nodes[nodeIdx];
+        XMMATRIX worldTf = NodeTransform(node) * parentTf;
 
         if (node.mesh >= 0) {
             const auto& gMesh = model.meshes[node.mesh];
             for (const auto& prim : gMesh.primitives) {
                 // Default mode (4) = TRIANGLES; skip non-triangle primitives
-                if (prim.mode != TINYGLTF_MODE_TRIANGLES)
+                if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
                     continue;
+                }
 
                 // Positions
                 auto posIt = prim.attributes.find("POSITION");
-                if (posIt == prim.attributes.end()) continue;
+                if (posIt == prim.attributes.end()) {
+                    continue;
+                }
                 auto positions = AccessorToFloatN<3>(model, posIt->second);
 
                 // Normals (optional)
                 std::vector<std::array<float, 3>> normals;
                 auto normIt = prim.attributes.find("NORMAL");
-                if (normIt != prim.attributes.end())
+                if (normIt != prim.attributes.end()) {
                     normals = AccessorToFloatN<3>(model, normIt->second);
+                }
 
                 // UVs (optional)
                 std::vector<std::array<float, 2>> uvs;
                 auto uvIt = prim.attributes.find("TEXCOORD_0");
-                if (uvIt != prim.attributes.end())
+                if (uvIt != prim.attributes.end()) {
                     uvs = AccessorToFloatN<2>(model, uvIt->second);
+                }
 
                 size_t numVerts = positions.size();
                 std::vector<VertexPBR> verts(numVerts);
                 for (size_t i = 0; i < numVerts; ++i) {
-                    verts[i].position = {positions[i][0], positions[i][1], positions[i][2]};
-                    verts[i].normal   = normals.size() > i
-                        ? XMFLOAT3{normals[i][0], normals[i][1], normals[i][2]}
-                        : XMFLOAT3{0.0f, 1.0f, 0.0f};
-                    verts[i].uv       = uvs.size() > i
-                        ? XMFLOAT2{uvs[i][0], uvs[i][1]}
-                        : XMFLOAT2{0.0f, 0.0f};
+                    verts[i].position = { positions[i][0], positions[i][1], positions[i][2] };
+                    verts[i].normal = normals.size() > i
+                                          ? XMFLOAT3{ normals[i][0], normals[i][1], normals[i][2] }
+                                          : XMFLOAT3{ 0.0f, 1.0f, 0.0f };
+                    verts[i].uv =
+                        uvs.size() > i ? XMFLOAT2{ uvs[i][0], uvs[i][1] } : XMFLOAT2{ 0.0f, 0.0f };
                 }
 
                 // Indices
@@ -1065,30 +1344,36 @@ bool Application::loadGltf(const std::string& path)
                     indices = AccessorToIndices(model, prim.indices);
                 } else {
                     indices.resize(numVerts);
-                    for (size_t i = 0; i < numVerts; ++i) indices[i] = (uint32_t)i;
+                    for (size_t i = 0; i < numVerts; ++i) {
+                        indices[i] = (uint32_t)i;
+                    }
                 }
 
-                GpuMesh gpuMesh     = uploadMesh(cmdList, verts, indices, uploadTemps);
-                int matIdx          = (prim.material >= 0 &&
-                                       prim.material < (int)materials.size())
-                                      ? prim.material : 0;
-                gpuMesh.materialIdx = matIdx;
-                XMStoreFloat4x4(&gpuMesh.transform, worldTf);
-                meshes.push_back(std::move(gpuMesh));
+                int matIdx = (prim.material >= 0 && prim.material < (int)materials.size())
+                                 ? prim.material
+                                 : 0;
+                MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
+                Transform tf;
+                XMStoreFloat4x4(&tf.world, worldTf);
+                ecsWorld.entity().set(tf).set(meshRef);
             }
         }
 
-        for (int child : node.children) visitNode(child, worldTf);
+        for (int child : node.children) {
+            visitNode(child, worldTf);
+        }
     };
 
-    for (int nodeIdx : model.scenes[sceneIdx].nodes)
+    for (int nodeIdx : model.scenes[sceneIdx].nodes) {
         visitNode(nodeIdx, XMMatrixIdentity());
+    }
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     cmdQueue.waitForFenceVal(fv);
 
     spdlog::info(
-        "Loaded GLB: {} mesh(es), {} material(s)", meshes.size(), materials.size()
+        "Loaded GLB: {} entity(ies), {} material(s)",
+        ecsWorld.count<MeshRef>(), materials.size()
     );
     return true;
 }
@@ -1103,9 +1388,9 @@ void Application::setFullscreen(bool val)
         this->fullscreen = val;
         if (this->fullscreen) {
             ::GetWindowRect(this->hWnd, &this->windowRect);
-            UINT windowStyle = WS_OVERLAPPEDWINDOW &
-                ~(WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-            ::SetWindowLongW(this->hWnd, GWL_STYLE, windowStyle);
+            UINT windowStyle = WS_OVERLAPPEDWINDOW & ~(WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                                                       WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+            ::SetWindowLongW(this->hWnd, GWL_STYLE, static_cast<LONG>(windowStyle));
             HMONITOR hMonitor = ::MonitorFromWindow(this->hWnd, MONITOR_DEFAULTTONEAREST);
             MONITORINFOEX monitorInfo = {};
             monitorInfo.cbSize = sizeof(MONITORINFOEX);
@@ -1120,11 +1405,9 @@ void Application::setFullscreen(bool val)
         } else {
             ::SetWindowLong(this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW);
             ::SetWindowPos(
-                this->hWnd, HWND_NOTOPMOST,
-                this->windowRect.left, this->windowRect.top,
-                this->windowRect.right  - this->windowRect.left,
-                this->windowRect.bottom - this->windowRect.top,
-                SWP_FRAMECHANGED | SWP_NOACTIVATE
+                this->hWnd, HWND_NOTOPMOST, this->windowRect.left, this->windowRect.top,
+                this->windowRect.right - this->windowRect.left,
+                this->windowRect.bottom - this->windowRect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE
             );
             ::ShowWindow(this->hWnd, SW_NORMAL);
         }
@@ -1143,6 +1426,11 @@ void Application::flush()
 bool Application::loadContent()
 {
     spdlog::info("loadContent start");
+
+    // Create mega-buffers + draw-data structured buffers early (before any mesh uploads)
+    this->createMegaBuffers();
+    this->createDrawDataBuffers();
+
     auto cmdList = this->cmdQueue.getCmdList();
     std::vector<ComPtr<ID3D12Resource>> uploadTemps;  // kept alive until GPU wait
 
@@ -1159,13 +1447,18 @@ bool Application::loadContent()
         {
            public:
             bool operator()(
-                const std::string&, std::vector<tinyobj::material_t>* mats,
-                std::map<std::string, int>* matMap, std::string* warn, std::string* err
+                const std::string&,
+                std::vector<tinyobj::material_t>* mats,
+                std::map<std::string, int>* matMap,
+                std::string* warn,
+                std::string* err
             ) override
             {
                 std::string mtlData = GetResourceString(IDR_TEAPOT_MTL);
                 if (mtlData.empty()) {
-                    if (warn) *warn = "Material resource not found";
+                    if (warn) {
+                        *warn = "Material resource not found";
+                    }
                     return false;
                 }
                 std::istringstream mtlStream(mtlData);
@@ -1176,73 +1469,76 @@ bool Application::loadContent()
         ResourceMaterialReader matReader;
 
         tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t>    shapes;
+        std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> objMats;
         std::string warn, err;
-        if (!tinyobj::LoadObj(&attrib, &shapes, &objMats, &warn, &err, &objStream, &matReader))
+        if (!tinyobj::LoadObj(&attrib, &shapes, &objMats, &warn, &err, &objStream, &matReader)) {
             spdlog::error("tinyobj error: {}", err);
-        if (!warn.empty()) spdlog::warn("tinyobj warn: {}", warn);
+        }
+        if (!warn.empty()) {
+            spdlog::warn("tinyobj warn: {}", warn);
+        }
 
         std::vector<VertexPBR> verts;
-        std::vector<uint32_t>  indices;
+        std::vector<uint32_t> indices;
         for (const auto& shape : shapes) {
             for (const auto& idx : shape.mesh.indices) {
                 VertexPBR v{};
-                v.position = {
-                    attrib.vertices[3 * idx.vertex_index + 0],
-                    attrib.vertices[3 * idx.vertex_index + 1],
-                    attrib.vertices[3 * idx.vertex_index + 2]
-                };
+                v.position = { attrib.vertices[3 * idx.vertex_index + 0],
+                               attrib.vertices[3 * idx.vertex_index + 1],
+                               attrib.vertices[3 * idx.vertex_index + 2] };
                 v.normal = (idx.normal_index >= 0)
-                    ? XMFLOAT3{attrib.normals[3 * idx.normal_index + 0],
-                               attrib.normals[3 * idx.normal_index + 1],
-                               attrib.normals[3 * idx.normal_index + 2]}
-                    : XMFLOAT3{0.0f, 1.0f, 0.0f};
-                if (idx.texcoord_index >= 0)
-                    v.uv = {attrib.texcoords[2 * idx.texcoord_index + 0],
-                            attrib.texcoords[2 * idx.texcoord_index + 1]};
+                               ? XMFLOAT3{ attrib.normals[3 * idx.normal_index + 0],
+                                           attrib.normals[3 * idx.normal_index + 1],
+                                           attrib.normals[3 * idx.normal_index + 2] }
+                               : XMFLOAT3{ 0.0f, 1.0f, 0.0f };
+                if (idx.texcoord_index >= 0) {
+                    v.uv = { attrib.texcoords[2 * idx.texcoord_index + 0],
+                             attrib.texcoords[2 * idx.texcoord_index + 1] };
+                }
                 verts.push_back(v);
                 indices.push_back(static_cast<uint32_t>(indices.size()));
             }
         }
 
         Material defMat;
-        defMat.name      = "Teapot";
+        defMat.name = "Teapot";
         defMat.roughness = 0.3f;
-        defMat.metallic  = 0.0f;
+        defMat.metallic = 0.0f;
         materials.push_back(defMat);
 
-        GpuMesh m    = uploadMesh(cmdList, verts, indices, uploadTemps);
-        m.materialIdx = 0;
-        meshes.push_back(std::move(m));
+        MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, 0, uploadTemps);
+        Transform tf;
+        ecsWorld.entity().set(tf).set(meshRef);
     }
 
     // --- DSV heap ---
     {
         D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
         dsvHeapDesc.NumDescriptors = 1;
-        dsvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        dsvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         chkDX(this->device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&this->dsvHeap)));
     }
 
     // --- Input layout for VertexPBR ---
     D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
-    // --- Root signature (60 inline DWORDs) ---
+    // --- Root signature (SRV descriptor table + 1 root constant) ---
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
     if (FAILED(this->device->CheckFeatureSupport(
             D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)
-        )))
+        ))) {
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+    }
 
     const D3D12_ROOT_SIGNATURE_FLAGS rootSigFlags =
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -1250,10 +1546,13 @@ bool Application::loadContent()
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[1];
-    rootParams[0].InitAsConstants(
-        sizeof(SceneConstantBuffer) / 4, 0, 0, D3D12_SHADER_VISIBILITY_ALL
-    );
+    CD3DX12_DESCRIPTOR_RANGE1 srvRange;
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[2];
+    rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
+    rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);  // drawIndex at b0
+
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
     rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 0, nullptr, rootSigFlags);
 
@@ -1269,25 +1568,26 @@ bool Application::loadContent()
     // --- Scene PSO ---
     struct PipelineStateStream
     {
-        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE      pRootSignature;
-        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT        InputLayout;
-        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY  PrimitiveTopologyType;
-        CD3DX12_PIPELINE_STATE_STREAM_VS                  VS;
-        CD3DX12_PIPELINE_STATE_STREAM_PS                  PS;
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
         CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
         CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
     } pipelineStateStream;
     D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-    rtvFormats.NumRenderTargets     = 1;
-    rtvFormats.RTFormats[0]         = DXGI_FORMAT_R11G11B10_FLOAT;
-    pipelineStateStream.pRootSignature      = this->rootSignature.Get();
-    pipelineStateStream.InputLayout         = {inputLayout, _countof(inputLayout)};
+    rtvFormats.NumRenderTargets = 1;
+    rtvFormats.RTFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+    pipelineStateStream.pRootSignature = this->rootSignature.Get();
+    pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
     pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    pipelineStateStream.VS                  = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-    pipelineStateStream.PS                  = CD3DX12_SHADER_BYTECODE(g_pixel_shader,  sizeof(g_pixel_shader));
-    pipelineStateStream.DSVFormat           = DXGI_FORMAT_D32_FLOAT;
-    pipelineStateStream.RTVFormats          = rtvFormats;
-    D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = {sizeof(PipelineStateStream), &pipelineStateStream};
+    pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+    pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(g_pixel_shader, sizeof(g_pixel_shader));
+    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pipelineStateStream.RTVFormats = rtvFormats;
+    D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
+                                                 &pipelineStateStream };
     chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
 
     // --- Bloom root signature ---
@@ -1302,10 +1602,10 @@ bool Application::loadContent()
         bloomRootParams[2].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
         D3D12_STATIC_SAMPLER_DESC staticSampler = {};
-        staticSampler.Filter         = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
-        staticSampler.AddressU       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressV       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressW       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
         staticSampler.ShaderRegister = 0;
         staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
@@ -1332,38 +1632,43 @@ bool Application::loadContent()
     auto createBloomPSO = [&](const BYTE* psData, size_t psSize, DXGI_FORMAT rtFormat,
                               bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-        desc.pRootSignature         = bloomRootSignature.Get();
-        desc.VS                     = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
-        desc.PS                     = CD3DX12_SHADER_BYTECODE(psData, psSize);
-        desc.RasterizerState        = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.pRootSignature = bloomRootSignature.Get();
+        desc.VS = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
+        desc.PS = CD3DX12_SHADER_BYTECODE(psData, psSize);
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-        desc.BlendState             = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         if (additiveBlend) {
-            desc.BlendState.RenderTarget[0].BlendEnable    = TRUE;
-            desc.BlendState.RenderTarget[0].SrcBlend       = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].DestBlend      = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].BlendOp        = D3D12_BLEND_OP_ADD;
-            desc.BlendState.RenderTarget[0].SrcBlendAlpha  = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+            desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+            desc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+            desc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
             desc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].BlendOpAlpha   = D3D12_BLEND_OP_ADD;
+            desc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
         }
-        desc.DepthStencilState.DepthEnable   = FALSE;
+        desc.DepthStencilState.DepthEnable = FALSE;
         desc.DepthStencilState.StencilEnable = FALSE;
-        desc.SampleMask               = UINT_MAX;
-        desc.PrimitiveTopologyType    = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        desc.NumRenderTargets         = 1;
-        desc.RTVFormats[0]            = rtFormat;
-        desc.SampleDesc.Count         = 1;
+        desc.SampleMask = UINT_MAX;
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = rtFormat;
+        desc.SampleDesc.Count = 1;
         ComPtr<ID3D12PipelineState> pso;
         chkDX(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso)));
         return pso;
     };
 
     const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
-    this->prefilterPSO  = createBloomPSO(g_bloom_prefilter_ps,  sizeof(g_bloom_prefilter_ps),  hdrFormat, false);
-    this->downsamplePSO = createBloomPSO(g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps), hdrFormat, false);
-    this->upsamplePSO   = createBloomPSO(g_bloom_upsample_ps,   sizeof(g_bloom_upsample_ps),   hdrFormat, true);
-    this->compositePSO  = createBloomPSO(g_bloom_composite_ps,  sizeof(g_bloom_composite_ps),  DXGI_FORMAT_R8G8B8A8_UNORM, false);
+    this->prefilterPSO =
+        createBloomPSO(g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps), hdrFormat, false);
+    this->downsamplePSO =
+        createBloomPSO(g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps), hdrFormat, false);
+    this->upsamplePSO =
+        createBloomPSO(g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps), hdrFormat, true);
+    this->compositePSO = createBloomPSO(
+        g_bloom_composite_ps, sizeof(g_bloom_composite_ps), DXGI_FORMAT_R8G8B8A8_UNORM, false
+    );
 
     uint64_t fenceValue = this->cmdQueue.execCmdList(cmdList);
     this->cmdQueue.waitForFenceVal(fenceValue);
@@ -1378,25 +1683,25 @@ bool Application::loadContent()
 void Application::onResize(uint32_t width, uint32_t height)
 {
     if (this->clientWidth != width || this->clientHeight != height) {
-        this->clientWidth  = std::max(1u, width);
+        this->clientWidth = std::max(1u, width);
         this->clientHeight = std::max(1u, height);
 
         this->cmdQueue.flush();
-        for (int i = 0; i < this->nBuffers; ++i)
+        for (int i = 0; i < this->nBuffers; ++i) {
             this->backBuffers[i].Reset();
+        }
 
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
         chkDX(this->swapChain->GetDesc(&swapChainDesc));
         chkDX(this->swapChain->ResizeBuffers(
-            this->nBuffers, this->clientWidth, this->clientHeight,
-            swapChainDesc.BufferDesc.Format, swapChainDesc.Flags
+            this->nBuffers, this->clientWidth, this->clientHeight, swapChainDesc.BufferDesc.Format,
+            swapChainDesc.Flags
         ));
 
         this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
         this->updateRenderTargetViews(this->rtvHeap);
         this->viewport = CD3DX12_VIEWPORT(
-            0.0f, 0.0f,
-            static_cast<float>(this->clientWidth),
+            0.0f, 0.0f, static_cast<float>(this->clientWidth),
             static_cast<float>(this->clientHeight)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);

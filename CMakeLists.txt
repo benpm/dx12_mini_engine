@@ -29,9 +29,17 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(gainput)
 target_include_directories(gainputstatic PUBLIC ${gainput_SOURCE_DIR}/lib/include)
 target_compile_definitions(gainputstatic PRIVATE _CRT_SECURE_NO_WARNINGS)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(gainputstatic PRIVATE -Wno-deprecated-declarations)
-endif()
+foreach(_t gainputstatic gainput)
+    if(TARGET ${_t})
+        target_compile_definitions(${_t} PRIVATE _CRT_SECURE_NO_WARNINGS)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(${_t} PRIVATE -Wno-deprecated-declarations)
+            if(_t STREQUAL "gainput")
+                target_link_options(${_t} PRIVATE "LINKER:/ignore:importeddllmain")
+            endif()
+        endif()
+    endif()
+endforeach()
 
 # Fetch imgui (no CMakeLists.txt — build as static lib manually)
 FetchContent_Declare(
@@ -73,9 +81,24 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
     GIT_TAG v2.9.5
 )
+set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(tinygltf)
+
+# Fetch flecs ECS
+set(FLECS_STATIC ON CACHE BOOL "" FORCE)
+set(FLECS_SHARED OFF CACHE BOOL "" FORCE)
+set(FLECS_PIC OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    flecs
+    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
+    GIT_TAG v4.1.4
+)
+FetchContent_MakeAvailable(flecs)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(flecs_static PRIVATE -Wno-everything)
+endif()
 
 # -------------------------------
 # Find DXC shader compiler
@@ -128,6 +151,7 @@ target_sources(main
     src/modules/input.ixx
     src/modules/camera.ixx
     src/modules/command_queue.ixx
+    src/modules/ecs_components.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
@@ -201,6 +225,14 @@ else()
     target_link_options(main PRIVATE /SUBSYSTEM:WINDOWS)
 endif()
 
+# Copy Roboto-Medium.ttf (bundled with imgui) next to the executable
+add_custom_command(TARGET main POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
+    $<TARGET_FILE_DIR:main>/Roboto-Medium.ttf
+    COMMENT "Copying Roboto-Medium.ttf to output directory"
+)
+
 target_link_libraries(main PRIVATE
     d3d12.lib dxgi.lib dxguid.lib uuid.lib
     d3dcompiler.lib
@@ -213,4 +245,5 @@ target_link_libraries(main PRIVATE
     gainputstatic
     tinyobjloader
     imgui_lib
+    flecs::flecs_static
 )

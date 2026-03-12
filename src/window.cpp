@@ -73,12 +73,12 @@ void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
     windowClass.cbClsExtra = 0;
     windowClass.cbWndExtra = 0;
     windowClass.hInstance = hInst;
-    windowClass.hIcon = ::LoadIcon(hInst, NULL);
-    windowClass.hCursor = ::LoadCursor(NULL, IDC_ARROW);
+    windowClass.hIcon = ::LoadIcon(hInst, nullptr);
+    windowClass.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
     windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    windowClass.lpszMenuName = NULL;
+    windowClass.lpszMenuName = nullptr;
     windowClass.lpszClassName = windowClassName;
-    windowClass.hIconSm = ::LoadIcon(hInst, NULL);
+    windowClass.hIconSm = ::LoadIcon(hInst, nullptr);
 
     [[maybe_unused]] static ATOM atom = ::RegisterClassExW(&windowClass);
     if (atom == 0) {
@@ -123,8 +123,8 @@ HWND makeWindow(
     int windowY = std::max<int>(0, (screenHeight - windowHeight) / 2);
 
     HWND hWnd = ::CreateWindowExW(
-        NULL, windowClassName, windowTitle, WS_OVERLAPPEDWINDOW, windowX, windowY, windowWidth,
-        windowHeight, NULL, NULL, hInst, nullptr
+        0, windowClassName, windowTitle, WS_OVERLAPPEDWINDOW, windowX, windowY, windowWidth,
+        windowHeight, nullptr, nullptr, hInst, nullptr
     );
 
     if (!hWnd) {

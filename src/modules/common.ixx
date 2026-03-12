@@ -42,10 +42,10 @@ export inline void chkDX(HRESULT hr)
     }
 }
 
-export constexpr float pi = XM_PI;
-export constexpr float pi2 = XM_PIDIV2;
-export constexpr float pi4 = XM_PIDIV4;
-export constexpr float tau = XM_2PI;
+export constexpr float pi  = 3.14159265358979323846f;
+export constexpr float pi2 = 1.57079632679489661923f;
+export constexpr float pi4 = 0.78539816339744830962f;
+export constexpr float tau = 6.28318530717958647692f;
 
 export inline constexpr float operator""_deg(long double degrees)
 {

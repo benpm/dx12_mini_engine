@@ -6,29 +6,32 @@ Guidance for AI agents (Claude Code, Codex, etc.) working in this repository.
 
 ## Build
 
+- `VCPKG_ROOT` must be set to the `vcpkg` root dir!
+
 ```bash
-# Prerequisites: VCPKG_ROOT must point to vcpkg installation
-export VCPKG_ROOT="/c/Users/ben/vcpkg"
-
 # Configure (Ninja Multi-Config, Clang 22 from LLVM)
-VCPKG_ROOT=/c/Users/ben/vcpkg cmake --preset windows-clang
+cmake --preset windows-clang
 
-# Build
-VCPKG_ROOT=/c/Users/ben/vcpkg cmake --build build --config Debug
-VCPKG_ROOT=/c/Users/ben/vcpkg cmake --build build --config Release
+# Build (Debug, Release builds)
+cmake --build build --config Debug
+cmake --build build --config Release
 
 # Test (runs 10 frames, saves screenshot.png, exits)
 ./build/Debug/main.exe --test
 ```
 
 ### Toolchain notes
-- **Compiler**: `C:/Program Files/LLVM/bin/clang++.exe` (v22). Do NOT use Git's clang (v18 — too old for VS 18 STL).
-- **VS**: Visual Studio 18 (2027 Preview, MSVC 14.50) — only version installed.
-- **vcpkg**: `/c/Users/ben/vcpkg` (x64-windows-static triplet).
-- **Presets**: `windows-clang` (primary), `windows-msvc` (fallback).
+- **Compiler**: `clang++` (v22). Do NOT use Git's clang (v18 — too old for VS 18 STL).
+- **vcpkg**: `$VCPKG_ROOT` (x64-windows-static triplet).
+- **Presets**: `windows-clang` (primary), `windows-msvc` (do not use!).
 - Shaders compiled via DXC to `.cso` headers at build time.
 
-### After any change: build then run `--test` and inspect `screenshot.png`
+### Rules
+- After any change: build then run `--test` and inspect `screenshot.png`
+- Before commiting:
+  - `git pull`
+  - Run clang-tidy and clang-format on all source and header files
+  - Make updates to `AGENTS.md`
 
 ---
 
@@ -37,15 +40,15 @@ VCPKG_ROOT=/c/Users/ben/vcpkg cmake --build build --config Release
 From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
 ### Module files (`src/modules/*.ixx`)
-| Module | Purpose |
-|--------|---------|
-| `window.ixx` | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
-| `application.ixx` | Main Application class declaration (see below) |
-| `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
-| `camera.ixx` | Base Camera + OrbitCamera (spherical yaw/pitch/radius) |
-| `input.ixx` | Button/Key enums, gainput integration |
-| `common.ixx` | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals |
-| `logging.ixx` | spdlog setup with custom error sink |
+| Module              | Purpose                                                                      |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `window.ixx`        | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
+| `application.ixx`   | Main Application class declaration (see below)                               |
+| `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling                  |
+| `camera.ixx`        | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
+| `input.ixx`         | Button/Key enums, gainput integration                                        |
+| `common.ixx`        | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
+| `logging.ixx`       | spdlog setup with custom error sink                                          |
 
 ### Application class (`src/application.cpp`)
 Owns the entire render loop:
@@ -97,13 +100,13 @@ Cook-Torrance BRDF:
 
 ## Dependencies
 
-| Library | Source | Notes |
-|---------|--------|-------|
-| directxtk12, directxmath, spdlog | vcpkg (x64-windows-static) | |
-| gainput | FetchContent (git hash 2be0a50) | Input |
-| imgui v1.92.6 | FetchContent | Win32 + DX12 backend |
-| tinyobjloader | FetchContent (git hash afdd3fa) | OBJ loading |
-| tinygltf v2.9.5 | FetchContent | GLB/glTF loading |
+| Library                          | Source                          | Notes                |
+| -------------------------------- | ------------------------------- | -------------------- |
+| directxtk12, directxmath, spdlog | vcpkg (x64-windows-static)      |                      |
+| gainput                          | FetchContent (git hash 2be0a50) | Input                |
+| imgui v1.92.6                    | FetchContent                    | Win32 + DX12 backend |
+| tinyobjloader                    | FetchContent (git hash afdd3fa) | OBJ loading          |
+| tinygltf v2.9.5                  | FetchContent                    | GLB/glTF loading     |
 
 ---
 
