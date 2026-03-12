@@ -1,11 +1,10 @@
 module;
 
-#include <DirectXMath.h>
 #include <cstdint>
 
 export module ecs_components;
 
-using DirectX::XMFLOAT4X4;
+export import math;
 
 // ---------------------------------------------------------------------------
 // ECS Components
@@ -14,7 +13,7 @@ using DirectX::XMFLOAT4X4;
 // World-space transform
 export struct Transform
 {
-    XMFLOAT4X4 world{ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+    mat4 world;
 };
 
 // Reference into shared mega vertex/index buffers

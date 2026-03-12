@@ -1,22 +1,20 @@
 module;
 
-#include <DirectXMath.h>
 #include <cmath>
 
 module camera;
 
-XMMATRIX Camera::proj() const
+mat4 Camera::proj() const
 {
-    return XMMatrixPerspectiveFovLH(this->fov, this->aspectRatio, this->nearPlane, this->farPlane);
+    return perspective(this->fov, this->aspectRatio, this->nearPlane, this->farPlane);
 }
 
-XMMATRIX OrbitCamera::view() const
+mat4 OrbitCamera::view() const
 {
-    return XMMatrixLookAtLH(
-        XMVectorSet(
-            this->radius * cos(this->pitch) * cos(this->yaw), this->radius * sin(this->pitch),
-            this->radius * cos(this->pitch) * sin(this->yaw), 0.0f
-        ),
-        XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f)
+    vec3 eye(
+        this->radius * std::cos(this->pitch) * std::cos(this->yaw),
+        this->radius * std::sin(this->pitch),
+        this->radius * std::cos(this->pitch) * std::sin(this->yaw)
     );
+    return lookAt(eye, vec3(0, 0, 0), vec3(0, 1, 0));
 }

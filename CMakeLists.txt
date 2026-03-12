@@ -151,6 +151,7 @@ target_sources(main
     src/modules/input.ixx
     src/modules/camera.ixx
     src/modules/command_queue.ixx
+    src/modules/math.ixx
     src/modules/ecs_components.ixx
     src/modules/application.ixx
     src/modules/window.ixx

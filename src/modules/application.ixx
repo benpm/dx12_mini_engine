@@ -32,9 +32,9 @@ export import input;
 // ---------------------------------------------------------------------------
 export struct VertexPBR
 {
-    XMFLOAT3 position;
-    XMFLOAT3 normal;
-    XMFLOAT2 uv;
+    vec3 position;
+    vec3 normal;
+    vec2 uv;
 };
 
 // ---------------------------------------------------------------------------
@@ -42,19 +42,19 @@ export struct VertexPBR
 // ---------------------------------------------------------------------------
 export struct SceneConstantBuffer
 {
-    XMMATRIX model;
-    XMMATRIX viewProj;
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 lightPos;
-    XMFLOAT4 lightColor;
-    XMFLOAT4 ambientColor;
+    mat4 model;
+    mat4 viewProj;
+    vec4 cameraPos;
+    vec4 lightPos;
+    vec4 lightColor;
+    vec4 ambientColor;
     // PBR material
-    XMFLOAT4 albedo;
+    vec4 albedo;
     float roughness;
     float metallic;
     float emissiveStrength;
     float _pad;
-    XMFLOAT4 emissive;
+    vec4 emissive;
 };
 
 // ---------------------------------------------------------------------------
@@ -62,12 +62,12 @@ export struct SceneConstantBuffer
 // ---------------------------------------------------------------------------
 export struct Material
 {
-    XMFLOAT4 albedo{ 0.8f, 0.8f, 0.8f, 1.0f };
+    vec4 albedo{ 0.8f, 0.8f, 0.8f, 1.0f };
     float roughness{ 0.4f };
     float metallic{ 0.0f };
     float emissiveStrength{ 0.0f };
     float _pad{ 0.0f };
-    XMFLOAT4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
+    vec4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
     std::string name;
 };
 
@@ -86,8 +86,8 @@ export class Application
     RECT windowRect;
     std::unordered_set<Key> pressedKeys;
     std::unordered_set<MouseButton> pressedMouseButtons;
-    XMFLOAT2 mousePos;
-    XMFLOAT2 mouseDelta;
+    vec2 mousePos;
+    vec2 mouseDelta;
     ComPtr<ID3D12Device2> device;
     CommandQueue cmdQueue;
     ComPtr<IDXGISwapChain4> swapChain;
@@ -133,7 +133,7 @@ export class Application
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 45.0f;
-    XMMATRIX matModel;
+    mat4 matModel;
     OrbitCamera cam;
     bool contentLoaded = false;
 

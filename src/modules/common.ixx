@@ -31,6 +31,8 @@ module;
 
 export module common;
 
+export import math;
+
 export using namespace Microsoft::WRL;
 export using namespace DirectX;
 

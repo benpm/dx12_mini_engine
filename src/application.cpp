@@ -78,33 +78,31 @@ static std::string GetResourceString(int resourceId)
     return std::string(static_cast<const char*>(data), size);
 }
 
-// Build an XMMATRIX from a glTF node (column-major → transposed for HLSL row-major upload)
-static XMMATRIX NodeTransform(const tinygltf::Node& node)
+// Build a mat4 from a glTF node (column-major → transposed for HLSL row-major upload)
+static mat4 NodeTransform(const tinygltf::Node& node)
 {
     if (node.matrix.size() == 16) {
         const auto& m = node.matrix;
-        // glTF column-major → XMMATRIX row-major (= transpose)
-        return XMMATRIX(
+        return mat4(
             (float)m[0], (float)m[1], (float)m[2], (float)m[3], (float)m[4], (float)m[5],
             (float)m[6], (float)m[7], (float)m[8], (float)m[9], (float)m[10], (float)m[11],
             (float)m[12], (float)m[13], (float)m[14], (float)m[15]
         );
     }
-    XMMATRIX S = XMMatrixIdentity();
-    XMMATRIX R = XMMatrixIdentity();
-    XMMATRIX T = XMMatrixIdentity();
+    mat4 S;
+    mat4 R;
+    mat4 T;
     if (node.scale.size() == 3) {
-        S = XMMatrixScaling((float)node.scale[0], (float)node.scale[1], (float)node.scale[2]);
+        S = scale((float)node.scale[0], (float)node.scale[1], (float)node.scale[2]);
     }
     if (node.rotation.size() == 4) {
-        XMVECTOR q = XMVectorSet(
+        R = rotateQuaternion(
             (float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2],
             (float)node.rotation[3]
         );
-        R = XMMatrixRotationQuaternion(q);
     }
     if (node.translation.size() == 3) {
-        T = XMMatrixTranslation(
+        T = translate(
             (float)node.translation[0], (float)node.translation[1], (float)node.translation[2]
         );
     }

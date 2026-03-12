@@ -4,6 +4,7 @@ If:
   PathExclude:
     - .*\.pch
     - .*pch\.?
+    - .*\build\_deps
 
 CompileFlags:
   CompilationDatabase: build
