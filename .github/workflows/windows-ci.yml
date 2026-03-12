@@ -1,0 +1,213 @@
+name: Windows CI
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: windows-ci-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    LLVM_VERSION: 22.1.1
+    RELEASE_TAG: latest
+    RELEASE_NAME: Latest Windows Build
+    RELEASE_ARCHIVE_NAME: dx12-mini-engine-windows-x64.zip
+    RELEASE_SCREENSHOT_NAME: screenshot.png
+
+jobs:
+    debug-test:
+        name: Debug Build And Test
+        runs-on: windows-2022
+        outputs:
+            screenshot_artifact_id: ${{ steps.upload_screenshot.outputs.artifact-id }}
+            screenshot_artifact_name: debug-screenshot
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up MSVC environment
+              uses: ilammy/msvc-dev-cmd@v1
+              with:
+                  arch: x64
+
+            - name: Install LLVM from GitHub releases
+              uses: KyleMayes/install-llvm-action@v2
+              with:
+                  version: ${{ env.LLVM_VERSION }}
+
+            - name: Bootstrap vcpkg
+              shell: pwsh
+              run: |
+                  $vcpkgRoot = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
+                  "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                  if (-not (Test-Path $vcpkgRoot)) {
+                    git clone https://github.com/microsoft/vcpkg $vcpkgRoot --depth 1
+                  }
+                  & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+
+            - name: Verify toolchain
+              shell: pwsh
+              run: |
+                  clang++ --version
+                  cmake --version
+                  ninja --version
+                  $dxc = Get-Command dxc -ErrorAction Stop
+                  Write-Host "Using dxc at $($dxc.Source)"
+
+            - name: Configure with windows-clang preset
+              run: cmake --preset windows-clang
+
+            - name: Build Debug with windows-debug-clang preset
+              run: cmake --build --preset windows-debug-clang
+
+            - name: Run Debug test build
+              shell: pwsh
+              run: |
+                  Remove-Item log.txt, screenshot.png -ErrorAction SilentlyContinue
+                  & .\build\Debug\main.exe --test
+                  if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
+                  }
+                  if (-not (Test-Path log.txt)) {
+                    throw 'Debug test run did not produce log.txt'
+                  }
+                  if (-not (Test-Path screenshot.png)) {
+                    throw 'Debug test run did not produce screenshot.png'
+                  }
+
+            - name: Upload log artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: debug-log
+                  path: log.txt
+                  if-no-files-found: error
+
+            - name: Upload screenshot artifact
+              id: upload_screenshot
+              uses: actions/upload-artifact@v4
+              with:
+                  name: debug-screenshot
+                  path: screenshot.png
+                  if-no-files-found: error
+
+    release-build:
+        name: Release Build And Isolation Test
+        runs-on: windows-2022
+        needs: debug-test
+        outputs:
+            release_archive_name: ${{ env.RELEASE_ARCHIVE_NAME }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up MSVC environment
+              uses: ilammy/msvc-dev-cmd@v1
+              with:
+                  arch: x64
+
+            - name: Install LLVM from GitHub releases
+              uses: KyleMayes/install-llvm-action@v2
+              with:
+                  version: ${{ env.LLVM_VERSION }}
+
+            - name: Bootstrap vcpkg
+              shell: pwsh
+              run: |
+                  $vcpkgRoot = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
+                  "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                  if (-not (Test-Path $vcpkgRoot)) {
+                    git clone https://github.com/microsoft/vcpkg $vcpkgRoot --depth 1
+                  }
+                  & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+
+            - name: Configure with windows-clang preset
+              run: cmake --preset windows-clang
+
+            - name: Build Release with windows-release-clang preset
+              run: cmake --build --preset windows-release-clang
+
+            - name: Run isolated Release binary
+              shell: pwsh
+              run: |
+                  $isolatedDir = Join-Path $env:RUNNER_TEMP 'isolated-release'
+                  Remove-Item $isolatedDir -Recurse -Force -ErrorAction SilentlyContinue
+                  New-Item -ItemType Directory -Path $isolatedDir | Out-Null
+                  Copy-Item .\build\Release\main.exe $isolatedDir
+                  Copy-Item .\build\Release\Roboto-Medium.ttf $isolatedDir
+                  Push-Location $isolatedDir
+                  try {
+                    Remove-Item log.txt, screenshot.png -ErrorAction SilentlyContinue
+                    & .\main.exe --test
+                    if ($LASTEXITCODE -ne 0) {
+                      exit $LASTEXITCODE
+                    }
+                    if (-not (Test-Path log.txt)) {
+                      throw 'Isolated Release run did not produce log.txt'
+                    }
+                    if (-not (Test-Path screenshot.png)) {
+                      throw 'Isolated Release run did not produce screenshot.png'
+                    }
+                  } finally {
+                    Pop-Location
+                  }
+                  Compress-Archive -Path (Join-Path $isolatedDir '*') -DestinationPath (Join-Path $env:RUNNER_TEMP '${{ env.RELEASE_ARCHIVE_NAME }}') -Force
+
+            - name: Upload release package artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: release-package
+                  path: ${{ runner.temp }}/${{ env.RELEASE_ARCHIVE_NAME }}
+                  if-no-files-found: error
+
+    publish-release:
+        name: Publish Latest Release
+        runs-on: windows-2022
+        needs:
+            - debug-test
+            - release-build
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        steps:
+            - name: Download screenshot artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: debug-screenshot
+                  path: ${{ runner.temp }}/release-assets/screenshot
+
+            - name: Download package artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: release-package
+                  path: ${{ runner.temp }}/release-assets/package
+
+            - name: Publish rolling latest release
+              shell: pwsh
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPOSITORY: ${{ github.repository }}
+                  COMMIT_SHA: ${{ github.sha }}
+              run: |
+                  $tag = '${{ env.RELEASE_TAG }}'
+                  $archivePath = Join-Path $env:RUNNER_TEMP 'release-assets/package/${{ env.RELEASE_ARCHIVE_NAME }}'
+                  $screenshotPath = Join-Path $env:RUNNER_TEMP 'release-assets/screenshot/${{ env.RELEASE_SCREENSHOT_NAME }}'
+                  $downloadUrl = "https://github.com/$env:REPOSITORY/releases/download/$tag/${{ env.RELEASE_ARCHIVE_NAME }}"
+                  $screenshotUrl = "https://github.com/$env:REPOSITORY/releases/download/$tag/${{ env.RELEASE_SCREENSHOT_NAME }}"
+                  $commitUrl = "https://github.com/$env:REPOSITORY/commit/$env:COMMIT_SHA"
+                  $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+
+                  @"
+                  Built from commit [$env:COMMIT_SHA]($commitUrl)
+
+                  [Download Windows build]($downloadUrl)
+
+                  ![Screenshot]($screenshotUrl)
+                  "@ | Set-Content -Path $notesPath -Encoding utf8
+
+                  gh release delete $tag --repo $env:REPOSITORY --yes --cleanup-tag 2>$null
+                  gh release create $tag $archivePath $screenshotPath --repo $env:REPOSITORY --title '${{ env.RELEASE_NAME }}' --target $env:COMMIT_SHA --latest --notes-file $notesPath

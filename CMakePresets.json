@@ -48,7 +48,17 @@
       "configurePreset": "windows-clang"
     },
     {
+      "name": "windows-debug-clang",
+      "configuration": "Debug",
+      "configurePreset": "windows-clang"
+    },
+    {
       "name": "windows-clang-release",
+      "configuration": "Release",
+      "configurePreset": "windows-clang"
+    },
+    {
+      "name": "windows-release-clang",
       "configuration": "Release",
       "configurePreset": "windows-clang"
     },
