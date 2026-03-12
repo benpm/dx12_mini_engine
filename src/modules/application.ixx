@@ -103,7 +103,7 @@ export class Application
     // Spawn system
     std::vector<MeshRef> spawnableMeshRefs;  // template refs for currently loaded meshes
     float spawnAccumulator{ 0.0f };
-    float spawnInterval{ 0.1f };             // seconds between spawns
+    float spawnInterval{ 0.1f };  // seconds between spawns
     std::mt19937 rng{ std::random_device{}() };
 
     // ECS
@@ -158,8 +158,8 @@ export class Application
     UINT imguiSrvNextIndex = 0;
 
     // GUI-controlled scene parameters
-    float bgColor[3] = { 0.1f, 0.1f, 0.1f };
-    float lightBrightness = 3.0f;
+    float bgColor[3] = { 0.0f, 0.0f, 0.0f };
+    float lightBrightness = 10.0f;
     float ambientBrightness = 0.15f;
     char gltfPathBuf[512] = "";
     // Deferred scene load (set from ImGui, executed at start of next update)
@@ -224,5 +224,4 @@ export class Application
         int materialIdx,
         std::vector<ComPtr<ID3D12Resource>>& temps
     );
-
 };

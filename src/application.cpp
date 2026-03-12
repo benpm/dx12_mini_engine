@@ -568,10 +568,10 @@ void Application::update()
                                    attrib.vertices[3 * idx.vertex_index + 1],
                                    attrib.vertices[3 * idx.vertex_index + 2] };
                     v.normal = idx.normal_index >= 0
-                                   ? XMFLOAT3{ attrib.normals[3 * idx.normal_index + 0],
-                                               attrib.normals[3 * idx.normal_index + 1],
-                                               attrib.normals[3 * idx.normal_index + 2] }
-                                   : XMFLOAT3{ 0, 1, 0 };
+                                   ? vec3{ attrib.normals[3 * idx.normal_index + 0],
+                                           attrib.normals[3 * idx.normal_index + 1],
+                                           attrib.normals[3 * idx.normal_index + 2] }
+                                   : vec3{ 0, 1, 0 };
                     v.uv = { 0, 0 };
                     verts.push_back(v);
                     idxs.push_back((uint32_t)idxs.size());
@@ -607,21 +607,19 @@ void Application::update()
 
     // Spawn entities: 100/frame in test mode (up to 1000 total), or 1 per interval normally
     if (!spawnableMeshRefs.empty()) {
-        std::uniform_real_distribution<float> posDist(-8.0f, 8.0f);
-        std::uniform_real_distribution<float> scaleDist(0.3f, 1.8f);
+        std::uniform_real_distribution<float> posDist(-100.0f, 100.0f);
+        std::uniform_real_distribution<float> scaleDist(0.05f, 0.1f);
         std::uniform_real_distribution<float> angleDist(0.0f, 6.2832f);
         std::uniform_real_distribution<float> axisDist(-1.0f, 1.0f);
         std::uniform_int_distribution<size_t> meshDist(0, spawnableMeshRefs.size() - 1);
 
         auto spawnOne = [&] {
-            XMVECTOR axis = XMVector3Normalize(
-                XMVectorSet(axisDist(rng), axisDist(rng), axisDist(rng), 0.0f)
-            );
-            XMMATRIX world = XMMatrixScaling(scaleDist(rng), scaleDist(rng), scaleDist(rng)) *
-                             XMMatrixRotationAxis(axis, angleDist(rng)) *
-                             XMMatrixTranslation(posDist(rng), posDist(rng), posDist(rng));
+            vec3 axis = normalize(vec3(axisDist(rng), axisDist(rng), axisDist(rng)));
+            float s = scaleDist(rng);
+            mat4 world = scale(s, s, s) * rotateAxis(axis, angleDist(rng)) *
+                         translate(posDist(rng), posDist(rng), posDist(rng));
             Transform tf;
-            XMStoreFloat4x4(&tf.world, world);
+            tf.world = world;
             ecsWorld.entity().set(tf).set(spawnableMeshRefs[meshDist(rng)]);
         };
 
@@ -651,14 +649,14 @@ void Application::update()
     this->mousePos = { this->inputMap.GetFloat(Button::AxisX),
                        this->inputMap.GetFloat(Button::AxisY) };
 
-    this->matModel = XMMatrixIdentity();
+    this->matModel = mat4{};
     if (this->inputMap.GetBool(Button::LeftClick)) {
         this->cam.pitch += (this->mouseDelta.y / w) * 180_deg;
         this->cam.yaw -= (this->mouseDelta.x / w) * 360_deg;
         this->cam.pitch = std::clamp(this->cam.pitch, -89.9_deg, 89.9_deg);
     }
     if (this->inputMap.GetBool(Button::RightClick)) {
-        this->cam.radius += this->mouseDelta.y / w;
+        this->cam.radius += (this->mouseDelta.y / w) * this->cam.radius;
     }
     this->cam.aspectRatio = w / static_cast<float>(this->clientHeight);
     if (this->inputMap.GetBoolWasDown(Button::ScrollUp)) {
@@ -697,20 +695,20 @@ void Application::render()
         ID3D12DescriptorHeap* sceneHeaps[] = { sceneSrvHeap.Get() };
         cmdList->SetDescriptorHeaps(1, sceneHeaps);
         CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), sceneSrvDescSize
+            sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
+            sceneSrvDescSize
         );
         cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
 
         // Build shared per-frame data
-        XMMATRIX viewProj = this->cam.view() * this->cam.proj();
+        mat4 viewProj = this->cam.view() * this->cam.proj();
         float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
         float camY = this->cam.radius * sin(this->cam.pitch);
         float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
-        XMFLOAT4 cameraPos(camX, camY, camZ, 1.0f);
-        XMFLOAT4 lightPos(10.0f, 15.0f, -10.0f, 1.0f);
-        XMFLOAT4 lightColor(lightBrightness, lightBrightness, lightBrightness, 1.0f);
-        XMFLOAT4 ambientColor(
+        vec4 cameraPos(camX, camY, camZ, 1.0f);
+        vec4 lightPos(10.0f, 15.0f, -10.0f, 1.0f);
+        vec4 lightColor(lightBrightness, lightBrightness, lightBrightness, 1.0f);
+        vec4 ambientColor(
             bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
             bgColor[2] * ambientBrightness, 1.0f
         );
@@ -731,7 +729,7 @@ void Application::render()
             const Material& mat = this->materials[mesh.materialIndex];
 
             SceneConstantBuffer& scb = mapped[drawIdx];
-            scb.model = XMLoadFloat4x4(&tf.world) * this->matModel;
+            scb.model = tf.world * this->matModel;
             scb.viewProj = viewProj;
             scb.cameraPos = cameraPos;
             scb.lightPos = lightPos;
@@ -785,7 +783,8 @@ void Application::render()
 
         // Present (hidden window in test mode, so nothing is shown to the user)
         UINT syncInterval = (this->vsync && !this->testMode) ? 1 : 0;
-        UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+        UINT presentFlags =
+            (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
         chkDX(this->swapChain->Present(syncInterval, presentFlags));
         this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
         this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
@@ -1339,9 +1338,9 @@ bool Application::loadGltf(const std::string& path)
         return false;
     }
 
-    std::function<void(int, XMMATRIX)> visitNode = [&](int nodeIdx, XMMATRIX parentTf) {
+    std::function<void(int, mat4)> visitNode = [&](int nodeIdx, mat4 parentTf) {
         const auto& node = model.nodes[nodeIdx];
-        XMMATRIX worldTf = NodeTransform(node) * parentTf;
+        mat4 worldTf = NodeTransform(node) * parentTf;
 
         if (node.mesh >= 0) {
             const auto& gMesh = model.meshes[node.mesh];
@@ -1377,10 +1376,10 @@ bool Application::loadGltf(const std::string& path)
                 for (size_t i = 0; i < numVerts; ++i) {
                     verts[i].position = { positions[i][0], positions[i][1], positions[i][2] };
                     verts[i].normal = normals.size() > i
-                                          ? XMFLOAT3{ normals[i][0], normals[i][1], normals[i][2] }
-                                          : XMFLOAT3{ 0.0f, 1.0f, 0.0f };
+                                          ? vec3{ normals[i][0], normals[i][1], normals[i][2] }
+                                          : vec3{ 0.0f, 1.0f, 0.0f };
                     verts[i].uv =
-                        uvs.size() > i ? XMFLOAT2{ uvs[i][0], uvs[i][1] } : XMFLOAT2{ 0.0f, 0.0f };
+                        uvs.size() > i ? vec2{ uvs[i][0], uvs[i][1] } : vec2{ 0.0f, 0.0f };
                 }
 
                 // Indices
@@ -1400,7 +1399,7 @@ bool Application::loadGltf(const std::string& path)
                 MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
                 spawnableMeshRefs.push_back(meshRef);
                 Transform tf;
-                XMStoreFloat4x4(&tf.world, worldTf);
+                tf.world = worldTf;
                 ecsWorld.entity().set(tf).set(meshRef);
             }
         }
@@ -1411,15 +1410,14 @@ bool Application::loadGltf(const std::string& path)
     };
 
     for (int nodeIdx : model.scenes[sceneIdx].nodes) {
-        visitNode(nodeIdx, XMMatrixIdentity());
+        visitNode(nodeIdx, mat4{});
     }
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     cmdQueue.waitForFenceVal(fv);
 
     spdlog::info(
-        "Loaded GLB: {} entity(ies), {} material(s)",
-        ecsWorld.count<MeshRef>(), materials.size()
+        "Loaded GLB: {} entity(ies), {} material(s)", ecsWorld.count<MeshRef>(), materials.size()
     );
     return true;
 }
@@ -1534,10 +1532,10 @@ bool Application::loadContent()
                                attrib.vertices[3 * idx.vertex_index + 1],
                                attrib.vertices[3 * idx.vertex_index + 2] };
                 v.normal = (idx.normal_index >= 0)
-                               ? XMFLOAT3{ attrib.normals[3 * idx.normal_index + 0],
-                                           attrib.normals[3 * idx.normal_index + 1],
-                                           attrib.normals[3 * idx.normal_index + 2] }
-                               : XMFLOAT3{ 0.0f, 1.0f, 0.0f };
+                               ? vec3{ attrib.normals[3 * idx.normal_index + 0],
+                                       attrib.normals[3 * idx.normal_index + 1],
+                                       attrib.normals[3 * idx.normal_index + 2] }
+                               : vec3{ 0.0f, 1.0f, 0.0f };
                 if (idx.texcoord_index >= 0) {
                     v.uv = { attrib.texcoords[2 * idx.texcoord_index + 0],
                              attrib.texcoords[2 * idx.texcoord_index + 1] };

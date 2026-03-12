@@ -5,9 +5,11 @@ export import common;
 export class Camera
 {
    public:
-    float fov = 45.0_deg;
+    float fov = 55.0_deg;
     float aspectRatio = 1.0f;
+    // Near clipping plane
     float nearPlane = 0.1f;
+    // Far clipping plane
     float farPlane = 100.0f;
 
     virtual mat4 proj() const;
@@ -17,9 +19,9 @@ export class Camera
 export class OrbitCamera : public Camera
 {
    public:
-    float yaw = 0.0_deg;
-    float pitch = 0.0_deg;
-    float radius = 5.0f;
+    float yaw = -0.5f;
+    float pitch = 0.5f;
+    float radius = 30.0f;
 
     mat4 view() const override;
 };

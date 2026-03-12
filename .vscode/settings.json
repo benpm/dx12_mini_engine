@@ -3,6 +3,9 @@
     "files.associations": {
         "*.shader": "glsl",
         "*.in": "cmake",
+        ".clangd": "yaml",
+        ".clang-format": "yaml",
+        ".clang-tidy": "yaml",
         "algorithm": "cpp",
         "atomic": "cpp",
         "bit": "cpp",
@@ -77,5 +80,15 @@
         "https://www.schemastore.org/clang-format-18.x.json": "**/.clang-format",
         "https://www.schemastore.org/clangd.json": "file:///c%3A/Users/ben/projects/dx12_mini_engine/.clangd",
         "https://www.schemastore.org/clang-tidy.json": "file:///c%3A/Users/ben/projects/dx12_mini_engine/.clang-tidy"
-    }
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "build/_deps": true
+    },
+    "clangd.serverCompletionRanking": true,
+    "todo-tree.tree.showBadges": false,
 }
