@@ -43,21 +43,44 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | Module              | Purpose                                                                      |
 | ------------------- | ---------------------------------------------------------------------------- |
 | `window.ixx`        | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
-| `application.ixx`   | Main Application class declaration (see below)                               |
+| `application.ixx`   | Main Application class — orchestrates subsystems, render loop, input, UI     |
+| `scene.ixx`         | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading  |
+| `bloom.ixx`         | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs             |
+| `imgui_layer.ixx`   | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style           |
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling                  |
 | `camera.ixx`        | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
 | `input.ixx`         | Button/Key enums, gainput integration                                        |
 | `common.ixx`        | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
+| `ecs_components.ixx`| ECS components: `Transform` (mat4 world), `MeshRef` (mega-buffer offsets)    |
 | `logging.ixx`       | spdlog setup with custom error sink                                          |
 
+### Subsystem architecture
+
+Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`.
+
+**Scene** (`scene.ixx` + `scene.cpp`) — owns all scene state:
+- ECS world (`flecs::world`), materials, spawn system
+- Mega vertex/index buffers (1M verts, 4M indices, default heap)
+- Triple-buffered structured draw-data buffers (`SceneConstantBuffer`)
+- Methods: `createMegaBuffers()`, `createDrawDataBuffers()`, `appendToMegaBuffers()`, `clearScene()`, `loadTeapot()`, `loadGltf()`
+- Also exports: `VertexPBR`, `SceneConstantBuffer`, `Material` structs
+
+**BloomRenderer** (`bloom.ixx` + `bloom.cpp`) — owns all bloom/post-processing state:
+- HDR render target, 5-mip bloom chain textures and descriptor heaps
+- Bloom root signature + 4 PSOs (prefilter, downsample, upsample, composite)
+- Methods: `createResources()`, `resize()`, `render()`
+
+**ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
+- SRV descriptor heap for ImGui
+- Methods: `init()`, `shutdown()`, `styleColorsDracula()`
+- Note: `renderImGui()` stays in `application.cpp` (app-specific UI)
+
 ### Application class (`src/application.cpp`)
-Owns the entire render loop:
+Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
-- **HDR render target**: `R11G11B10_FLOAT`, rendered to first, then bloom chain → composite.
-- **Scene graph**: `vector<GpuMesh>` + `vector<Material>` — multiple objects/materials per frame.
+- **Scene PSO + root signature**: SRV descriptor table + 1 root constant (`drawIndex`).
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
-- **Root signature**: single inline constants parameter, 60 DWORDs (`SceneConstantBuffer`).
-- **Per-draw**: model transform + PBR material params uploaded via `SetGraphicsRoot32BitConstants`.
+- Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
 
 ### Rendering pipeline
 

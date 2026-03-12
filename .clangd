@@ -8,10 +8,13 @@ If:
 
 CompileFlags:
   CompilationDatabase: build
+  Remove:
+    - -W*
+    - -std=c++*
   Add:
     - -Ibuild/Debug
     - -Iinclude
-    - -std=c++23
+    - -std=c++latest
 
 Diagnostics:
   Includes:

@@ -133,6 +133,9 @@ endfunction()
 add_executable(main
     src/main.cpp
     src/application.cpp
+    src/scene.cpp
+    src/bloom.cpp
+    src/imgui_layer.cpp
     src/gltf_impl.cpp
     src/command_queue.cpp
     src/window.cpp
@@ -153,6 +156,9 @@ target_sources(main
     src/modules/command_queue.ixx
     src/modules/math.ixx
     src/modules/ecs_components.ixx
+    src/modules/scene.ixx
+    src/modules/bloom.ixx
+    src/modules/imgui_layer.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
