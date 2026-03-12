@@ -15,11 +15,13 @@ module logging;
 
 void setupLogging()
 {
-    // Attach to parent console so stderr/stdout work when launched from a terminal
+    // Attach to parent console so stderr/stdout work when launched from a terminal.
+    // Use CONOUT$ for both streams — CONERR$ is a Windows device alias that can
+    // create a stray file on disk when the parent is a pseudoconsole (MSYS2/ConPTY).
     if (AttachConsole(ATTACH_PARENT_PROCESS) != 0) {
         FILE* dummy = nullptr;
-        freopen_s(&dummy, "CONERR$", "w", stderr);
         freopen_s(&dummy, "CONOUT$", "w", stdout);
+        freopen_s(&dummy, "CONOUT$", "w", stderr);
     }
 
     // Logger setup

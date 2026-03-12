@@ -15,6 +15,7 @@ module;
 #endif
 #include <gainput/gainput.h>
 #include <flecs.h>
+#include <random>
 #include <unordered_set>
 #include <vector>
 #include <string>
@@ -98,6 +99,12 @@ export class Application
     // Scene data
     std::vector<Material> materials;
     int selectedMaterialIdx{ 0 };
+
+    // Spawn system
+    std::vector<MeshRef> spawnableMeshRefs;  // template refs for currently loaded meshes
+    float spawnAccumulator{ 0.0f };
+    float spawnInterval{ 0.1f };             // seconds between spawns
+    std::mt19937 rng{ std::random_device{}() };
 
     // ECS
     flecs::world ecsWorld;

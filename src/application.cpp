@@ -17,6 +17,7 @@ module;
 #include <wincodec.h>
 #include <tiny_obj_loader.h>
 #include <sstream>
+#include <random>
 #include <spdlog/spdlog.h>
 #include <flecs.h>
 #ifdef __clang__
@@ -583,6 +584,7 @@ void Application::update()
             defMat.roughness = 0.3f;
             materials.push_back(defMat);
             MeshRef meshRef = appendToMegaBuffers(cl, verts, idxs, 0, temps);
+            spawnableMeshRefs.push_back(meshRef);
             Transform tf;
             ecsWorld.entity().set(tf).set(meshRef);
         }
@@ -597,15 +599,52 @@ void Application::update()
         }
     }
 
-    [[maybe_unused]] static double elapsedSeconds = 0.0;
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
 
     auto t1 = clock.now();
     auto deltaTime = t1 - t0;
     t0 = t1;
-    [[maybe_unused]] const double dt = static_cast<double>(deltaTime.count()) * 1e-9;
-    elapsedSeconds += dt;
+    const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
+
+    // Spawn entities: 100/frame in test mode (up to 1000 total), or 1 per interval normally
+    if (!spawnableMeshRefs.empty()) {
+        std::uniform_real_distribution<float> posDist(-8.0f, 8.0f);
+        std::uniform_real_distribution<float> scaleDist(0.3f, 1.8f);
+        std::uniform_real_distribution<float> angleDist(0.0f, 6.2832f);
+        std::uniform_real_distribution<float> axisDist(-1.0f, 1.0f);
+        std::uniform_int_distribution<size_t> meshDist(0, spawnableMeshRefs.size() - 1);
+
+        auto spawnOne = [&] {
+            XMVECTOR axis = XMVector3Normalize(
+                XMVectorSet(axisDist(rng), axisDist(rng), axisDist(rng), 0.0f)
+            );
+            XMMATRIX world = XMMatrixScaling(scaleDist(rng), scaleDist(rng), scaleDist(rng)) *
+                             XMMatrixRotationAxis(axis, angleDist(rng)) *
+                             XMMatrixTranslation(posDist(rng), posDist(rng), posDist(rng));
+            Transform tf;
+            XMStoreFloat4x4(&tf.world, world);
+            ecsWorld.entity().set(tf).set(spawnableMeshRefs[meshDist(rng)]);
+        };
+
+        int current = ecsWorld.count<MeshRef>();
+        int capacity = static_cast<int>(maxDrawsPerFrame) - 1;
+
+        if (testMode) {
+            // Burst: 100 per frame until 1000 total
+            int toSpawn = std::min({ 100, capacity - current, 1000 - current });
+            for (int i = 0; i < toSpawn; ++i) {
+                spawnOne();
+            }
+        } else if (current < capacity) {
+            spawnAccumulator += dt;
+            while (spawnAccumulator >= spawnInterval && current < capacity) {
+                spawnAccumulator -= spawnInterval;
+                spawnOne();
+                ++current;
+            }
+        }
+    }
 
     const float w = static_cast<float>(this->clientWidth);
 
@@ -721,11 +760,15 @@ void Application::render()
         }
     }
 
-    // --- Bloom → composite → ImGui → present ---
+    // --- Bloom → composite → (ImGui in non-test) → present/save ---
     this->renderBloom(cmdList);
-    this->renderImGui(cmdList);
+    if (!this->testMode) {
+        this->renderImGui(cmdList);
+    }
 
     {
+        // Transition backBuffer to PRESENT (COMMON) — required in both modes so that
+        // the next frame's renderBloom can transition it from PRESENT→RENDER_TARGET again.
         this->transitionResource(
             cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT
         );
@@ -742,8 +785,9 @@ void Application::render()
 
         this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
 
-        UINT syncInterval = this->vsync ? 1 : 0;
-        UINT presentFlags = this->tearingSupported && !this->vsync ? DXGI_PRESENT_ALLOW_TEARING : 0;
+        // Present (hidden window in test mode, so nothing is shown to the user)
+        UINT syncInterval = (this->vsync && !this->testMode) ? 1 : 0;
+        UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
         chkDX(this->swapChain->Present(syncInterval, presentFlags));
         this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
         this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
@@ -1225,6 +1269,9 @@ void Application::clearScene()
 
     // Clear all ECS entities with MeshRef
     ecsWorld.delete_with<MeshRef>();
+
+    spawnableMeshRefs.clear();
+    spawnAccumulator = 0.0f;
 }
 
 bool Application::loadGltf(const std::string& path)
@@ -1353,6 +1400,7 @@ bool Application::loadGltf(const std::string& path)
                                  ? prim.material
                                  : 0;
                 MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
+                spawnableMeshRefs.push_back(meshRef);
                 Transform tf;
                 XMStoreFloat4x4(&tf.world, worldTf);
                 ecsWorld.entity().set(tf).set(meshRef);
@@ -1508,6 +1556,7 @@ bool Application::loadContent()
         materials.push_back(defMat);
 
         MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, 0, uploadTemps);
+        spawnableMeshRefs.push_back(meshRef);
         Transform tf;
         ecsWorld.entity().set(tf).set(meshRef);
     }

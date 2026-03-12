@@ -56,7 +56,8 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         // Input map just to show example for closing window with escape
         app.inputMap.MapBool(Button::Exit, app.keyboardID, gainput::KeyEscape);
 
-        ::ShowWindow(Window::get()->hWnd, SW_SHOW);
+        // In test mode, keep the window hidden so no visible window appears
+        ::ShowWindow(Window::get()->hWnd, testMode ? SW_HIDE : SW_SHOW);
         ::UpdateWindow(Window::get()->hWnd);
 
         MSG msg = {};
