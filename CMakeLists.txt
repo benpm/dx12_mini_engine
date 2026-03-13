@@ -136,6 +136,7 @@ add_executable(main
     src/scene.cpp
     src/bloom.cpp
     src/imgui_layer.cpp
+    src/shader_hotreload.cpp
     src/gltf_impl.cpp
     src/command_queue.cpp
     src/window.cpp
@@ -159,6 +160,7 @@ target_sources(main
     src/modules/scene.ixx
     src/modules/bloom.ixx
     src/modules/imgui_layer.ixx
+    src/modules/shader_hotreload.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
@@ -212,7 +214,10 @@ endif()
 # -------------------------------
 # Platform & configuration defines
 # -------------------------------
-target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
+    DXC_PATH="${DXC_EXECUTABLE}"
+    SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 
 target_compile_definitions(main PRIVATE
     $<$<CONFIG:Debug>:_DEBUG>

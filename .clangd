@@ -14,7 +14,7 @@ CompileFlags:
   Add:
     - -Ibuild/Debug
     - -Iinclude
-    - -std=c++latest
+    - -std=c++26
 
 Diagnostics:
   Includes:

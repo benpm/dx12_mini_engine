@@ -52,6 +52,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `input.ixx`         | Button/Key enums, gainput integration                                        |
 | `common.ixx`        | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
 | `ecs_components.ixx`| ECS components: `Transform` (mat4 world), `MeshRef` (mega-buffer offsets)    |
+| `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
 | `logging.ixx`       | spdlog setup with custom error sink                                          |
 
 ### Subsystem architecture
@@ -81,6 +82,7 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Scene PSO + root signature**: SRV descriptor table + 1 root constant (`drawIndex`).
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 - Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
+- **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO via `createScenePSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
 
 ### Rendering pipeline
 

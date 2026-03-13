@@ -1,10 +1,6 @@
 module;
 
-#include <Windows.h>
 #include <d3d12.h>
-#include <dxgi1_6.h>
-#include <wrl.h>
-#include <algorithm>
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wswitch"
@@ -169,12 +165,58 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
         ));
     }
 
-    auto createBloomPSO = [&](const BYTE* psData, size_t psSize, DXGI_FORMAT rtFormat,
-                               bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
+    reloadPipelines(device, {}, {}, {}, {}, {});
+}
+
+// ---------------------------------------------------------------------------
+// BloomRenderer::createResources / resize
+// ---------------------------------------------------------------------------
+
+void BloomRenderer::createResources(ID3D12Device2* device, uint32_t width, uint32_t height)
+{
+    createPipelines(device);
+    createTexturesAndHeaps(device, width, height);
+}
+
+void BloomRenderer::resize(ID3D12Device2* device, uint32_t width, uint32_t height)
+{
+    hdrRenderTarget.Reset();
+    for (auto& m : bloomMips) {
+        m.Reset();
+    }
+    bloomRtvHeap.Reset();
+    srvHeap.Reset();
+    createTexturesAndHeaps(device, width, height);
+}
+
+// ---------------------------------------------------------------------------
+// BloomRenderer::reloadPipelines
+// ---------------------------------------------------------------------------
+
+void BloomRenderer::reloadPipelines(
+    ID3D12Device2* device,
+    D3D12_SHADER_BYTECODE fullscreenVS,
+    D3D12_SHADER_BYTECODE prefilterPS,
+    D3D12_SHADER_BYTECODE downsamplePS,
+    D3D12_SHADER_BYTECODE upsamplePS,
+    D3D12_SHADER_BYTECODE compositePS
+)
+{
+    auto resolve = [](D3D12_SHADER_BYTECODE bc, const BYTE* def, size_t defSize) {
+        return bc.pShaderBytecode ? bc : D3D12_SHADER_BYTECODE{ def, defSize };
+    };
+    auto vs = resolve(fullscreenVS, g_fullscreen_vs, sizeof(g_fullscreen_vs));
+    auto pre = resolve(prefilterPS, g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps));
+    auto down = resolve(downsamplePS, g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps));
+    auto up = resolve(upsamplePS, g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps));
+    auto comp = resolve(compositePS, g_bloom_composite_ps, sizeof(g_bloom_composite_ps));
+
+    auto createPSO = [&](D3D12_SHADER_BYTECODE ps, DXGI_FORMAT rtFormat,
+                          bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = bloomRootSignature.Get();
-        desc.VS = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
-        desc.PS = CD3DX12_SHADER_BYTECODE(psData, psSize);
+        desc.VS = vs;
+        desc.PS = ps;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -200,36 +242,10 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
     };
 
     const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
-    prefilterPSO =
-        createBloomPSO(g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps), hdrFormat, false);
-    downsamplePSO =
-        createBloomPSO(g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps), hdrFormat, false);
-    upsamplePSO =
-        createBloomPSO(g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps), hdrFormat, true);
-    compositePSO = createBloomPSO(
-        g_bloom_composite_ps, sizeof(g_bloom_composite_ps), DXGI_FORMAT_R8G8B8A8_UNORM, false
-    );
-}
-
-// ---------------------------------------------------------------------------
-// BloomRenderer::createResources / resize
-// ---------------------------------------------------------------------------
-
-void BloomRenderer::createResources(ID3D12Device2* device, uint32_t width, uint32_t height)
-{
-    createPipelines(device);
-    createTexturesAndHeaps(device, width, height);
-}
-
-void BloomRenderer::resize(ID3D12Device2* device, uint32_t width, uint32_t height)
-{
-    hdrRenderTarget.Reset();
-    for (auto& m : bloomMips) {
-        m.Reset();
-    }
-    bloomRtvHeap.Reset();
-    srvHeap.Reset();
-    createTexturesAndHeaps(device, width, height);
+    prefilterPSO = createPSO(pre, hdrFormat, false);
+    downsamplePSO = createPSO(down, hdrFormat, false);
+    upsamplePSO = createPSO(up, hdrFormat, true);
+    compositePSO = createPSO(comp, DXGI_FORMAT_R8G8B8A8_UNORM, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,8 +310,8 @@ void BloomRenderer::render(
     D3D12_RECT sr = { 0, 0, (LONG)mipW[0], (LONG)mipH[0] };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    BloomCB cb = { 1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height),
-                   threshold, 0.5f };
+    BloomCB cb = { 1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height), threshold,
+                   0.5f };
     cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 
@@ -336,8 +352,8 @@ void BloomRenderer::render(
         sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]),
-               1.0f, 0 };
+        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]), 1.0f,
+               0 };
         cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }

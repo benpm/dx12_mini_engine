@@ -41,6 +41,13 @@ import window;
 
 using Microsoft::WRL::ComPtr;
 
+#ifndef DXC_PATH
+    #define DXC_PATH ""
+#endif
+#ifndef SHADER_SRC_DIR
+    #define SHADER_SRC_DIR ""
+#endif
+
 // ---------------------------------------------------------------------------
 // Application constructor / destructor
 // ---------------------------------------------------------------------------
@@ -269,6 +276,30 @@ void Application::update()
     auto deltaTime = t1 - t0;
     t0 = t1;
     const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
+
+    // Shader hot reload
+    if (shaderCompiler.poll(dt)) {
+        flush();
+        bool sceneChanged =
+            shaderCompiler.wasRecompiled(sceneVSIdx) || shaderCompiler.wasRecompiled(scenePSIdx);
+        bool bloomChanged = shaderCompiler.wasRecompiled(bloomFsVsIdx) ||
+                            shaderCompiler.wasRecompiled(bloomPreIdx) ||
+                            shaderCompiler.wasRecompiled(bloomDownIdx) ||
+                            shaderCompiler.wasRecompiled(bloomUpIdx) ||
+                            shaderCompiler.wasRecompiled(bloomCompIdx);
+        if (sceneChanged) {
+            createScenePSO();
+        }
+        if (bloomChanged) {
+            auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
+                auto d = shaderCompiler.data(idx);
+                return d ? D3D12_SHADER_BYTECODE{ d, shaderCompiler.size(idx) }
+                         : D3D12_SHADER_BYTECODE{};
+            };
+            bloom.reloadPipelines(device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx),
+                                  bc(bloomDownIdx), bc(bloomUpIdx), bc(bloomCompIdx));
+        }
+    }
 
     // Spawn entities
     if (!scene.spawnableMeshRefs.empty()) {
@@ -597,6 +628,53 @@ void Application::flush()
 }
 
 // ---------------------------------------------------------------------------
+// createScenePSO — (re)creates the scene pipeline state object
+// ---------------------------------------------------------------------------
+
+void Application::createScenePSO()
+{
+    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    auto vsData = shaderCompiler.data(sceneVSIdx);
+    auto psData = shaderCompiler.data(scenePSIdx);
+    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(sceneVSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+    auto ps = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(scenePSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_pixel_shader, sizeof(g_pixel_shader));
+
+    struct PipelineStateStream
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+    } pipelineStateStream;
+    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+    rtvFormats.NumRenderTargets = 1;
+    rtvFormats.RTFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+    pipelineStateStream.pRootSignature = this->rootSignature.Get();
+    pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+    pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pipelineStateStream.VS = vs;
+    pipelineStateStream.PS = ps;
+    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pipelineStateStream.RTVFormats = rtvFormats;
+    D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
+                                                 &pipelineStateStream };
+    chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
+}
+
+// ---------------------------------------------------------------------------
 // loadContent — creates pipeline + uploads default teapot scene
 // ---------------------------------------------------------------------------
 
@@ -616,16 +694,6 @@ bool Application::loadContent()
         dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         chkDX(this->device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&this->dsvHeap)));
     }
-
-    // Input layout for VertexPBR
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
 
     // Root signature (SRV descriptor table + 1 root constant)
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
@@ -661,30 +729,18 @@ bool Application::loadContent()
         IID_PPV_ARGS(&this->rootSignature)
     ));
 
-    // Scene PSO
-    struct PipelineStateStream
-    {
-        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
-        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
-        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
-        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
-        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
-        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-    } pipelineStateStream;
-    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-    rtvFormats.NumRenderTargets = 1;
-    rtvFormats.RTFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    pipelineStateStream.pRootSignature = this->rootSignature.Get();
-    pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
-    pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-    pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(g_pixel_shader, sizeof(g_pixel_shader));
-    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    pipelineStateStream.RTVFormats = rtvFormats;
-    D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
-                                                 &pipelineStateStream };
-    chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
+    createScenePSO();
+
+    // Init shader hot reload
+    if (shaderCompiler.init(DXC_PATH, SHADER_SRC_DIR)) {
+        sceneVSIdx = shaderCompiler.watch("vertex_shader.hlsl", "vs_6_0");
+        scenePSIdx = shaderCompiler.watch("pixel_shader.hlsl", "ps_6_0");
+        bloomFsVsIdx = shaderCompiler.watch("fullscreen_vs.hlsl", "vs_6_0");
+        bloomPreIdx = shaderCompiler.watch("bloom_prefilter_ps.hlsl", "ps_6_0");
+        bloomDownIdx = shaderCompiler.watch("bloom_downsample_ps.hlsl", "ps_6_0");
+        bloomUpIdx = shaderCompiler.watch("bloom_upsample_ps.hlsl", "ps_6_0");
+        bloomCompIdx = shaderCompiler.watch("bloom_composite_ps.hlsl", "ps_6_0");
+    }
 
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);

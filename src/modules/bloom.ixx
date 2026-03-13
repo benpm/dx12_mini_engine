@@ -50,6 +50,16 @@ export class BloomRenderer
         int tonemapMode
     );
 
+    // Recreate PSOs with new shader bytecodes. Null bytecodes fall back to embedded defaults.
+    void reloadPipelines(
+        ID3D12Device2* device,
+        D3D12_SHADER_BYTECODE fullscreenVS,
+        D3D12_SHADER_BYTECODE prefilterPS,
+        D3D12_SHADER_BYTECODE downsamplePS,
+        D3D12_SHADER_BYTECODE upsamplePS,
+        D3D12_SHADER_BYTECODE compositePS
+    );
+
    private:
     void createTexturesAndHeaps(ID3D12Device2* device, uint32_t width, uint32_t height);
     void createPipelines(ID3D12Device2* device);

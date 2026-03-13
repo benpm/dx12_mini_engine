@@ -25,6 +25,7 @@ export import input;
 export import scene;
 export import bloom;
 export import imgui_layer;
+export import shader_hotreload;
 
 export class Application
 {
@@ -66,13 +67,13 @@ export class Application
     bool contentLoaded = false;
 
     // Bloom / post-processing UI params
-    float bloomThreshold = 0.7f;
-    float bloomIntensity = 1.0f;
+    float bloomThreshold = 1.7f;
+    float bloomIntensity = 0.1f;
     int tonemapMode = 1;
 
     // GUI-controlled scene parameters
-    float bgColor[3] = { 0.0f, 0.0f, 0.0f };
-    float lightBrightness = 10.0f;
+    float bgColor[3] = { 0.1f, 0.1f, 0.1f };
+    float lightBrightness = 2.0f;
     float ambientBrightness = 0.15f;
     char gltfPathBuf[512] = "";
     bool pendingResetToTeapot{ false };
@@ -88,6 +89,16 @@ export class Application
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;
+
+    // Shader hot reload
+    ShaderCompiler shaderCompiler;
+    size_t sceneVSIdx = 0;
+    size_t scenePSIdx = 0;
+    size_t bloomFsVsIdx = 0;
+    size_t bloomPreIdx = 0;
+    size_t bloomDownIdx = 0;
+    size_t bloomUpIdx = 0;
+    size_t bloomCompIdx = 0;
 
     Application();
     ~Application();
@@ -119,5 +130,6 @@ export class Application
     void flush();
     bool loadContent();
     void onResize(uint32_t width, uint32_t height);
+    void createScenePSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };
