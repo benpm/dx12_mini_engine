@@ -68,14 +68,13 @@ export class Scene
 {
    public:
     static constexpr uint8_t nBuffers = 3;
-    static constexpr uint32_t maxDrawsPerFrame = 4096;
+    static constexpr uint32_t maxDrawsPerFrame = 16384;
 
     flecs::world ecsWorld;
     std::vector<Material> materials;
     int selectedMaterialIdx = 0;
     std::vector<MeshRef> spawnableMeshRefs;
-    float spawnAccumulator = 0.f;
-    float spawnInterval = 0.1f;
+    float spawnTimer = 0.0f;
     std::mt19937 rng{ std::random_device{}() };
 
     ComPtr<ID3D12Resource> megaVB;

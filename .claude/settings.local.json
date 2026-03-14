@@ -1,15 +1,17 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
       "Bash(cmake:*)",
       "Read(//c/Program Files/Microsoft Visual Studio/**)",
       "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
-      "Bash(clang++:*)"
+      "Bash(clang++:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
     ]
-  },
-  "attribution": {
-    "commit": "",
-    "pr": ""
   },
   "autoMemoryEnabled": true
 }

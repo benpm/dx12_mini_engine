@@ -41,6 +41,27 @@ import window;
 
 using Microsoft::WRL::ComPtr;
 
+// Convert HSL to linear RGB. hue in [0,360), sat and light in [0,1].
+static vec4 hslToLinear(float hue, float sat, float light)
+{
+    float c = (1.0f - std::abs(2.0f * light - 1.0f)) * sat;
+    float x = c * (1.0f - std::abs(std::fmod(hue / 60.0f, 2.0f) - 1.0f));
+    float m = light - c * 0.5f;
+    float r, g, b;
+    int seg = static_cast<int>(hue / 60.0f) % 6;
+    switch (seg) {
+        case 0:  r = c; g = x; b = 0; break;
+        case 1:  r = x; g = c; b = 0; break;
+        case 2:  r = 0; g = c; b = x; break;
+        case 3:  r = 0; g = x; b = c; break;
+        case 4:  r = x; g = 0; b = c; break;
+        default: r = c; g = 0; b = x; break;
+    }
+    // sRGB → linear
+    auto lin = [](float v) { return std::pow(v, 2.2f); };
+    return { lin(r + m), lin(g + m), lin(b + m), 1.0f };
+}
+
 #ifndef DXC_PATH
     #define DXC_PATH ""
 #endif
@@ -308,6 +329,8 @@ void Application::update()
         std::uniform_real_distribution<float> axisDist(-1.0f, 1.0f);
         std::uniform_int_distribution<size_t> meshDist(0, scene.spawnableMeshRefs.size() - 1);
 
+        std::uniform_real_distribution<float> hueDist(0.0f, 360.0f);
+
         auto spawnOne = [&] {
             const vec3 axis =
                 normalize(vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)));
@@ -320,7 +343,9 @@ void Application::update()
                 translate(pos.x, pos.y, pos.z);
             Transform tf;
             tf.world = world;
-            scene.ecsWorld.entity().set(tf).set(scene.spawnableMeshRefs[meshDist(scene.rng)]);
+            MeshRef mesh = scene.spawnableMeshRefs[meshDist(scene.rng)];
+            mesh.albedoOverride = hslToLinear(hueDist(scene.rng), 0.7f, 0.65f);
+            scene.ecsWorld.entity().set(tf).set(mesh);
         };
 
         int current = scene.ecsWorld.count<MeshRef>();
@@ -331,10 +356,13 @@ void Application::update()
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
-        } else if (current < capacity) {
-            scene.spawnAccumulator += dt;
-            while (scene.spawnAccumulator >= scene.spawnInterval && current < capacity) {
-                scene.spawnAccumulator -= scene.spawnInterval;
+        } else if (scene.spawnTimer < 3.0f) {
+            scene.spawnTimer += dt;
+            float t = std::min(scene.spawnTimer / 3.0f, 1.0f);
+            float easeInQuint = t * t * t * t * t; // Appears exponentially faster
+            int targetCount = static_cast<int>(10000.0f * easeInQuint);
+            targetCount = std::min(targetCount, 10000);
+            while (current < targetCount && current < capacity) {
                 spawnOne();
                 ++current;
             }
@@ -432,7 +460,7 @@ void Application::render()
             scb.lightPos = lightPos;
             scb.lightColor = lightColor;
             scb.ambientColor = ambientColor;
-            scb.albedo = mat.albedo;
+            scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
             scb.roughness = mat.roughness;
             scb.metallic = mat.metallic;
             scb.emissiveStrength = mat.emissiveStrength;
@@ -443,13 +471,19 @@ void Application::render()
             drawIdx++;
         });
 
+        this->lastFrameObjectCount = drawIdx;
+        uint32_t currentVertexCount = 0;
+
         for (uint32_t i = 0; i < drawIdx; ++i) {
+            currentVertexCount += drawCmds[i].indexCount;
             cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
             cmdList->DrawIndexedInstanced(
                 drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }
+        
+        this->lastFrameVertexCount = currentVertexCount;
     }
 
     // --- Bloom + composite ---
@@ -577,6 +611,13 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         }
 
         ImGui::EndMainMenuBar();
+    }
+
+    if (ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
+        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Text("Objects: %u", this->lastFrameObjectCount);
+        ImGui::Text("Vertices: %u", this->lastFrameVertexCount);
+        ImGui::End();
     }
 
     ImGui::Render();

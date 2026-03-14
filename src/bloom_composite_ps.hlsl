@@ -40,16 +40,16 @@ float3 AgXCore(float3 color)
     color = (color + 12.47393f) / (4.026069f + 12.47393f);
     color = clamp(color, 0.0f, 1.0f);
 
-    // 6th order polynomial approximation of AgX sigmoid
+    // 6th order polynomial approximation of AgX sigmoid.
+    // Coefficients from Godot PR #101406 — monotonic on [0,1], f(0)=0, f(1)≈1.
     float3 x2 = color * color;
     float3 x4 = x2 * x2;
-    color = +15.5f    * x4 * x2
-            - 40.14f  * x4 * color
-            + 31.96f  * x4
-            - 6.868f  * x2 * color
-            + 0.4298f * x2
-            + 0.1191f * color
-            - 0.00232f;
+    color = 27.069f   * x4 * x2
+            - 74.778f * x4 * color
+            + 70.359f * x4
+            - 25.682f * x2 * color
+            + 4.0111f * x2
+            + 0.021f  * color;
     return color;
 }
 
@@ -57,7 +57,6 @@ float3 AgXTonemap(float3 color)
 {
     color = AgXCore(color);
     color = mul(AgXOutsetMatrix, color);
-    color = pow(max(0.0f, color), 2.2f);
     return saturate(color);
 }
 
@@ -70,7 +69,6 @@ float3 AgXPunchy(float3 color)
     color = luma + 1.4f * (color - luma);
 
     color = mul(AgXOutsetMatrix, color);
-    color = pow(max(0.0f, color), 2.2f);
     return saturate(color);
 }
 
@@ -147,6 +145,9 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
         default: ldr = AgXTonemap(hdr); break;
     }
 
-    ldr = pow(max(ldr, 0.0f), 1.0f / 2.2f);
+    // sRGB OETF: linear segment below 0.0031308, power curve above
+    ldr = max(ldr, 0.0f);
+    ldr = select(ldr <= 0.0031308f, ldr * 12.92f,
+                 1.055f * pow(ldr, 1.0f / 2.4f) - 0.055f);
     return float4(ldr, 1.0f);
 }

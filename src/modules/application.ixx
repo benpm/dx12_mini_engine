@@ -86,6 +86,8 @@ export class Application
     bool fullscreen = false;
     bool testMode = false;
     int frameCount = 0;
+    uint32_t lastFrameObjectCount = 0;
+    uint32_t lastFrameVertexCount = 0;
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;

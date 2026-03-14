@@ -23,4 +23,6 @@ export struct MeshRef
     uint32_t indexOffset{ 0 };
     uint32_t indexCount{ 0 };
     int materialIndex{ 0 };
+    // Per-entity albedo override; w==0 means "use material albedo"
+    vec4 albedoOverride{ 0.0f, 0.0f, 0.0f, 0.0f };
 };
