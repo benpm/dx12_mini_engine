@@ -16,6 +16,19 @@ export struct Transform
     mat4 world;
 };
 
+// Animation state for orbiting entities
+export struct Animated
+{
+    float speed;          // orbital speed (rad/s)
+    float orbitRadius;    // distance from Y axis
+    float orbitAngle;     // current angle (updated each frame)
+    float orbitY;         // fixed Y height
+    float initialScale;   // preserved from spawn
+    vec3 rotAxis;         // preserved rotation axis
+    float rotAngle;       // preserved rotation angle
+    float pulsePhase;     // phase offset for scale pulsing
+};
+
 // Reference into shared mega vertex/index buffers
 export struct MeshRef
 {

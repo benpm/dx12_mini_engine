@@ -110,6 +110,9 @@ export class Scene
         std::vector<ComPtr<ID3D12Resource>>& temps
     );
     void clearScene(CommandQueue& cmdQueue);
-    bool loadGltf(const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue);
+    bool loadGltf(
+        const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue,
+        bool append = false
+    );
     void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue);
 };

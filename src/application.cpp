@@ -15,6 +15,7 @@ module;
 #include <cstdlib>
 #include <random>
 #include <string>
+#include <filesystem>
 #include <vector>
 #include <gainput/gainput.h>
 #include <ScreenGrab.h>
@@ -347,6 +348,8 @@ void Application::update()
 
         std::uniform_real_distribution<float> hueDist(0.0f, 360.0f);
 
+        std::uniform_real_distribution<float> speedDist(0.1f, 0.5f);
+
         auto spawnOne = [&] {
             const vec3 axis =
                 normalize(vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)));
@@ -354,14 +357,21 @@ void Application::update()
                 vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)) *
                 this->cam.radius / 2.0f;
             const float s = scaleDist(scene.rng);
+            const float angle = angleDist(scene.rng);
             const mat4 world =
-                scale(s, s, s) * rotateAxis(axis, angleDist(scene.rng)) *
+                scale(s, s, s) * rotateAxis(axis, angle) *
                 translate(pos.x, pos.y, pos.z);
             Transform tf;
             tf.world = world;
             MeshRef mesh = scene.spawnableMeshRefs[meshDist(scene.rng)];
             mesh.albedoOverride = hslToLinear(hueDist(scene.rng), 0.7f, 0.65f);
-            scene.ecsWorld.entity().set(tf).set(mesh);
+
+            float orbitRadius = std::sqrt(pos.x * pos.x + pos.z * pos.z);
+            float orbitAngle = std::atan2(pos.z, pos.x);
+            Animated anim{ speedDist(scene.rng), orbitRadius, orbitAngle, pos.y,
+                           s, axis, angle, angleDist(scene.rng) };
+
+            scene.ecsWorld.entity().set(tf).set(mesh).set(anim);
         };
 
         int current = scene.ecsWorld.count<MeshRef>();
@@ -405,6 +415,17 @@ void Application::update()
     if (this->inputMap.GetBoolWasDown(Button::ScrollDown)) {
         this->cam.radius *= 1.25f;
     }
+
+    // Animate orbiting entities
+    scene.ecsWorld.each([&](Transform& tf, Animated& anim) {
+        anim.orbitAngle += anim.speed * dt;
+        float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
+        float s = anim.initialScale * pulse;
+        vec3 pos(anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
+                 anim.orbitRadius * std::sin(anim.orbitAngle));
+        tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
+                   translate(pos.x, pos.y, pos.z);
+    });
 }
 
 void Application::render()
@@ -918,6 +939,14 @@ bool Application::loadContent()
     scene.createMegaBuffers(device.Get());
     scene.createDrawDataBuffers(device.Get());
     scene.loadTeapot(device.Get(), cmdQueue);
+
+    // Load all GLB models from resources/models/
+    for (const auto& entry : std::filesystem::directory_iterator(MODELS_DIR)) {
+        if (entry.path().extension() == ".glb") {
+            spdlog::info("Loading model: {}", entry.path().filename().string());
+            scene.loadGltf(entry.path().string(), device.Get(), cmdQueue, true);
+        }
+    }
 
     // DSV heap
     {

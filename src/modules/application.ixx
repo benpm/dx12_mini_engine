@@ -61,7 +61,7 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    float fov = 45.0f;
+    float fov = 55.0f;
     mat4 matModel;
     OrbitCamera cam;
     bool contentLoaded = false;
@@ -71,7 +71,7 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowDsvHeap;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO;
     bool shadowEnabled = true;
-    float shadowBias = 0.002f;
+    float shadowBias = 0.0002f;
     static constexpr uint32_t shadowMapSize = 2048;
 
     // Bloom / post-processing UI params
@@ -81,7 +81,7 @@ export class Application
 
     // GUI-controlled scene parameters
     float bgColor[3] = { 0.0f, 0.0f, 0.0f };
-    float lightBrightness = 0.4f;
+    float lightBrightness = 0.1f;
     float ambientBrightness = 0.01f;
     // Directional light
     float dirLightDir[3] = { 0.5f, -0.8f, 0.3f };  // direction FROM light (negated in shader)

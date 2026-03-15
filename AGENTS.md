@@ -29,10 +29,11 @@ cmake --build build --config Release
 ### Rules
 - After any change: build then run `--test` and inspect `screenshot.png`
 - **After finishing every task**: always run `--test`, read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
+- **After every change**: update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
 - Before commiting:
   - `git pull`
   - Run clang-tidy and clang-format on all source and header files
-  - Make updates to `AGENTS.md`
+  - Verify `AGENTS.md` is up to date
 
 ---
 
@@ -52,7 +53,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `camera.ixx`        | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
 | `input.ixx`         | Button/Key enums, gainput integration                                        |
 | `common.ixx`        | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
-| `ecs_components.ixx`| ECS components: `Transform` (mat4 world), `MeshRef` (mega-buffer offsets)    |
+| `ecs_components.ixx`| ECS components: `Transform`, `MeshRef`, `Animated` (orbit + pulse)           |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
 | `logging.ixx`       | spdlog setup with custom error sink                                          |
 
@@ -80,20 +81,25 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 ### Application class (`src/application.cpp`)
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
-- **Scene PSO + root signature**: SRV descriptor table + 1 root constant (`drawIndex`).
+- **Root signature**: 3 root params — SRV descriptor table (t0, structured buffer), 1 root constant (`drawIndex`, b0), SRV descriptor table (t1, shadow map). Static comparison sampler (s0) for shadow PCF.
+- **Scene PSO**: standard rasterization to HDR RT. **Shadow PSO**: depth-only, front-face culling, depth bias.
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 - Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
-- **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO via `createScenePSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
+- **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO + shadow PSO via `createScenePSO()` / `createShadowPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
+- **Animation system**: `update()` runs `ecsWorld.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary.
 
 ### Rendering pipeline
 
 ```
 update()  →  render()
-              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls)
+              ├─ Shadow pass      (depth-only to 2048² shadow map, directional light ortho VP)
+              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls, samples shadow map)
               ├─ Bloom prefilter  → downsample chain → upsample chain
               ├─ Composite        (HDR + bloom → swap chain backbuffer)
               └─ ImGui overlay    (directly to backbuffer)
 ```
+
+**Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `entityCount` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
 
 **Bloom**: 5-mip chain — prefilter (Karis average, soft threshold), 4× downsample, 4× upsample (tent filter, additive blend).
 
@@ -105,20 +111,24 @@ Cook-Torrance BRDF:
 - **Geometry**: Smith + Schlick-GGX
 - **Fresnel**: Schlick approximation
 - **Inputs** (from `SceneConstantBuffer`): albedo RGBA, roughness, metallic, emissive color + strength
-- Single punctual light with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
+- 8 animated point lights with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
+- 1 directional light (shadow-casting) — direction, color, brightness configurable in UI.
 
 ### Scene loading
 - **Default**: teapot OBJ embedded as Win32 resource (`IDR_TEAPOT_OBJ`/`IDR_TEAPOT_MTL`).
+- **Startup model loading**: all `.glb` files in `resources/models/` are loaded automatically at startup via `MODELS_DIR` (CMake-defined). Spawned entities pick randomly from all loaded mesh refs.
 - **GLB/glTF**: tinygltf v2.9.5 via FetchContent. Load from UI "Load GLB" panel (type path, press Load).
   - Supports binary GLB and ASCII glTF.
   - Extracts POSITION, NORMAL, TEXCOORD_0, indices (any component type).
   - Loads PBR metallic-roughness material factors (base color, roughness, metallic, emissive).
   - Traverses node hierarchy with TRS / matrix transforms.
+- **Model files**: stored in `resources/models/` (teapot.obj/mtl + GLB primitives).
 
 ### ImGui UI panels
 - **Bloom**: threshold, intensity sliders.
 - **Tonemapping**: tonemapper combo.
-- **Scene**: background color, light brightness, ambient brightness.
+- **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness.
+- **Shadows**: enable/disable, bias slider.
 - **Material**: albedo, roughness, metallic, emissive color + strength. Material selector when GLB has multiple.
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
 
@@ -148,6 +158,9 @@ Cook-Torrance BRDF:
 
 ### GPU upload buffer lifetime
 Intermediate upload heaps from `UpdateSubresources` **must** stay alive until after `cmdQueue.waitForFenceVal()`. Pass a `vector<ComPtr<ID3D12Resource>>& temps` to `uploadMesh` and clear it only after the GPU wait.
+
+### SceneConstantBuffer layout
+Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `viewProj`, `cameraPos`, `ambientColor`, `lightPos[8]`, `lightColor[8]`, `albedo`, roughness/metallic/emissiveStrength/_pad, `emissive`, `dirLightDir`, `dirLightColor`, `lightViewProj`, shadowBias/shadowMapTexelSize/_pad2[2].
 
 ### XMMATRIX alignment
 `SceneConstantBuffer` contains `XMMATRIX` members — declare on the stack with `alignas(16)`:

@@ -217,6 +217,7 @@ endif()
 target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     DXC_PATH="${DXC_EXECUTABLE}"
     SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
+    MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
 )
 
 target_compile_definitions(main PRIVATE

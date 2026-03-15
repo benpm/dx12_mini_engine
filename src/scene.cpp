@@ -412,7 +412,9 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
 // Scene::loadGltf
 // ---------------------------------------------------------------------------
 
-bool Scene::loadGltf(const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue)
+bool Scene::loadGltf(
+    const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue, bool append
+)
 {
     spdlog::info("loadGltf: {}", path);
 
@@ -436,7 +438,11 @@ bool Scene::loadGltf(const std::string& path, ID3D12Device2* device, CommandQueu
         return false;
     }
 
-    clearScene(cmdQueue);
+    if (!append) {
+        clearScene(cmdQueue);
+    }
+
+    int materialBaseIdx = static_cast<int>(materials.size());
 
     if (model.materials.empty()) {
         Material def;
@@ -527,15 +533,18 @@ bool Scene::loadGltf(const std::string& path, ID3D12Device2* device, CommandQueu
                     }
                 }
 
-                int matIdx = (prim.material >= 0 && prim.material < (int)materials.size())
-                                 ? prim.material
-                                 : 0;
+                int matIdx =
+                    (prim.material >= 0)
+                        ? materialBaseIdx + prim.material
+                        : 0;
                 MeshRef meshRef =
                     appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
                 spawnableMeshRefs.push_back(meshRef);
-                Transform tf;
-                tf.world = worldTf;
-                ecsWorld.entity().set(tf).set(meshRef);
+                if (!append) {
+                    Transform tf;
+                    tf.world = worldTf;
+                    ecsWorld.entity().set(tf).set(meshRef);
+                }
             }
         }
 
