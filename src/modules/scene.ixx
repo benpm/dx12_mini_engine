@@ -32,12 +32,14 @@ export struct VertexPBR
 // ---------------------------------------------------------------------------
 export struct SceneConstantBuffer
 {
+    static constexpr int maxLights = 8;
+
     mat4 model;
     mat4 viewProj;
     vec4 cameraPos;
-    vec4 lightPos;
-    vec4 lightColor;
     vec4 ambientColor;
+    vec4 lightPos[maxLights];    // xyz = world position
+    vec4 lightColor[maxLights];  // rgb = pre-multiplied color
     // PBR material
     vec4 albedo;
     float roughness;
@@ -45,6 +47,13 @@ export struct SceneConstantBuffer
     float emissiveStrength;
     float _pad;
     vec4 emissive;
+    // Directional light (shadow-casting)
+    vec4 dirLightDir;           // xyz = direction (toward light), w = unused
+    vec4 dirLightColor;         // rgb = color * brightness
+    mat4 lightViewProj;
+    float shadowBias;
+    float shadowMapTexelSize;   // 1.0 / shadowMapResolution
+    float _pad2[2];
 };
 
 // ---------------------------------------------------------------------------

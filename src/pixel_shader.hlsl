@@ -14,18 +14,27 @@ struct SceneCB
     matrix Model;
     matrix ViewProj;
     float4 CameraPos;
-    float4 LightPos;
-    float4 LightColor;
     float4 AmbientColor;
+    float4 LightPos[8];
+    float4 LightColor[8];
     float4 Albedo;
     float  Roughness;
     float  Metallic;
     float  EmissiveStrength;
     float  _pad;
     float4 Emissive;
+    // Directional light (shadow-casting)
+    float4 DirLightDir;
+    float4 DirLightColor;
+    matrix LightViewProj;
+    float  ShadowBias;
+    float  ShadowMapTexelSize;
+    float  _pad2[2];
 };
 
 StructuredBuffer<SceneCB> drawData : register(t0);
+Texture2D<float> shadowMapTex : register(t1);
+SamplerComparisonState shadowSampler : register(s0);
 
 static const float PI = 3.14159265359f;
 
@@ -58,6 +67,25 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
     return F0 + (1.0f - F0) * pow(saturate(1.0f - cosTheta), 5.0f);
 }
 
+float calcShadow(float3 worldPos, matrix lightVP, float bias, float texelSize)
+{
+    float4 lsPos = mul(lightVP, float4(worldPos, 1.0f));
+    float3 proj = lsPos.xyz / lsPos.w;
+    float2 uv = proj.xy * 0.5f + 0.5f;
+    uv.y = 1.0f - uv.y;
+
+    if (any(uv < 0.0f) || any(uv > 1.0f) || proj.z > 1.0f || proj.z < 0.0f)
+        return 1.0f;
+
+    float depth = proj.z - bias;
+    float shadow = 0.0f;
+    [unroll] for (int x = -1; x <= 1; x++)
+        [unroll] for (int y = -1; y <= 1; y++)
+            shadow += shadowMapTex.SampleCmpLevelZero(
+                shadowSampler, uv + float2(x, y) * texelSize, depth);
+    return shadow / 9.0f;
+}
+
 float4 main(PixelIn IN) : SV_Target
 {
     SceneCB cb = drawData[IN.DrawIndex];
@@ -74,31 +102,48 @@ float4 main(PixelIn IN) : SV_Target
     // Reflectance at normal incidence (dialectric: 0.04, metal: albedo)
     float3 F0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
 
-    // --- Single punctual light ---
-    // Use smooth windowed attenuation (Frostbite / UE4 style) so LightColor.rgb
-    // is intuitive — brightness 3 gives reasonable illumination at scene scale.
-    float3 toLight   = cb.LightPos.xyz - IN.WorldPos;
-    float  dist      = length(toLight);
-    float3 L         = toLight / dist;
-    float3 H         = normalize(V + L);
-    // Soft 1/d^2 with a minimum floor so close lights don't blow out
-    float  attenuation = 1.0f / max(dist * dist * 0.01f, 0.0001f);
-    float3 radiance  = cb.LightColor.rgb * attenuation;
+    // --- Punctual lights (up to 8) ---
+    float3 Lo = 0.0f;
+    for (int i = 0; i < 8; ++i)
+    {
+        float3 toLight     = cb.LightPos[i].xyz - IN.WorldPos;
+        float  dist        = length(toLight);
+        float3 L           = toLight / max(dist, 0.0001f);
+        float3 H           = normalize(V + L);
+        float  attenuation = 1.0f / max(dist * dist * 0.01f, 0.0001f);
+        float3 radiance    = cb.LightColor[i].rgb * attenuation;
 
-    float  NdL = max(dot(N, L), 0.0f);
+        float  NdL = max(dot(N, L), 0.0f);
 
-    // Cook-Torrance specular BRDF
-    float  D  = DistributionGGX(N, H, roughness);
-    float  G  = GeometrySmith(NdV, NdL, roughness);
-    float3 F  = FresnelSchlick(max(dot(H, V), 0.0f), F0);
+        // Cook-Torrance specular BRDF
+        float  D  = DistributionGGX(N, H, roughness);
+        float  G  = GeometrySmith(NdV, NdL, roughness);
+        float3 F  = FresnelSchlick(max(dot(H, V), 0.0f), F0);
 
-    float3 specular = (D * G * F) / (4.0f * NdV * NdL + 0.0001f);
+        float3 specular = (D * G * F) / (4.0f * NdV * NdL + 0.0001f);
 
-    // Energy-conserving diffuse (Lambertian, metals have no diffuse)
-    float3 kD      = (1.0f - F) * (1.0f - metallic);
-    float3 diffuse = kD * albedo / PI;
+        // Energy-conserving diffuse (Lambertian, metals have no diffuse)
+        float3 kD = (1.0f - F) * (1.0f - metallic);
+        Lo += (kD * albedo / PI + specular) * radiance * NdL;
+    }
 
-    float3 Lo = (diffuse + specular) * radiance * NdL;
+    // --- Directional light with shadow ---
+    {
+        float3 L   = normalize(cb.DirLightDir.xyz);
+        float3 H   = normalize(V + L);
+        float  NdL = max(dot(N, L), 0.0f);
+        float3 radiance = cb.DirLightColor.rgb;
+
+        float  D  = DistributionGGX(N, H, roughness);
+        float  G  = GeometrySmith(NdV, NdL, roughness);
+        float3 F  = FresnelSchlick(max(dot(H, V), 0.0f), F0);
+        float3 specular = (D * G * F) / (4.0f * NdV * NdL + 0.0001f);
+        float3 kD = (1.0f - F) * (1.0f - metallic);
+
+        float shadow = calcShadow(IN.WorldPos, cb.LightViewProj,
+                                   cb.ShadowBias, cb.ShadowMapTexelSize);
+        Lo += (kD * albedo / PI + specular) * radiance * NdL * shadow;
+    }
 
     // Simple ambient term (skybox-tinted)
     float3 ambient = cb.AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f);

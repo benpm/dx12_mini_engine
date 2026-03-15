@@ -203,7 +203,7 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
 
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = nBuffers;
+        desc.NumDescriptors = nBuffers + 1;  // +1 for shadow map SRV
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&sceneSrvHeap)));

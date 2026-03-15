@@ -28,6 +28,7 @@ cmake --build build --config Release
 
 ### Rules
 - After any change: build then run `--test` and inspect `screenshot.png`
+- **After finishing every task**: always run `--test`, read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
 - Before commiting:
   - `git pull`
   - Run clang-tidy and clang-format on all source and header files

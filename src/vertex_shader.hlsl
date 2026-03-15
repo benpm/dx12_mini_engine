@@ -10,15 +10,21 @@ struct SceneCB
     matrix Model;
     matrix ViewProj;
     float4 CameraPos;
-    float4 LightPos;
-    float4 LightColor;
     float4 AmbientColor;
+    float4 LightPos[8];
+    float4 LightColor[8];
     float4 Albedo;
     float  Roughness;
     float  Metallic;
     float  EmissiveStrength;
     float  _pad;
     float4 Emissive;
+    float4 DirLightDir;
+    float4 DirLightColor;
+    matrix LightViewProj;
+    float  ShadowBias;
+    float  ShadowMapTexelSize;
+    float  _pad2[2];
 };
 
 StructuredBuffer<SceneCB> drawData : register(t0);

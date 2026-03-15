@@ -281,10 +281,16 @@ void Application::update()
         pendingResetToTeapot = false;
         scene.clearScene(cmdQueue);
         scene.loadTeapot(device.Get(), cmdQueue);
+        spawningStopped = false;
+        recentFrameHead = 0;
+        recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
     }
     if (!pendingGltfPath.empty()) {
         std::string path = std::move(pendingGltfPath);
         pendingGltfPath.clear();
+        spawningStopped = false;
+        recentFrameHead = 0;
+        recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
         if (!scene.loadGltf(path, device.Get(), cmdQueue)) {
             spdlog::error("Failed to load GLB: {}", path);
         }
@@ -298,6 +304,15 @@ void Application::update()
     t0 = t1;
     const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
 
+    lightTime += dt;
+    lastFrameMs = dt * 1000.0f;
+    recentFrameMs[recentFrameHead % 3] = lastFrameMs;
+    ++recentFrameHead;
+    if (!spawningStopped && recentFrameHead >= 3 &&
+        recentFrameMs[0] > 10.0f && recentFrameMs[1] > 10.0f && recentFrameMs[2] > 10.0f) {
+        spawningStopped = true;
+    }
+
     // Shader hot reload
     if (shaderCompiler.poll(dt)) {
         flush();
@@ -310,6 +325,7 @@ void Application::update()
                             shaderCompiler.wasRecompiled(bloomCompIdx);
         if (sceneChanged) {
             createScenePSO();
+            createShadowPSO();
         }
         if (bloomChanged) {
             auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
@@ -356,15 +372,12 @@ void Application::update()
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
-        } else if (scene.spawnTimer < 3.0f) {
-            scene.spawnTimer += dt;
-            float t = std::min(scene.spawnTimer / 3.0f, 1.0f);
-            float easeInQuint = t * t * t * t * t; // Appears exponentially faster
-            int targetCount = static_cast<int>(10000.0f * easeInQuint);
-            targetCount = std::min(targetCount, 10000);
-            while (current < targetCount && current < capacity) {
+        } else if (!spawningStopped && current < capacity) {
+            // Spawn a batch each frame until the last 3 frames all exceeded 10ms
+            constexpr int batchSize = 50;
+            int toSpawn = std::min(batchSize, capacity - current);
+            for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
-                ++current;
             }
         }
     }
@@ -399,6 +412,168 @@ void Application::render()
     auto backBuffer = this->backBuffers[this->curBackBufIdx];
     auto cmdList = this->cmdQueue.getCmdList();
 
+    // --- Compute per-frame scene data ---
+    mat4 viewProj = this->cam.view() * this->cam.proj();
+    float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
+    float camY = this->cam.radius * sin(this->cam.pitch);
+    float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
+    vec4 cameraPos(camX, camY, camZ, 1.0f);
+    vec4 ambientColor(
+        bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
+        bgColor[2] * ambientBrightness, 1.0f
+    );
+
+    // Compute animated light positions for this frame
+    vec4 animLightPos[SceneConstantBuffer::maxLights];
+    vec4 animLightColor[SceneConstantBuffer::maxLights];
+    for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
+        const LightAnim& la = lightAnims[i];
+        animLightPos[i] = {
+            la.center.x + la.ampX * std::sin(la.freqX * lightTime),
+            la.center.y + la.ampY * std::cos(la.freqY * lightTime),
+            la.center.z + la.ampZ * std::sin(la.freqZ * lightTime + (float)i),
+            1.0f
+        };
+        animLightColor[i] = {
+            la.color.x * lightBrightness, la.color.y * lightBrightness,
+            la.color.z * lightBrightness, 1.0f
+        };
+    }
+
+    // Directional light shadow map viewProj
+    mat4 lightViewProj{};
+    vec4 dirLightDirVec{};  // toward light (negated from UI direction)
+    vec4 dirLightColorVec{};
+    if (shadowEnabled) {
+        using namespace DirectX;
+        // UI stores direction FROM light; negate to get direction TOWARD light for shader
+        XMVECTOR fromLight = XMVector3Normalize(
+            XMVectorSet(dirLightDir[0], dirLightDir[1], dirLightDir[2], 0.0f)
+        );
+        XMVECTOR toLight = XMVectorNegate(fromLight);
+        XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&dirLightDirVec),
+                       XMVectorSetW(toLight, 0.0f));
+        dirLightColorVec = {
+            dirLightColor[0] * dirLightBrightness,
+            dirLightColor[1] * dirLightBrightness,
+            dirLightColor[2] * dirLightBrightness, 1.0f
+        };
+
+        // Place virtual light position far along the direction for LookAt
+        XMVECTOR lightP = XMVectorScale(toLight, 25.0f);
+        XMVECTOR target = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+        XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+        float dotUp = fabsf(XMVectorGetByIndex(
+            XMVector3Dot(XMVector3Normalize(XMVectorSubtract(target, lightP)),
+                         up), 0));
+        if (dotUp > 0.99f)
+            up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+        XMMATRIX lightView = XMMatrixLookAtLH(lightP, target, up);
+        XMMATRIX lightProj = XMMatrixOrthographicLH(30.0f, 30.0f, 0.1f, 60.0f);
+        XMMATRIX lvp = XMMatrixMultiply(lightView, lightProj);
+        XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&lightViewProj), lvp);
+    }
+
+    // --- Fill structured buffer (scene + shadow draw data) ---
+    struct DrawCmd
+    {
+        uint32_t indexCount;
+        uint32_t indexOffset;
+        uint32_t vertexOffset;
+    };
+    std::vector<DrawCmd> drawCmds;
+    uint32_t drawIdx = 0;
+    SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
+
+    scene.ecsWorld.each([&](const Transform& tf, const MeshRef& mesh) {
+        assert(drawIdx < Scene::maxDrawsPerFrame / 2);
+        const Material& mat = scene.materials[mesh.materialIndex];
+
+        // Scene draw data
+        SceneConstantBuffer& scb = mapped[drawIdx];
+        scb.model = tf.world * this->matModel;
+        scb.viewProj = viewProj;
+        scb.cameraPos = cameraPos;
+        scb.ambientColor = ambientColor;
+        for (int li = 0; li < SceneConstantBuffer::maxLights; ++li) {
+            scb.lightPos[li]   = animLightPos[li];
+            scb.lightColor[li] = animLightColor[li];
+        }
+        scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
+        scb.roughness = mat.roughness;
+        scb.metallic = mat.metallic;
+        scb.emissiveStrength = mat.emissiveStrength;
+        scb._pad = 0.0f;
+        scb.emissive = mat.emissive;
+        scb.dirLightDir = dirLightDirVec;
+        scb.dirLightColor = dirLightColorVec;
+        scb.lightViewProj = lightViewProj;
+        scb.shadowBias = shadowBias;
+        scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
+        scb._pad2[0] = scb._pad2[1] = 0.0f;
+
+        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
+        drawIdx++;
+    });
+
+    uint32_t entityCount = drawIdx;
+
+    // Shadow draw data (same model transforms, light viewProj instead of camera viewProj)
+    if (shadowEnabled) {
+        for (uint32_t i = 0; i < entityCount; ++i) {
+            SceneConstantBuffer& shadow = mapped[entityCount + i];
+            shadow.model = mapped[i].model;
+            shadow.viewProj = lightViewProj;
+        }
+    }
+
+    this->lastFrameObjectCount = entityCount;
+
+    // --- Shadow pass ---
+    if (shadowEnabled) {
+        this->transitionResource(
+            cmdList, shadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE
+        );
+        auto shadowDsv = shadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
+        this->clearDepth(cmdList, shadowDsv);
+
+        cmdList->SetPipelineState(this->shadowPSO.Get());
+        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        D3D12_VIEWPORT shadowVP = { 0.0f, 0.0f, (float)shadowMapSize, (float)shadowMapSize,
+                                     0.0f, 1.0f };
+        D3D12_RECT shadowScissor = { 0, 0, (LONG)shadowMapSize, (LONG)shadowMapSize };
+        cmdList->RSSetViewports(1, &shadowVP);
+        cmdList->RSSetScissorRects(1, &shadowScissor);
+        cmdList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
+
+        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
+        cmdList->IASetIndexBuffer(&scene.megaIBV);
+
+        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, sceneHeaps);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+
+        for (uint32_t i = 0; i < entityCount; ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, entityCount + i, 0);
+            cmdList->DrawIndexedInstanced(
+                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                static_cast<INT>(drawCmds[i].vertexOffset), 0
+            );
+        }
+
+        this->transitionResource(
+            cmdList, shadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+    }
+
     // --- Scene pass: render to HDR render target ---
     {
         FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
@@ -427,54 +602,15 @@ void Application::render()
         );
         cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
 
-        mat4 viewProj = this->cam.view() * this->cam.proj();
-        float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
-        float camY = this->cam.radius * sin(this->cam.pitch);
-        float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
-        vec4 cameraPos(camX, camY, camZ, 1.0f);
-        vec4 lightPos(10.0f, 15.0f, -10.0f, 1.0f);
-        vec4 lightColor(lightBrightness, lightBrightness, lightBrightness, 1.0f);
-        vec4 ambientColor(
-            bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
-            bgColor[2] * ambientBrightness, 1.0f
+        // Bind shadow map SRV (descriptor index 3 in sceneSrvHeap)
+        CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
         );
+        cmdList->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
 
-        struct DrawCmd
-        {
-            uint32_t indexCount;
-            uint32_t indexOffset;
-            uint32_t vertexOffset;
-        };
-        std::vector<DrawCmd> drawCmds;
-        uint32_t drawIdx = 0;
-        SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
-
-        scene.ecsWorld.each([&](const Transform& tf, const MeshRef& mesh) {
-            assert(drawIdx < Scene::maxDrawsPerFrame);
-            const Material& mat = scene.materials[mesh.materialIndex];
-
-            SceneConstantBuffer& scb = mapped[drawIdx];
-            scb.model = tf.world * this->matModel;
-            scb.viewProj = viewProj;
-            scb.cameraPos = cameraPos;
-            scb.lightPos = lightPos;
-            scb.lightColor = lightColor;
-            scb.ambientColor = ambientColor;
-            scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
-            scb.roughness = mat.roughness;
-            scb.metallic = mat.metallic;
-            scb.emissiveStrength = mat.emissiveStrength;
-            scb._pad = 0.0f;
-            scb.emissive = mat.emissive;
-
-            drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
-            drawIdx++;
-        });
-
-        this->lastFrameObjectCount = drawIdx;
         uint32_t currentVertexCount = 0;
-
-        for (uint32_t i = 0; i < drawIdx; ++i) {
+        for (uint32_t i = 0; i < entityCount; ++i) {
             currentVertexCount += drawCmds[i].indexCount;
             cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
             cmdList->DrawIndexedInstanced(
@@ -482,7 +618,7 @@ void Application::render()
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }
-        
+
         this->lastFrameVertexCount = currentVertexCount;
     }
 
@@ -561,8 +697,23 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         if (ImGui::BeginMenu("Scene")) {
             ImGui::PushItemWidth(220.0f);
             ImGui::ColorEdit3("Background", bgColor);
-            ImGui::SliderFloat("Light Brightness", &lightBrightness, 0.0f, 20.0f);
+            ImGui::Separator();
+            ImGui::Text("Directional Light");
+            ImGui::SliderFloat3("Direction", dirLightDir, -1.0f, 1.0f);
+            ImGui::ColorEdit3("Dir Color", dirLightColor);
+            ImGui::SliderFloat("Dir Brightness", &dirLightBrightness, 0.0f, 20.0f);
+            ImGui::Separator();
+            ImGui::Text("Point Lights");
+            ImGui::SliderFloat("Point Brightness", &lightBrightness, 0.0f, 20.0f);
             ImGui::SliderFloat("Ambient Brightness", &ambientBrightness, 0.0f, 2.0f);
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Shadows")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::Checkbox("Enabled", &shadowEnabled);
+            ImGui::SliderFloat("Bias", &shadowBias, 0.0001f, 0.01f, "%.4f");
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
@@ -615,6 +766,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     if (ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Text("Frame: %.2f ms", this->lastFrameMs);
         ImGui::Text("Objects: %u", this->lastFrameObjectCount);
         ImGui::Text("Vertices: %u", this->lastFrameVertexCount);
         ImGui::End();
@@ -716,6 +868,46 @@ void Application::createScenePSO()
 }
 
 // ---------------------------------------------------------------------------
+// createShadowPSO — depth-only PSO for shadow pass
+// ---------------------------------------------------------------------------
+
+void Application::createShadowPSO()
+{
+    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    auto vsData = shaderCompiler.data(sceneVSIdx);
+    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(sceneVSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = this->rootSignature.Get();
+    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
+    psoDesc.VS = vs;
+    psoDesc.PS = {};  // No pixel shader — depth only
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;  // Reduce peter-panning
+    psoDesc.RasterizerState.DepthBias = 1000;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
+    psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 0;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc = { 1, 0 };
+
+    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->shadowPSO)));
+}
+
+// ---------------------------------------------------------------------------
 // loadContent — creates pipeline + uploads default teapot scene
 // ---------------------------------------------------------------------------
 
@@ -752,14 +944,30 @@ bool Application::loadContent()
         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0: structured buffer
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[2];
+    CD3DX12_DESCRIPTOR_RANGE1 shadowSrvRange;
+    shadowSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1: shadow map
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[3];
     rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
+    rootParams[2].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    // Comparison sampler for shadow mapping (s0)
+    D3D12_STATIC_SAMPLER_DESC shadowSampler = {};
+    shadowSampler.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    shadowSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    shadowSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    shadowSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    shadowSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    shadowSampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    shadowSampler.ShaderRegister = 0;
+    shadowSampler.RegisterSpace = 0;
+    shadowSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
-    rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 0, nullptr, rootSigFlags);
+    rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &shadowSampler, rootSigFlags);
 
     ComPtr<ID3DBlob> rootSigBlob, errorBlob;
     chkDX(D3DX12SerializeVersionedRootSignature(
@@ -772,6 +980,52 @@ bool Application::loadContent()
 
     createScenePSO();
 
+    // Shadow map resources
+    {
+        // Shadow depth texture
+        D3D12_CLEAR_VALUE shadowClearVal = {};
+        shadowClearVal.Format = DXGI_FORMAT_D32_FLOAT;
+        shadowClearVal.DepthStencil = { 1.0f, 0 };
+        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        const CD3DX12_RESOURCE_DESC shadowDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+            DXGI_FORMAT_R32_TYPELESS, shadowMapSize, shadowMapSize, 1, 1, 1, 0,
+            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        );
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &shadowDesc,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &shadowClearVal,
+            IID_PPV_ARGS(&shadowMap)
+        ));
+
+        // Shadow DSV heap + view
+        D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
+        dsvDesc.NumDescriptors = 1;
+        dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        chkDX(device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&shadowDsvHeap)));
+
+        D3D12_DEPTH_STENCIL_VIEW_DESC shadowDsvViewDesc = {};
+        shadowDsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
+        shadowDsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        device->CreateDepthStencilView(
+            shadowMap.Get(), &shadowDsvViewDesc,
+            shadowDsvHeap->GetCPUDescriptorHandleForHeapStart()
+        );
+
+        // Shadow SRV in sceneSrvHeap at slot 3 (after 3 structured buffer SRVs)
+        D3D12_SHADER_RESOURCE_VIEW_DESC shadowSrvDesc = {};
+        shadowSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+        shadowSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        shadowSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        shadowSrvDesc.Texture2D.MipLevels = 1;
+        CD3DX12_CPU_DESCRIPTOR_HANDLE shadowSrvHandle(
+            scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
+        );
+        device->CreateShaderResourceView(shadowMap.Get(), &shadowSrvDesc, shadowSrvHandle);
+    }
+
+    createShadowPSO();
+
     // Init shader hot reload
     if (shaderCompiler.init(DXC_PATH, SHADER_SRC_DIR)) {
         sceneVSIdx = shaderCompiler.watch("vertex_shader.hlsl", "vs_6_0");
@@ -781,6 +1035,28 @@ bool Application::loadContent()
         bloomDownIdx = shaderCompiler.watch("bloom_downsample_ps.hlsl", "ps_6_0");
         bloomUpIdx = shaderCompiler.watch("bloom_upsample_ps.hlsl", "ps_6_0");
         bloomCompIdx = shaderCompiler.watch("bloom_composite_ps.hlsl", "ps_6_0");
+    }
+
+    // Initialize 8 animated lights with random hue colors and sine/cosine coefficients
+    {
+        std::mt19937 lightRng(42u);
+        std::uniform_real_distribution<float> hDist(0.0f, 360.0f);
+        std::uniform_real_distribution<float> cDist(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> freqDist(0.2f, 0.8f);
+        std::uniform_real_distribution<float> ampDist(3.0f, 8.0f);
+        const float orbitR = 8.0f;
+        for (int i = 0; i < 8; ++i) {
+            float angle = (float)i * (6.2831853f / 8.0f);
+            lightAnims[i].center  = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
+                                      orbitR * std::sin(angle) };
+            lightAnims[i].ampX   = ampDist(lightRng);
+            lightAnims[i].ampY   = ampDist(lightRng) * 0.5f;
+            lightAnims[i].ampZ   = ampDist(lightRng);
+            lightAnims[i].freqX  = freqDist(lightRng);
+            lightAnims[i].freqY  = freqDist(lightRng);
+            lightAnims[i].freqZ  = freqDist(lightRng);
+            lightAnims[i].color = hslToLinear(hDist(lightRng), 0.9f, 0.65f);
+        }
     }
 
     this->contentLoaded = true;

@@ -66,20 +66,43 @@ export class Application
     OrbitCamera cam;
     bool contentLoaded = false;
 
+    // Shadow mapping
+    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowDsvHeap;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO;
+    bool shadowEnabled = true;
+    float shadowBias = 0.002f;
+    static constexpr uint32_t shadowMapSize = 2048;
+
     // Bloom / post-processing UI params
     float bloomThreshold = 1.7f;
     float bloomIntensity = 0.1f;
     int tonemapMode = 1;
 
     // GUI-controlled scene parameters
-    float bgColor[3] = { 0.1f, 0.1f, 0.1f };
-    float lightBrightness = 2.0f;
-    float ambientBrightness = 0.15f;
+    float bgColor[3] = { 0.0f, 0.0f, 0.0f };
+    float lightBrightness = 0.4f;
+    float ambientBrightness = 0.01f;
+    // Directional light
+    float dirLightDir[3] = { 0.5f, -0.8f, 0.3f };  // direction FROM light (negated in shader)
+    float dirLightBrightness = 3.0f;
+    float dirLightColor[3] = { 1.0f, 0.95f, 0.85f };  // warm white
     char gltfPathBuf[512] = "";
     bool pendingResetToTeapot{ false };
     std::string pendingGltfPath;
 
     uint64_t frameFenceValues[nBuffers] = {};
+
+    // Animated lights
+    struct LightAnim
+    {
+        vec3 center;
+        float ampX, ampY, ampZ;
+        float freqX, freqY, freqZ;
+        vec4 color;  // rgb = hdr color (pre-multiplied brightness)
+    };
+    LightAnim lightAnims[8] = {};
+    float lightTime = 0.0f;
 
     bool vsync = true;
     bool tearingSupported = false;
@@ -88,6 +111,10 @@ export class Application
     int frameCount = 0;
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;
+    float lastFrameMs = 0.0f;
+    float recentFrameMs[3] = {};
+    int recentFrameHead = 0;
+    bool spawningStopped = false;
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;
@@ -133,5 +160,6 @@ export class Application
     bool loadContent();
     void onResize(uint32_t width, uint32_t height);
     void createScenePSO();
+    void createShadowPSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };
