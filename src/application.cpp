@@ -378,7 +378,7 @@ void Application::update()
         int capacity = static_cast<int>(Scene::maxDrawsPerFrame) - 1;
 
         if (testMode) {
-            int toSpawn = std::min({ 100, capacity - current, 1000 - current });
+            int toSpawn = std::min({ 100, capacity - current, 10 - current });
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }

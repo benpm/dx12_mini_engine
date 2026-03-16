@@ -51,6 +51,9 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         spdlog::info("Creating Application...");
         Application app;
         app.testMode = testMode;
+        if (testMode) {
+            app.cam.radius = 8.0f;
+        }
         spdlog::info("Application created.");
 
         // Input map just to show example for closing window with escape
