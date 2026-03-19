@@ -27,13 +27,13 @@ cmake --build build --config Release
 - Shaders compiled via DXC to `.cso` headers at build time.
 
 ### Rules
-- After any change: build then run `--test` and inspect `screenshot.png`
-- **After finishing every task**: always run `--test`, read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
-- **After every change**: update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
-- Before commiting:
+- **After finishing every task**
+  - build then run `--test` and inspect `screenshot.png`
+    - read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
   - `git pull`
+  - update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
+  - run cmake
   - Run clang-tidy and clang-format on all source and header files
-  - Verify `AGENTS.md` is up to date
 
 ---
 
@@ -42,20 +42,20 @@ cmake --build build --config Release
 From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
 ### Module files (`src/modules/*.ixx`)
-| Module              | Purpose                                                                      |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `window.ixx`        | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
-| `application.ixx`   | Main Application class — orchestrates subsystems, render loop, input, UI     |
-| `scene.ixx`         | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading  |
-| `bloom.ixx`         | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs             |
-| `imgui_layer.ixx`   | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style           |
-| `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling                  |
-| `camera.ixx`        | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
-| `input.ixx`         | Button/Key enums, gainput integration                                        |
-| `common.ixx`        | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
-| `ecs_components.ixx`| ECS components: `Transform`, `MeshRef`, `Animated` (orbit + pulse)           |
-| `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
-| `logging.ixx`       | spdlog setup with custom error sink                                          |
+| Module                 | Purpose                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `window.ixx`           | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
+| `application.ixx`      | Main Application class — orchestrates subsystems, render loop, input, UI     |
+| `scene.ixx`            | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading  |
+| `bloom.ixx`            | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs              |
+| `imgui_layer.ixx`      | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style           |
+| `command_queue.ixx`    | ID3D12CommandQueue + fence sync + command allocator pooling                  |
+| `camera.ixx`           | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
+| `input.ixx`            | Button/Key enums, gainput integration                                        |
+| `common.ixx`           | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
+| `ecs_components.ixx`   | ECS components: `Transform`, `MeshRef`, `Animated` (orbit + pulse)           |
+| `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
+| `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Subsystem architecture
 
@@ -81,7 +81,7 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 ### Application class (`src/application.cpp`)
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
-- **Root signature**: 3 root params — SRV descriptor table (t0, structured buffer), 1 root constant (`drawIndex`, b0), SRV descriptor table (t1, shadow map). Static comparison sampler (s0) for shadow PCF.
+- **Root signature**: 4 root params — SRV descriptor table (t0, structured buffer), 1 root constant (`drawIndex`, b0), SRV descriptor table (t1, shadow map), SRV descriptor table (t2, cubemap). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
 - **Scene PSO**: standard rasterization to HDR RT. **Shadow PSO**: depth-only, front-face culling, depth bias.
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 - Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
@@ -93,13 +93,16 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 ```
 update()  →  render()
               ├─ Shadow pass      (depth-only to 2048² shadow map, directional light ortho VP)
-              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls, samples shadow map)
+              ├─ Cubemap pass     (6-face env map from first reflective entity, non-reflective only)
+              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls, samples shadow map + cubemap)
               ├─ Bloom prefilter  → downsample chain → upsample chain
               ├─ Composite        (HDR + bloom → swap chain backbuffer)
               └─ ImGui overlay    (directly to backbuffer)
 ```
 
 **Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `entityCount` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
+
+**Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*entityCount`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes.
 
 **Bloom**: 5-mip chain — prefilter (Karis average, soft threshold), 4× downsample, 4× upsample (tent filter, additive blend).
 
@@ -110,7 +113,7 @@ Cook-Torrance BRDF:
 - **NDF**: GGX / Trowbridge-Reitz
 - **Geometry**: Smith + Schlick-GGX
 - **Fresnel**: Schlick approximation
-- **Inputs** (from `SceneConstantBuffer`): albedo RGBA, roughness, metallic, emissive color + strength
+- **Inputs** (from `SceneConstantBuffer`): albedo RGBA, roughness, metallic, reflective flag, emissive color + strength
 - 8 animated point lights with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
 - 1 directional light (shadow-casting) — direction, color, brightness configurable in UI.
 
@@ -129,7 +132,8 @@ Cook-Torrance BRDF:
 - **Tonemapping**: tonemapper combo.
 - **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness.
 - **Shadows**: enable/disable, bias slider.
-- **Material**: albedo, roughness, metallic, emissive color + strength. Material selector when GLB has multiple.
+- **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
+- **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change).
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
 
 ---
@@ -160,7 +164,7 @@ Cook-Torrance BRDF:
 Intermediate upload heaps from `UpdateSubresources` **must** stay alive until after `cmdQueue.waitForFenceVal()`. Pass a `vector<ComPtr<ID3D12Resource>>& temps` to `uploadMesh` and clear it only after the GPU wait.
 
 ### SceneConstantBuffer layout
-Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `viewProj`, `cameraPos`, `ambientColor`, `lightPos[8]`, `lightColor[8]`, `albedo`, roughness/metallic/emissiveStrength/_pad, `emissive`, `dirLightDir`, `dirLightColor`, `lightViewProj`, shadowBias/shadowMapTexelSize/_pad2[2].
+Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `viewProj`, `cameraPos`, `ambientColor`, `lightPos[8]`, `lightColor[8]`, `albedo`, roughness/metallic/emissiveStrength/reflective, `emissive`, `dirLightDir`, `dirLightColor`, `lightViewProj`, shadowBias/shadowMapTexelSize/_pad2[2].
 
 ### XMMATRIX alignment
 `SceneConstantBuffer` contains `XMMATRIX` members — declare on the stack with `alignas(16)`:

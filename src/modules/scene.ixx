@@ -45,7 +45,7 @@ export struct SceneConstantBuffer
     float roughness;
     float metallic;
     float emissiveStrength;
-    float _pad;
+    float reflective;
     vec4 emissive;
     // Directional light (shadow-casting)
     vec4 dirLightDir;           // xyz = direction (toward light), w = unused
@@ -65,7 +65,7 @@ export struct Material
     float roughness{ 0.4f };
     float metallic{ 0.0f };
     float emissiveStrength{ 0.0f };
-    float _pad{ 0.0f };
+    bool reflective{ false };
     vec4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
     std::string name;
 };

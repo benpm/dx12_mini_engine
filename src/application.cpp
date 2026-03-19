@@ -51,12 +51,36 @@ static vec4 hslToLinear(float hue, float sat, float light)
     float r, g, b;
     int seg = static_cast<int>(hue / 60.0f) % 6;
     switch (seg) {
-        case 0:  r = c; g = x; b = 0; break;
-        case 1:  r = x; g = c; b = 0; break;
-        case 2:  r = 0; g = c; b = x; break;
-        case 3:  r = 0; g = x; b = c; break;
-        case 4:  r = x; g = 0; b = c; break;
-        default: r = c; g = 0; b = x; break;
+        case 0:
+            r = c;
+            g = x;
+            b = 0;
+            break;
+        case 1:
+            r = x;
+            g = c;
+            b = 0;
+            break;
+        case 2:
+            r = 0;
+            g = c;
+            b = x;
+            break;
+        case 3:
+            r = 0;
+            g = x;
+            b = c;
+            break;
+        case 4:
+            r = x;
+            g = 0;
+            b = c;
+            break;
+        default:
+            r = c;
+            g = 0;
+            b = x;
+            break;
     }
     // sRGB → linear
     auto lin = [](float v) { return std::pow(v, 2.2f); };
@@ -277,6 +301,8 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 
 void Application::update()
 {
+    static int nSpawned = 0;
+
     // Process deferred scene loads (set from ImGui, safe here before render commands)
     if (pendingResetToTeapot) {
         pendingResetToTeapot = false;
@@ -309,8 +335,8 @@ void Application::update()
     lastFrameMs = dt * 1000.0f;
     recentFrameMs[recentFrameHead % 3] = lastFrameMs;
     ++recentFrameHead;
-    if (!spawningStopped && recentFrameHead >= 3 &&
-        recentFrameMs[0] > 10.0f && recentFrameMs[1] > 10.0f && recentFrameMs[2] > 10.0f) {
+    if (!spawningStopped && recentFrameHead >= 3 && recentFrameMs[0] > 10.0f &&
+        recentFrameMs[1] > 10.0f && recentFrameMs[2] > 10.0f) {
         spawningStopped = true;
     }
 
@@ -334,8 +360,10 @@ void Application::update()
                 return d ? D3D12_SHADER_BYTECODE{ d, shaderCompiler.size(idx) }
                          : D3D12_SHADER_BYTECODE{};
             };
-            bloom.reloadPipelines(device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx),
-                                  bc(bloomDownIdx), bc(bloomUpIdx), bc(bloomCompIdx));
+            bloom.reloadPipelines(
+                device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx), bc(bloomUpIdx),
+                bc(bloomCompIdx)
+            );
         }
     }
 
@@ -353,14 +381,12 @@ void Application::update()
         auto spawnOne = [&] {
             const vec3 axis =
                 normalize(vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)));
-            const vec3 pos =
-                vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)) *
-                this->cam.radius / 2.0f;
+            const vec3 pos = vec3(axisDist(scene.rng), axisDist(scene.rng), axisDist(scene.rng)) *
+                             this->cam.radius / 2.0f;
             const float s = scaleDist(scene.rng);
             const float angle = angleDist(scene.rng);
             const mat4 world =
-                scale(s, s, s) * rotateAxis(axis, angle) *
-                translate(pos.x, pos.y, pos.z);
+                scale(s, s, s) * rotateAxis(axis, angle) * translate(pos.x, pos.y, pos.z);
             Transform tf;
             tf.world = world;
             MeshRef mesh = scene.spawnableMeshRefs[meshDist(scene.rng)];
@@ -368,17 +394,18 @@ void Application::update()
 
             float orbitRadius = std::sqrt(pos.x * pos.x + pos.z * pos.z);
             float orbitAngle = std::atan2(pos.z, pos.x);
-            Animated anim{ speedDist(scene.rng), orbitRadius, orbitAngle, pos.y,
-                           s, axis, angle, angleDist(scene.rng) };
+            Animated anim{ speedDist(scene.rng), orbitRadius, orbitAngle, pos.y, s, axis, angle,
+                           angleDist(scene.rng) };
 
             scene.ecsWorld.entity().set(tf).set(mesh).set(anim);
+            ++nSpawned;
         };
 
         int current = scene.ecsWorld.count<MeshRef>();
         int capacity = static_cast<int>(Scene::maxDrawsPerFrame) - 1;
 
         if (testMode) {
-            int toSpawn = std::min({ 100, capacity - current, 10 - current });
+            int toSpawn = 10;
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
@@ -421,8 +448,10 @@ void Application::update()
         anim.orbitAngle += anim.speed * dt;
         float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
         float s = anim.initialScale * pulse;
-        vec3 pos(anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
-                 anim.orbitRadius * std::sin(anim.orbitAngle));
+        vec3 pos(
+            anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
+            anim.orbitRadius * std::sin(anim.orbitAngle)
+        );
         tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
                    translate(pos.x, pos.y, pos.z);
     });
@@ -449,16 +478,12 @@ void Application::render()
     vec4 animLightColor[SceneConstantBuffer::maxLights];
     for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
         const LightAnim& la = lightAnims[i];
-        animLightPos[i] = {
-            la.center.x + la.ampX * std::sin(la.freqX * lightTime),
-            la.center.y + la.ampY * std::cos(la.freqY * lightTime),
-            la.center.z + la.ampZ * std::sin(la.freqZ * lightTime + (float)i),
-            1.0f
-        };
-        animLightColor[i] = {
-            la.color.x * lightBrightness, la.color.y * lightBrightness,
-            la.color.z * lightBrightness, 1.0f
-        };
+        animLightPos[i] = { la.center.x + la.ampX * std::sin(la.freqX * lightTime),
+                            la.center.y + la.ampY * std::cos(la.freqY * lightTime),
+                            la.center.z + la.ampZ * std::sin(la.freqZ * lightTime + (float)i),
+                            1.0f };
+        animLightColor[i] = { la.color.x * lightBrightness, la.color.y * lightBrightness,
+                              la.color.z * lightBrightness, 1.0f };
     }
 
     // Directional light shadow map viewProj
@@ -468,27 +493,24 @@ void Application::render()
     if (shadowEnabled) {
         using namespace DirectX;
         // UI stores direction FROM light; negate to get direction TOWARD light for shader
-        XMVECTOR fromLight = XMVector3Normalize(
-            XMVectorSet(dirLightDir[0], dirLightDir[1], dirLightDir[2], 0.0f)
-        );
+        XMVECTOR fromLight =
+            XMVector3Normalize(XMVectorSet(dirLightDir[0], dirLightDir[1], dirLightDir[2], 0.0f));
         XMVECTOR toLight = XMVectorNegate(fromLight);
-        XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&dirLightDirVec),
-                       XMVectorSetW(toLight, 0.0f));
-        dirLightColorVec = {
-            dirLightColor[0] * dirLightBrightness,
-            dirLightColor[1] * dirLightBrightness,
-            dirLightColor[2] * dirLightBrightness, 1.0f
-        };
+        XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&dirLightDirVec), XMVectorSetW(toLight, 0.0f));
+        dirLightColorVec = { dirLightColor[0] * dirLightBrightness,
+                             dirLightColor[1] * dirLightBrightness,
+                             dirLightColor[2] * dirLightBrightness, 1.0f };
 
         // Place virtual light position far along the direction for LookAt
         XMVECTOR lightP = XMVectorScale(toLight, 25.0f);
         XMVECTOR target = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
         XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
         float dotUp = fabsf(XMVectorGetByIndex(
-            XMVector3Dot(XMVector3Normalize(XMVectorSubtract(target, lightP)),
-                         up), 0));
-        if (dotUp > 0.99f)
+            XMVector3Dot(XMVector3Normalize(XMVectorSubtract(target, lightP)), up), 0
+        ));
+        if (dotUp > 0.99f) {
             up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+        }
         XMMATRIX lightView = XMMatrixLookAtLH(lightP, target, up);
         XMMATRIX lightProj = XMMatrixOrthographicLH(30.0f, 30.0f, 0.1f, 60.0f);
         XMMATRIX lvp = XMMatrixMultiply(lightView, lightProj);
@@ -505,26 +527,27 @@ void Application::render()
     std::vector<DrawCmd> drawCmds;
     uint32_t drawIdx = 0;
     SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
+    bool anyReflective = false;
+    vec3 reflectivePos{};
 
     scene.ecsWorld.each([&](const Transform& tf, const MeshRef& mesh) {
-        assert(drawIdx < Scene::maxDrawsPerFrame / 2);
+        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
         const Material& mat = scene.materials[mesh.materialIndex];
 
-        // Scene draw data
         SceneConstantBuffer& scb = mapped[drawIdx];
         scb.model = tf.world * this->matModel;
         scb.viewProj = viewProj;
         scb.cameraPos = cameraPos;
         scb.ambientColor = ambientColor;
         for (int li = 0; li < SceneConstantBuffer::maxLights; ++li) {
-            scb.lightPos[li]   = animLightPos[li];
+            scb.lightPos[li] = animLightPos[li];
             scb.lightColor[li] = animLightColor[li];
         }
         scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
         scb.roughness = mat.roughness;
         scb.metallic = mat.metallic;
         scb.emissiveStrength = mat.emissiveStrength;
-        scb._pad = 0.0f;
+        scb.reflective = mat.reflective ? 1.0f : 0.0f;
         scb.emissive = mat.emissive;
         scb.dirLightDir = dirLightDirVec;
         scb.dirLightColor = dirLightColorVec;
@@ -532,6 +555,13 @@ void Application::render()
         scb.shadowBias = shadowBias;
         scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
         scb._pad2[0] = scb._pad2[1] = 0.0f;
+
+        if (mat.reflective && !anyReflective) {
+            anyReflective = true;
+            // Extract translation from world matrix (row 3 in row-major XMFLOAT4X4)
+            const auto& m = scb.model;
+            reflectivePos = vec3(m._41, m._42, m._43);
+        }
 
         drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
         drawIdx++;
@@ -564,7 +594,7 @@ void Application::render()
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         D3D12_VIEWPORT shadowVP = { 0.0f, 0.0f, (float)shadowMapSize, (float)shadowMapSize,
-                                     0.0f, 1.0f };
+                                    0.0f, 1.0f };
         D3D12_RECT shadowScissor = { 0, 0, (LONG)shadowMapSize, (LONG)shadowMapSize };
         cmdList->RSSetViewports(1, &shadowVP);
         cmdList->RSSetScissorRects(1, &shadowScissor);
@@ -591,6 +621,122 @@ void Application::render()
 
         this->transitionResource(
             cmdList, shadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+    }
+
+    // --- Cubemap pass: render environment for reflective objects ---
+    if (cubemapEnabled && anyReflective) {
+        this->transitionResource(
+            cmdList, cubemapTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
+
+        // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
+        XMVECTOR eyePos = XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
+        XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0f, 0.1f, 100.0f);
+        struct CubeFace
+        {
+            XMVECTOR dir;
+            XMVECTOR up;
+        };
+        CubeFace cubeFaces[6] = {
+            { XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },   // +X
+            { XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },  // -X
+            { XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0) },  // +Y
+            { XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0) },  // -Y
+            { XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0) },   // +Z
+            { XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0) },  // -Z
+        };
+
+        // Write cubemap draw data: non-reflective entities only, 6 copies with different viewProj
+        // Placed at offset 2*entityCount in the structured buffer
+        uint32_t cubemapBaseIdx = 2 * entityCount;
+        std::vector<uint32_t> nonReflectiveIndices;
+        for (uint32_t i = 0; i < entityCount; ++i) {
+            if (mapped[i].reflective < 0.5f) {
+                nonReflectiveIndices.push_back(i);
+            }
+        }
+        uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
+
+        for (uint32_t face = 0; face < 6; ++face) {
+            XMMATRIX faceView = XMMatrixLookAtLH(
+                eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
+            );
+            mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
+            uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+            for (uint32_t j = 0; j < nonReflCount; ++j) {
+                uint32_t srcIdx = nonReflectiveIndices[j];
+                SceneConstantBuffer& dst = mapped[faceOffset + j];
+                dst = mapped[srcIdx];
+                dst.viewProj = faceVP;
+                dst.reflective = 0.0f;
+            }
+        }
+
+        // Render 6 cubemap faces
+        D3D12_VIEWPORT cubeVP = { 0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1 };
+        D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
+        UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+        cmdList->SetPipelineState(this->pipelineState.Get());
+        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
+        cmdList->IASetIndexBuffer(&scene.megaIBV);
+
+        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, sceneHeaps);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+        // Bind shadow map for cubemap pass too
+        CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(2, shadowSrv);
+        // Bind cubemap SRV (will be black/uninitialized but reflective=0 prevents sampling)
+        CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(3, cubeSrv);
+
+        for (uint32_t face = 0; face < 6; ++face) {
+            CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
+                cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                rtvSize
+            );
+            CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
+                cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                dsvSize
+            );
+            FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
+            this->clearRTV(cmdList, faceRtv, clearColor);
+            this->clearDepth(cmdList, faceDsv);
+            cmdList->RSSetViewports(1, &cubeVP);
+            cmdList->RSSetScissorRects(1, &cubeScissor);
+            cmdList->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
+
+            uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+            for (uint32_t j = 0; j < nonReflCount; ++j) {
+                uint32_t drawDataIdx = faceOffset + j;
+                uint32_t srcIdx = nonReflectiveIndices[j];
+                cmdList->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
+                cmdList->DrawIndexedInstanced(
+                    drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
+                    static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
+                );
+            }
+        }
+
+        this->transitionResource(
+            cmdList, cubemapTexture, D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
     }
@@ -630,6 +776,13 @@ void Application::render()
         );
         cmdList->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
 
+        // Bind cubemap SRV (descriptor index nBuffers+1 in sceneSrvHeap)
+        CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
+
         uint32_t currentVertexCount = 0;
         for (uint32_t i = 0; i < entityCount; ++i) {
             currentVertexCount += drawCmds[i].indexCount;
@@ -663,8 +816,7 @@ void Application::render()
     this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
 
     UINT syncInterval = (this->vsync && !this->testMode) ? 1 : 0;
-    UINT presentFlags =
-        (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     chkDX(this->swapChain->Present(syncInterval, presentFlags));
     this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
     this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
@@ -761,8 +913,19 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 ImGui::SliderFloat("Metallic", &mat.metallic, 0.0f, 1.0f);
                 ImGui::ColorEdit3("Emissive", &mat.emissive.x);
                 ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 20.0f);
+                ImGui::Checkbox("Reflective", &mat.reflective);
             }
             ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Reflections")) {
+            ImGui::Checkbox("Cubemap Enabled", &cubemapEnabled);
+            int res = static_cast<int>(cubemapResolution);
+            if (ImGui::SliderInt("Cubemap Resolution", &res, 32, 512)) {
+                cubemapResolution = static_cast<uint32_t>(res);
+                createCubemapResources();
+            }
             ImGui::EndMenu();
         }
 
@@ -785,7 +948,11 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::EndMainMenuBar();
     }
 
-    if (ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
+    if (ImGui::Begin(
+            "Stats", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing |
+                ImGuiWindowFlags_NoNav
+        )) {
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Text("Frame: %.2f ms", this->lastFrameMs);
         ImGui::Text("Objects: %u", this->lastFrameObjectCount);
@@ -929,6 +1096,106 @@ void Application::createShadowPSO()
 }
 
 // ---------------------------------------------------------------------------
+// createCubemapResources — environment cubemap for reflections
+// ---------------------------------------------------------------------------
+
+void Application::createCubemapResources()
+{
+    const uint32_t res = cubemapResolution;
+
+    // Color cubemap (R11G11B10_FLOAT, 6 faces)
+    {
+        D3D12_CLEAR_VALUE clearVal = {};
+        clearVal.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+        clearVal.Color[0] = clearVal.Color[1] = clearVal.Color[2] = 0.0f;
+        clearVal.Color[3] = 1.0f;
+        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
+        D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+            DXGI_FORMAT_R11G11B10_FLOAT, res, res, 6, 1, 1, 0,
+            D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+        );
+        chkDX(device->CreateCommittedResource(
+            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearVal,
+            IID_PPV_ARGS(&cubemapTexture)
+        ));
+    }
+
+    // Depth buffer for cubemap rendering (D32_FLOAT, 6 faces)
+    {
+        D3D12_CLEAR_VALUE clearVal = {};
+        clearVal.Format = DXGI_FORMAT_D32_FLOAT;
+        clearVal.DepthStencil = { 1.0f, 0 };
+        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
+        D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+            DXGI_FORMAT_D32_FLOAT, res, res, 6, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        );
+        chkDX(device->CreateCommittedResource(
+            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearVal,
+            IID_PPV_ARGS(&cubemapDepth)
+        ));
+    }
+
+    // RTV heap (6 descriptors, one per face)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.NumDescriptors = 6;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&cubemapRtvHeap)));
+        UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        for (uint32_t i = 0; i < 6; ++i) {
+            D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+            rtvDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+            rtvDesc.Texture2DArray.FirstArraySlice = i;
+            rtvDesc.Texture2DArray.ArraySize = 1;
+            rtvDesc.Texture2DArray.MipSlice = 0;
+            CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
+                cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i), rtvSize
+            );
+            device->CreateRenderTargetView(cubemapTexture.Get(), &rtvDesc, handle);
+        }
+    }
+
+    // DSV heap (6 descriptors, one per face)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        desc.NumDescriptors = 6;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&cubemapDsvHeap)));
+        UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+        for (uint32_t i = 0; i < 6; ++i) {
+            D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+            dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+            dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+            dsvDesc.Texture2DArray.FirstArraySlice = i;
+            dsvDesc.Texture2DArray.ArraySize = 1;
+            dsvDesc.Texture2DArray.MipSlice = 0;
+            CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
+                cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i), dsvSize
+            );
+            device->CreateDepthStencilView(cubemapDepth.Get(), &dsvDesc, handle);
+        }
+    }
+
+    // SRV in sceneSrvHeap at slot nBuffers+1 (after shadow map SRV)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.TextureCube.MipLevels = 1;
+        srvDesc.TextureCube.MostDetailedMip = 0;
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
+            scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+        );
+        device->CreateShaderResourceView(cubemapTexture.Get(), &srvDesc, handle);
+    }
+
+    spdlog::info("Created cubemap resources ({}x{})", res, res);
+}
+
+// ---------------------------------------------------------------------------
 // loadContent — creates pipeline + uploads default teapot scene
 // ---------------------------------------------------------------------------
 
@@ -978,25 +1245,39 @@ bool Application::loadContent()
     CD3DX12_DESCRIPTOR_RANGE1 shadowSrvRange;
     shadowSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1: shadow map
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[3];
+    CD3DX12_DESCRIPTOR_RANGE1 cubemapSrvRange;
+    cubemapSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2: cubemap
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[4];
     rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[2].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParams[3].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
-    // Comparison sampler for shadow mapping (s0)
-    D3D12_STATIC_SAMPLER_DESC shadowSampler = {};
-    shadowSampler.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
-    shadowSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    shadowSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    shadowSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    shadowSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-    shadowSampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
-    shadowSampler.ShaderRegister = 0;
-    shadowSampler.RegisterSpace = 0;
-    shadowSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    // Static samplers: s0 = shadow comparison, s1 = cubemap linear
+    D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
+    // s0: shadow
+    staticSamplers[0].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    staticSamplers[0].ShaderRegister = 0;
+    staticSamplers[0].RegisterSpace = 0;
+    staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    // s1: cubemap linear
+    staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    staticSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    staticSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    staticSamplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    staticSamplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    staticSamplers[1].ShaderRegister = 1;
+    staticSamplers[1].RegisterSpace = 0;
+    staticSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
-    rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &shadowSampler, rootSigFlags);
+    rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 2, staticSamplers, rootSigFlags);
 
     ComPtr<ID3DBlob> rootSigBlob, errorBlob;
     chkDX(D3DX12SerializeVersionedRootSignature(
@@ -1022,8 +1303,7 @@ bool Application::loadContent()
         );
         chkDX(device->CreateCommittedResource(
             &heapProps, D3D12_HEAP_FLAG_NONE, &shadowDesc,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &shadowClearVal,
-            IID_PPV_ARGS(&shadowMap)
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &shadowClearVal, IID_PPV_ARGS(&shadowMap)
         ));
 
         // Shadow DSV heap + view
@@ -1036,8 +1316,7 @@ bool Application::loadContent()
         shadowDsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
         shadowDsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
         device->CreateDepthStencilView(
-            shadowMap.Get(), &shadowDsvViewDesc,
-            shadowDsvHeap->GetCPUDescriptorHandleForHeapStart()
+            shadowMap.Get(), &shadowDsvViewDesc, shadowDsvHeap->GetCPUDescriptorHandleForHeapStart()
         );
 
         // Shadow SRV in sceneSrvHeap at slot 3 (after 3 structured buffer SRVs)
@@ -1054,6 +1333,7 @@ bool Application::loadContent()
     }
 
     createShadowPSO();
+    createCubemapResources();
 
     // Init shader hot reload
     if (shaderCompiler.init(DXC_PATH, SHADER_SRC_DIR)) {
@@ -1076,14 +1356,14 @@ bool Application::loadContent()
         const float orbitR = 8.0f;
         for (int i = 0; i < 8; ++i) {
             float angle = (float)i * (6.2831853f / 8.0f);
-            lightAnims[i].center  = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
-                                      orbitR * std::sin(angle) };
-            lightAnims[i].ampX   = ampDist(lightRng);
-            lightAnims[i].ampY   = ampDist(lightRng) * 0.5f;
-            lightAnims[i].ampZ   = ampDist(lightRng);
-            lightAnims[i].freqX  = freqDist(lightRng);
-            lightAnims[i].freqY  = freqDist(lightRng);
-            lightAnims[i].freqZ  = freqDist(lightRng);
+            lightAnims[i].center = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
+                                     orbitR * std::sin(angle) };
+            lightAnims[i].ampX = ampDist(lightRng);
+            lightAnims[i].ampY = ampDist(lightRng) * 0.5f;
+            lightAnims[i].ampZ = ampDist(lightRng);
+            lightAnims[i].freqX = freqDist(lightRng);
+            lightAnims[i].freqY = freqDist(lightRng);
+            lightAnims[i].freqZ = freqDist(lightRng);
             lightAnims[i].color = hslToLinear(hDist(lightRng), 0.9f, 0.65f);
         }
     }

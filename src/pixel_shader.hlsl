@@ -21,7 +21,7 @@ struct SceneCB
     float  Roughness;
     float  Metallic;
     float  EmissiveStrength;
-    float  _pad;
+    float  Reflective;
     float4 Emissive;
     // Directional light (shadow-casting)
     float4 DirLightDir;
@@ -34,7 +34,9 @@ struct SceneCB
 
 StructuredBuffer<SceneCB> drawData : register(t0);
 Texture2D<float> shadowMapTex : register(t1);
+TextureCube<float3> envMap : register(t2);
 SamplerComparisonState shadowSampler : register(s0);
+SamplerState envSampler : register(s1);
 
 static const float PI = 3.14159265359f;
 
@@ -149,5 +151,15 @@ float4 main(PixelIn IN) : SV_Target
     float3 ambient = cb.AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f);
 
     float3 color = ambient + Lo + emissive;
+
+    // Cubemap environment reflections
+    if (cb.Reflective > 0.5f) {
+        float3 R = reflect(-V, N);
+        float3 envColor = envMap.SampleLevel(envSampler, R, roughness * 4.0f).rgb;
+        float3 F = FresnelSchlick(NdV, F0);
+        float envStrength = 1.0f - roughness * roughness;
+        color += envColor * F * envStrength;
+    }
+
     return float4(color, cb.Albedo.a);
 }

@@ -91,11 +91,8 @@ static mat4 NodeTransform(const tinygltf::Node& node)
     return S * R * T;
 }
 
-template <size_t N>
-static std::vector<std::array<float, N>> AccessorToFloatN(
-    const tinygltf::Model& model,
-    int accessorIdx
-)
+template <size_t N> static std::vector<std::array<float, N>>
+AccessorToFloatN(const tinygltf::Model& model, int accessorIdx)
 {
     const auto& acc = model.accessors[accessorIdx];
     const auto& bv = model.bufferViews[acc.bufferView];
@@ -203,7 +200,7 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
 
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = nBuffers + 1;  // +1 for shadow map SRV
+        desc.NumDescriptors = nBuffers + 2;  // +1 shadow map SRV, +1 cubemap SRV
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&sceneSrvHeap)));
@@ -379,11 +376,10 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
             v.position = { attrib.vertices[3 * idx.vertex_index + 0],
                            attrib.vertices[3 * idx.vertex_index + 1],
                            attrib.vertices[3 * idx.vertex_index + 2] };
-            v.normal = (idx.normal_index >= 0)
-                           ? vec3{ attrib.normals[3 * idx.normal_index + 0],
-                                   attrib.normals[3 * idx.normal_index + 1],
-                                   attrib.normals[3 * idx.normal_index + 2] }
-                           : vec3{ 0.0f, 1.0f, 0.0f };
+            v.normal = (idx.normal_index >= 0) ? vec3{ attrib.normals[3 * idx.normal_index + 0],
+                                                       attrib.normals[3 * idx.normal_index + 1],
+                                                       attrib.normals[3 * idx.normal_index + 2] }
+                                               : vec3{ 0.0f, 1.0f, 0.0f };
             if (idx.texcoord_index >= 0) {
                 v.uv = { attrib.texcoords[2 * idx.texcoord_index + 0],
                          attrib.texcoords[2 * idx.texcoord_index + 1] };
@@ -397,6 +393,7 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
     defMat.name = "Teapot";
     defMat.roughness = 0.3f;
     defMat.metallic = 0.0f;
+    defMat.reflective = true;
     materials.push_back(defMat);
 
     MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, 0, temps);
@@ -413,7 +410,10 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
 // ---------------------------------------------------------------------------
 
 bool Scene::loadGltf(
-    const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue, bool append
+    const std::string& path,
+    ID3D12Device2* device,
+    CommandQueue& cmdQueue,
+    bool append
 )
 {
     spdlog::info("loadGltf: {}", path);
@@ -533,12 +533,8 @@ bool Scene::loadGltf(
                     }
                 }
 
-                int matIdx =
-                    (prim.material >= 0)
-                        ? materialBaseIdx + prim.material
-                        : 0;
-                MeshRef meshRef =
-                    appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
+                int matIdx = (prim.material >= 0) ? materialBaseIdx + prim.material : 0;
+                MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
                 spawnableMeshRefs.push_back(meshRef);
                 if (!append) {
                     Transform tf;

@@ -17,7 +17,7 @@ struct SceneCB
     float  Roughness;
     float  Metallic;
     float  EmissiveStrength;
-    float  _pad;
+    float  Reflective;
     float4 Emissive;
     float4 DirLightDir;
     float4 DirLightColor;

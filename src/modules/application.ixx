@@ -74,10 +74,19 @@ export class Application
     float shadowBias = 0.0002f;
     static constexpr uint32_t shadowMapSize = 2048;
 
+    // Cubemap reflections
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubemapTexture;
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubemapDepth;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapRtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapDsvHeap;
+    uint32_t cubemapResolution = 128;
+    bool cubemapEnabled = true;
+    void createCubemapResources();
+
     // Bloom / post-processing UI params
     float bloomThreshold = 1.7f;
     float bloomIntensity = 0.1f;
-    int tonemapMode = 1;
+    int tonemapMode = 2;
 
     // GUI-controlled scene parameters
     float bgColor[3] = { 0.0f, 0.0f, 0.0f };
