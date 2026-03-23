@@ -65,13 +65,13 @@ void generateTerrain(
             uint32_t tr = z * N + (x + 1);
             uint32_t bl = (z + 1) * N + x;
             uint32_t br = (z + 1) * N + (x + 1);
-            // CW winding (DX12 default front-face)
+            // Reversed winding for DX12 LH (same fix as ground plane)
             outIndices.push_back(tl);
-            outIndices.push_back(tr);
             outIndices.push_back(bl);
             outIndices.push_back(tr);
+            outIndices.push_back(tr);
+            outIndices.push_back(bl);
             outIndices.push_back(br);
-            outIndices.push_back(bl);
         }
     }
 }
