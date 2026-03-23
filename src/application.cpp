@@ -38,8 +38,6 @@ module;
 
 module application;
 
-import window;
-
 using Microsoft::WRL::ComPtr;
 
 // Convert HSL to linear RGB. hue in [0,360), sat and light in [0,1].
@@ -101,7 +99,25 @@ static vec4 hslToLinear(float hue, float sat, float light)
 Application::Application() : inputMap(inputManager, "input_map")
 {
     spdlog::info("Application constructor start");
-    Window::get()->registerApp(this);
+
+    // Populate from Window singleton (replaces old registerApp)
+    auto* win = Window::get();
+    this->hWnd = win->hWnd;
+    this->device = win->device;
+    this->tearingSupported = win->tearingSupported;
+    this->clientWidth = win->width;
+    this->clientHeight = win->height;
+
+    // Register callbacks so WndProc can drive the render loop without importing application
+    win->callbackCtx = this;
+    win->onPaintFn = [](void* ctx) {
+        auto* a = static_cast<Application*>(ctx);
+        a->update();
+        a->render();
+    };
+    win->onResizeFn = [](void* ctx, uint32_t w, uint32_t h) {
+        static_cast<Application*>(ctx)->onResize(w, h);
+    };
 
     if (!XMVerifyCPUSupport()) {
         spdlog::error("Failed to verify DirectX Math library support.");
@@ -157,10 +173,17 @@ Application::Application() : inputMap(inputManager, "input_map")
         hWnd, device.Get(), cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
     );
     this->isInitialized = true;
+    Window::get()->isReady = true;
 }
 
 Application::~Application()
 {
+    auto* win = Window::get();
+    win->isReady = false;
+    win->onPaintFn = nullptr;
+    win->onResizeFn = nullptr;
+    win->callbackCtx = nullptr;
+
     this->flush();
     this->imguiLayer.shutdown();
 }
@@ -301,8 +324,6 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 
 void Application::update()
 {
-    static int nSpawned = 0;
-
     // Process deferred scene loads (set from ImGui, safe here before render commands)
     if (pendingResetToTeapot) {
         pendingResetToTeapot = false;
@@ -331,12 +352,13 @@ void Application::update()
     t0 = t1;
     const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
 
-    lightTime += dt;
+    lightTime += dt * std::max(0.0f, lightAnimationSpeed);
     lastFrameMs = dt * 1000.0f;
     recentFrameMs[recentFrameHead % 3] = lastFrameMs;
     ++recentFrameHead;
-    if (!spawningStopped && recentFrameHead >= 3 && recentFrameMs[0] > 10.0f &&
-        recentFrameMs[1] > 10.0f && recentFrameMs[2] > 10.0f) {
+    if (autoStopSpawning && !spawningStopped && recentFrameHead >= 3 &&
+        recentFrameMs[0] > spawnStopFrameMs && recentFrameMs[1] > spawnStopFrameMs &&
+        recentFrameMs[2] > spawnStopFrameMs) {
         spawningStopped = true;
     }
 
@@ -377,6 +399,9 @@ void Application::update()
         std::uniform_real_distribution<float> hueDist(0.0f, 360.0f);
 
         std::uniform_real_distribution<float> speedDist(0.1f, 0.5f);
+        std::uniform_int_distribution<int> presetDist(
+            0, static_cast<int>(MaterialPreset::Count) - 1
+        );
 
         auto spawnOne = [&] {
             const vec3 axis =
@@ -390,7 +415,22 @@ void Application::update()
             Transform tf;
             tf.world = world;
             MeshRef mesh = scene.spawnableMeshRefs[meshDist(scene.rng)];
-            mesh.albedoOverride = hslToLinear(hueDist(scene.rng), 0.7f, 0.65f);
+
+            // Assign random preset material
+            auto preset = static_cast<MaterialPreset>(presetDist(scene.rng));
+            int matIdx = scene.presetIdx[static_cast<int>(preset)];
+            if (matIdx >= 0) {
+                mesh.materialIndex = matIdx;
+            }
+
+            vec4 color = hslToLinear(hueDist(scene.rng), 0.7f, 0.65f);
+            if (preset == MaterialPreset::Mirror) {
+                mesh.albedoOverride = {};  // use material's black albedo
+            } else if (preset == MaterialPreset::Metal) {
+                mesh.albedoOverride = { color.x * 0.25f, color.y * 0.25f, color.z * 0.25f, 1.0f };
+            } else {
+                mesh.albedoOverride = color;
+            }
 
             float orbitRadius = std::sqrt(pos.x * pos.x + pos.z * pos.z);
             float orbitAngle = std::atan2(pos.z, pos.x);
@@ -398,7 +438,6 @@ void Application::update()
                            angleDist(scene.rng) };
 
             scene.ecsWorld.entity().set(tf).set(mesh).set(anim);
-            ++nSpawned;
         };
 
         int current = scene.ecsWorld.count<MeshRef>();
@@ -411,8 +450,7 @@ void Application::update()
             }
         } else if (!spawningStopped && current < capacity) {
             // Spawn a batch each frame until the last 3 frames all exceeded 10ms
-            constexpr int batchSize = 50;
-            int toSpawn = std::min(batchSize, capacity - current);
+            int toSpawn = std::min(std::max(1, spawnBatchSize), capacity - current);
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
@@ -442,19 +480,22 @@ void Application::update()
     if (this->inputMap.GetBoolWasDown(Button::ScrollDown)) {
         this->cam.radius *= 1.25f;
     }
+    this->cam.radius = std::clamp(this->cam.radius, 0.1f, 1000.0f);
 
     // Animate orbiting entities
-    scene.ecsWorld.each([&](Transform& tf, Animated& anim) {
-        anim.orbitAngle += anim.speed * dt;
-        float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
-        float s = anim.initialScale * pulse;
-        vec3 pos(
-            anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
-            anim.orbitRadius * std::sin(anim.orbitAngle)
-        );
-        tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
-                   translate(pos.x, pos.y, pos.z);
-    });
+    if (animateEntities) {
+        scene.ecsWorld.each([&](Transform& tf, Animated& anim) {
+            anim.orbitAngle += anim.speed * dt;
+            float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
+            float s = anim.initialScale * pulse;
+            vec3 pos(
+                anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
+                anim.orbitRadius * std::sin(anim.orbitAngle)
+            );
+            tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
+                       translate(pos.x, pos.y, pos.z);
+        });
+    }
 }
 
 void Application::render()
@@ -485,6 +526,9 @@ void Application::render()
         animLightColor[i] = { la.color.x * lightBrightness, la.color.y * lightBrightness,
                               la.color.z * lightBrightness, 1.0f };
     }
+    billboards.updateInstances(
+        animLightPos, animLightColor, static_cast<uint32_t>(SceneConstantBuffer::maxLights)
+    );
 
     // Directional light shadow map viewProj
     mat4 lightViewProj{};
@@ -502,7 +546,7 @@ void Application::render()
                              dirLightColor[2] * dirLightBrightness, 1.0f };
 
         // Place virtual light position far along the direction for LookAt
-        XMVECTOR lightP = XMVectorScale(toLight, 25.0f);
+        XMVECTOR lightP = XMVectorScale(toLight, shadowLightDistance);
         XMVECTOR target = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
         XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
         float dotUp = fabsf(XMVectorGetByIndex(
@@ -512,7 +556,10 @@ void Application::render()
             up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
         }
         XMMATRIX lightView = XMMatrixLookAtLH(lightP, target, up);
-        XMMATRIX lightProj = XMMatrixOrthographicLH(30.0f, 30.0f, 0.1f, 60.0f);
+        XMMATRIX lightProj = XMMatrixOrthographicLH(
+            shadowOrthoSize, shadowOrthoSize, std::max(0.001f, shadowNearPlane),
+            std::max(shadowNearPlane + 0.001f, shadowFarPlane)
+        );
         XMMATRIX lvp = XMMatrixMultiply(lightView, lightProj);
         XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&lightViewProj), lvp);
     }
@@ -627,14 +674,12 @@ void Application::render()
 
     // --- Cubemap pass: render environment for reflective objects ---
     if (cubemapEnabled && anyReflective) {
-        this->transitionResource(
-            cmdList, cubemapTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_RENDER_TARGET
-        );
-
         // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
         XMVECTOR eyePos = XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
-        XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0f, 0.1f, 100.0f);
+        XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
+            XM_PIDIV2, 1.0f, std::max(0.001f, cubemapNearPlane),
+            std::max(cubemapNearPlane + 0.001f, cubemapFarPlane)
+        );
         struct CubeFace
         {
             XMVECTOR dir;
@@ -660,85 +705,106 @@ void Application::render()
         }
         uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
 
-        for (uint32_t face = 0; face < 6; ++face) {
-            XMMATRIX faceView = XMMatrixLookAtLH(
-                eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
-            );
-            mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
-            uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-            for (uint32_t j = 0; j < nonReflCount; ++j) {
-                uint32_t srcIdx = nonReflectiveIndices[j];
-                SceneConstantBuffer& dst = mapped[faceOffset + j];
-                dst = mapped[srcIdx];
-                dst.viewProj = faceVP;
-                dst.reflective = 0.0f;
-            }
-        }
-
-        // Render 6 cubemap faces
-        D3D12_VIEWPORT cubeVP = { 0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1 };
-        D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
-        UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-        UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-
-        cmdList->SetPipelineState(this->pipelineState.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-        // Bind shadow map for cubemap pass too
-        CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(2, shadowSrv);
-        // Bind cubemap SRV (will be black/uninitialized but reflective=0 prevents sampling)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(3, cubeSrv);
-
-        for (uint32_t face = 0; face < 6; ++face) {
-            CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
-                cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                rtvSize
-            );
-            CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
-                cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                dsvSize
-            );
-            FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
-            this->clearRTV(cmdList, faceRtv, clearColor);
-            this->clearDepth(cmdList, faceDsv);
-            cmdList->RSSetViewports(1, &cubeVP);
-            cmdList->RSSetScissorRects(1, &cubeScissor);
-            cmdList->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
-
-            uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-            for (uint32_t j = 0; j < nonReflCount; ++j) {
-                uint32_t drawDataIdx = faceOffset + j;
-                uint32_t srcIdx = nonReflectiveIndices[j];
-                cmdList->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
-                cmdList->DrawIndexedInstanced(
-                    drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
-                    static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
+        static bool warnedMissingCubemapSources = false;
+        if (nonReflCount == 0) {
+            if (!warnedMissingCubemapSources) {
+                spdlog::warn(
+                    "Cubemap pass skipped: no non-reflective entities available to render."
                 );
+                warnedMissingCubemapSources = true;
             }
+        } else {
+            warnedMissingCubemapSources = false;
         }
 
-        this->transitionResource(
-            cmdList, cubemapTexture, D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-        );
+        if (nonReflCount > 0) {
+            this->transitionResource(
+                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                D3D12_RESOURCE_STATE_RENDER_TARGET
+            );
+
+            for (uint32_t face = 0; face < 6; ++face) {
+                XMMATRIX faceView = XMMatrixLookAtLH(
+                    eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
+                );
+                mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
+                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+                for (uint32_t j = 0; j < nonReflCount; ++j) {
+                    uint32_t srcIdx = nonReflectiveIndices[j];
+                    SceneConstantBuffer& dst = mapped[faceOffset + j];
+                    dst = mapped[srcIdx];
+                    dst.viewProj = faceVP;
+                    dst.reflective = 0.0f;
+                }
+            }
+
+            // Render 6 cubemap faces
+            D3D12_VIEWPORT cubeVP = {
+                0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1
+            };
+            D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
+            UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+            UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+            cmdList->SetPipelineState(this->pipelineState.Get());
+            cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
+            cmdList->IASetIndexBuffer(&scene.megaIBV);
+
+            ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
+            cmdList->SetDescriptorHeaps(1, sceneHeaps);
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+            );
+            cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+            // Bind shadow map for cubemap pass too
+            CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
+                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
+            );
+            cmdList->SetGraphicsRootDescriptorTable(2, shadowSrv);
+            // Bind cubemap SRV (will be black/uninitialized but reflective=0 prevents sampling)
+            CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
+                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+            );
+            cmdList->SetGraphicsRootDescriptorTable(3, cubeSrv);
+
+            for (uint32_t face = 0; face < 6; ++face) {
+                CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
+                    cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                    rtvSize
+                );
+                CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
+                    cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                    dsvSize
+                );
+                FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
+                this->clearRTV(cmdList, faceRtv, clearColor);
+                this->clearDepth(cmdList, faceDsv);
+                cmdList->RSSetViewports(1, &cubeVP);
+                cmdList->RSSetScissorRects(1, &cubeScissor);
+                cmdList->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
+
+                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+                for (uint32_t j = 0; j < nonReflCount; ++j) {
+                    uint32_t drawDataIdx = faceOffset + j;
+                    uint32_t srcIdx = nonReflectiveIndices[j];
+                    cmdList->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
+                    cmdList->DrawIndexedInstanced(
+                        drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
+                        static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
+                    );
+                }
+            }
+
+            this->transitionResource(
+                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+            );
+        }
     }
 
     // --- Scene pass: render to HDR render target ---
@@ -796,6 +862,18 @@ void Application::render()
         this->lastFrameVertexCount = currentVertexCount;
     }
 
+    // --- Light billboards pass (batched instancing) ---
+    if (showLightBillboards) {
+        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
+            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+        );
+        cmdList->RSSetViewports(1, &this->viewport);
+        cmdList->RSSetScissorRects(1, &this->scissorRect);
+        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+        billboards.render(cmdList, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
+    }
+
     // --- Bloom + composite ---
     CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
         rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx), rtvDescSize
@@ -849,7 +927,49 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
+    bool shadowPsoDirty = false;
+    constexpr float radToDeg = 57.2957795f;
+    constexpr float degToRad = 0.0174532925f;
+
     if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("Display")) {
+            ImGui::Checkbox("VSync", &vsync);
+            bool fs = fullscreen;
+            if (ImGui::Checkbox("Fullscreen", &fs)) {
+                setFullscreen(fs);
+            }
+            ImGui::Separator();
+            ImGui::Text("Tearing Supported: %s", tearingSupported ? "Yes" : "No");
+            ImGui::Text("Test Mode: %s", testMode ? "On" : "Off");
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Camera")) {
+            ImGui::PushItemWidth(220.0f);
+            float fovDeg = cam.fov * radToDeg;
+            if (ImGui::SliderFloat("FOV", &fovDeg, 20.0f, 120.0f, "%.1f deg")) {
+                cam.fov = std::clamp(fovDeg * degToRad, 0.05f, 3.0f);
+            }
+            ImGui::SliderFloat("Near Plane", &cam.nearPlane, 0.01f, 10.0f, "%.3f");
+            ImGui::SliderFloat("Far Plane", &cam.farPlane, 10.0f, 5000.0f, "%.1f");
+            if (cam.farPlane <= cam.nearPlane + 0.01f) {
+                cam.farPlane = cam.nearPlane + 0.01f;
+            }
+
+            ImGui::Separator();
+            ImGui::SliderFloat("Orbit Radius", &cam.radius, 0.1f, 1000.0f, "%.2f");
+            float yawDeg = cam.yaw * radToDeg;
+            float pitchDeg = cam.pitch * radToDeg;
+            if (ImGui::SliderFloat("Yaw", &yawDeg, -180.0f, 180.0f, "%.1f deg")) {
+                cam.yaw = yawDeg * degToRad;
+            }
+            if (ImGui::SliderFloat("Pitch", &pitchDeg, -89.9f, 89.9f, "%.1f deg")) {
+                cam.pitch = pitchDeg * degToRad;
+            }
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Bloom")) {
             ImGui::PushItemWidth(220.0f);
             ImGui::SliderFloat("Threshold", &bloomThreshold, 0.0f, 3.0f);
@@ -887,6 +1007,71 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Enabled", &shadowEnabled);
             ImGui::SliderFloat("Bias", &shadowBias, 0.0001f, 0.01f, "%.4f");
+
+            shadowPsoDirty |=
+                ImGui::SliderInt("Raster Depth Bias", &shadowRasterDepthBias, 0, 5000);
+            shadowPsoDirty |=
+                ImGui::SliderFloat("Raster Slope Bias", &shadowRasterSlopeBias, 0.0f, 8.0f, "%.3f");
+            shadowPsoDirty |=
+                ImGui::SliderFloat("Raster Bias Clamp", &shadowRasterBiasClamp, 0.0f, 5.0f, "%.3f");
+
+            ImGui::Separator();
+            ImGui::SliderFloat("Light Distance", &shadowLightDistance, 1.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Ortho Size", &shadowOrthoSize, 5.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Near", &shadowNearPlane, 0.001f, 10.0f, "%.3f");
+            ImGui::SliderFloat("Far", &shadowFarPlane, 1.0f, 500.0f, "%.1f");
+            if (shadowFarPlane <= shadowNearPlane + 0.001f) {
+                shadowFarPlane = shadowNearPlane + 0.001f;
+            }
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Animation")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::Checkbox("Animate Entities", &animateEntities);
+            ImGui::SliderFloat("Light Animation Speed", &lightAnimationSpeed, 0.0f, 4.0f, "%.2f");
+            ImGui::SliderFloat("Light Time", &lightTime, 0.0f, 600.0f, "%.1f");
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Spawning")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::Checkbox("Stop Spawning", &spawningStopped);
+            ImGui::Checkbox("Auto Stop", &autoStopSpawning);
+            ImGui::SliderFloat("Auto Stop ms", &spawnStopFrameMs, 1.0f, 50.0f, "%.1f");
+            ImGui::SliderInt("Batch Size", &spawnBatchSize, 1, 500);
+            if (ImGui::Button("Reset Perf Gate")) {
+                spawningStopped = false;
+                recentFrameHead = 0;
+                recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
+            }
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Lights")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::Checkbox("Show Billboards", &showLightBillboards);
+            ImGui::SliderFloat("Billboard Size", &billboards.spriteSize, 0.01f, 3.0f, "%.2f");
+            ImGui::SliderFloat("Point Brightness", &lightBrightness, 0.0f, 20.0f);
+            ImGui::Separator();
+            for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
+                ImGui::PushID(i);
+                if (ImGui::TreeNode("Light", "Light %d", i)) {
+                    ImGui::SliderFloat3("Center", &lightAnims[i].center.x, -50.0f, 50.0f);
+                    ImGui::SliderFloat("Amp X", &lightAnims[i].ampX, 0.0f, 20.0f);
+                    ImGui::SliderFloat("Amp Y", &lightAnims[i].ampY, 0.0f, 20.0f);
+                    ImGui::SliderFloat("Amp Z", &lightAnims[i].ampZ, 0.0f, 20.0f);
+                    ImGui::SliderFloat("Freq X", &lightAnims[i].freqX, 0.0f, 3.0f);
+                    ImGui::SliderFloat("Freq Y", &lightAnims[i].freqY, 0.0f, 3.0f);
+                    ImGui::SliderFloat("Freq Z", &lightAnims[i].freqZ, 0.0f, 3.0f);
+                    ImGui::ColorEdit3("Color", &lightAnims[i].color.x);
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
@@ -920,12 +1105,19 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         }
 
         if (ImGui::BeginMenu("Reflections")) {
+            ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Cubemap Enabled", &cubemapEnabled);
             int res = static_cast<int>(cubemapResolution);
             if (ImGui::SliderInt("Cubemap Resolution", &res, 32, 512)) {
                 cubemapResolution = static_cast<uint32_t>(res);
                 createCubemapResources();
             }
+            ImGui::SliderFloat("Cubemap Near", &cubemapNearPlane, 0.001f, 5.0f, "%.3f");
+            ImGui::SliderFloat("Cubemap Far", &cubemapFarPlane, 5.0f, 500.0f, "%.1f");
+            if (cubemapFarPlane <= cubemapNearPlane + 0.001f) {
+                cubemapFarPlane = cubemapNearPlane + 0.001f;
+            }
+            ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
 
@@ -948,6 +1140,10 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::EndMainMenuBar();
     }
 
+    if (shadowPsoDirty) {
+        createShadowPSO();
+    }
+
     if (ImGui::Begin(
             "Stats", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing |
@@ -957,6 +1153,10 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::Text("Frame: %.2f ms", this->lastFrameMs);
         ImGui::Text("Objects: %u", this->lastFrameObjectCount);
         ImGui::Text("Vertices: %u", this->lastFrameVertexCount);
+        ImGui::Text("Spawn Paused: %s", spawningStopped ? "Yes" : "No");
+        ImGui::Text("Camera Radius: %.2f", cam.radius);
+        ImGui::Text("Shadow: %s", shadowEnabled ? "On" : "Off");
+        ImGui::Text("Cubemap: %s", cubemapEnabled ? "On" : "Off");
         ImGui::End();
     }
 
@@ -1081,9 +1281,9 @@ void Application::createShadowPSO()
     psoDesc.PS = {};  // No pixel shader — depth only
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;  // Reduce peter-panning
-    psoDesc.RasterizerState.DepthBias = 1000;
-    psoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
-    psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
+    psoDesc.RasterizerState.DepthBias = shadowRasterDepthBias;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = shadowRasterSlopeBias;
+    psoDesc.RasterizerState.DepthBiasClamp = shadowRasterBiasClamp;
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask = UINT_MAX;
@@ -1334,6 +1534,7 @@ bool Application::loadContent()
 
     createShadowPSO();
     createCubemapResources();
+    billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
 
     // Init shader hot reload
     if (shaderCompiler.init(DXC_PATH, SHADER_SRC_DIR)) {

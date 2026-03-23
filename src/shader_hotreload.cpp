@@ -138,9 +138,9 @@ bool ShaderCompiler::compile(Watch& w)
     si.hStdOutput = hWritePipe;
 
     PROCESS_INFORMATION pi = {};
-    BOOL ok =
-        CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                       nullptr, &si, &pi);
+    BOOL ok = CreateProcessA(
+        nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi
+    );
     CloseHandle(hWritePipe);
 
     if (!ok) {
@@ -167,8 +167,9 @@ bool ShaderCompiler::compile(Watch& w)
     CloseHandle(hReadPipe);
 
     if (exitCode != 0) {
-        spdlog::error("Shader compilation failed for {}:\n{}", w.path.filename().string(),
-                       errorOutput);
+        spdlog::error(
+            "Shader compilation failed for {}:\n{}", w.path.filename().string(), errorOutput
+        );
         DeleteFileA(tempFile);
         return false;
     }

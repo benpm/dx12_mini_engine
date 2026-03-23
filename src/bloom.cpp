@@ -212,7 +212,7 @@ void BloomRenderer::reloadPipelines(
     auto comp = resolve(compositePS, g_bloom_composite_ps, sizeof(g_bloom_composite_ps));
 
     auto createPSO = [&](D3D12_SHADER_BYTECODE ps, DXGI_FORMAT rtFormat,
-                          bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
+                         bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = bloomRootSignature.Get();
         desc.VS = vs;

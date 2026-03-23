@@ -174,8 +174,8 @@ void Scene::createMegaBuffers(ID3D12Device2* device)
 
     spdlog::info(
         "Created mega-buffers: VB {}MB, IB {}MB",
-        megaVBCapacity * sizeof(VertexPBR) / (1024 * 1024),
-        megaIBCapacity * sizeof(uint32_t) / (1024 * 1024)
+        static_cast<size_t>(megaVBCapacity) * sizeof(VertexPBR) / (1024 * 1024),
+        static_cast<size_t>(megaIBCapacity) * sizeof(uint32_t) / (1024 * 1024)
     );
 }
 
@@ -309,6 +309,9 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     cmdQueue.flush();
     materials.clear();
     selectedMaterialIdx = 0;
+    for (auto& pi : presetIdx) {
+        pi = -1;
+    }
     megaVBUsed = 0;
     megaIBUsed = 0;
     ecsWorld.delete_with<MeshRef>();
@@ -389,17 +392,52 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
         }
     }
 
-    Material defMat;
-    defMat.name = "Teapot";
-    defMat.roughness = 0.3f;
-    defMat.metallic = 0.0f;
-    defMat.reflective = true;
-    materials.push_back(defMat);
+    // Preset materials: diffuse, metal, mirror
+    int base = static_cast<int>(materials.size());
 
-    MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, 0, temps);
+    Material diffuse;
+    diffuse.name = "Diffuse";
+    diffuse.roughness = 0.4f;
+    diffuse.metallic = 0.0f;
+    diffuse.reflective = false;
+    materials.push_back(diffuse);
+
+    Material metal;
+    metal.name = "Metal";
+    metal.albedo = { 0.15f, 0.15f, 0.15f, 1.0f };
+    metal.roughness = 0.25f;
+    metal.metallic = 0.95f;
+    metal.reflective = false;
+    materials.push_back(metal);
+
+    Material mirror;
+    mirror.name = "Mirror";
+    mirror.albedo = { 0.0f, 0.0f, 0.0f, 1.0f };
+    mirror.roughness = 0.05f;
+    mirror.metallic = 1.0f;
+    mirror.reflective = true;
+    materials.push_back(mirror);
+
+    presetIdx[static_cast<int>(MaterialPreset::Diffuse)] = base;
+    presetIdx[static_cast<int>(MaterialPreset::Metal)] = base + 1;
+    presetIdx[static_cast<int>(MaterialPreset::Mirror)] = base + 2;
+
+    MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, base, temps);
     spawnableMeshRefs.push_back(meshRef);
+
+    // Central teapot: mirror
+    MeshRef mirrorRef = meshRef;
+    mirrorRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Mirror)];
     Transform tf;
-    ecsWorld.entity().set(tf).set(meshRef);
+    tf.world = mat4{};
+    ecsWorld.entity().set(tf).set(mirrorRef);
+
+    // Companion teapot: diffuse (non-reflective, provides cubemap content)
+    MeshRef matteRef = meshRef;
+    matteRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Diffuse)];
+    Transform tfMatte;
+    tfMatte.world = translate(3.5f, -0.6f, 0.0f) * scale(0.8f, 0.8f, 0.8f);
+    ecsWorld.entity().set(tfMatte).set(matteRef);
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     cmdQueue.waitForFenceVal(fv);
@@ -472,6 +510,38 @@ bool Scene::loadGltf(
             }
             materials.push_back(mat);
         }
+    }
+
+    // Add preset materials (diffuse, metal, mirror)
+    {
+        int base = static_cast<int>(materials.size());
+
+        Material diffuse;
+        diffuse.name = "Diffuse";
+        diffuse.roughness = 0.4f;
+        diffuse.metallic = 0.0f;
+        diffuse.reflective = false;
+        materials.push_back(diffuse);
+
+        Material metalMat;
+        metalMat.name = "Metal";
+        metalMat.albedo = { 0.15f, 0.15f, 0.15f, 1.0f };
+        metalMat.roughness = 0.25f;
+        metalMat.metallic = 0.95f;
+        metalMat.reflective = false;
+        materials.push_back(metalMat);
+
+        Material mirrorMat;
+        mirrorMat.name = "Mirror";
+        mirrorMat.albedo = { 0.0f, 0.0f, 0.0f, 1.0f };
+        mirrorMat.roughness = 0.05f;
+        mirrorMat.metallic = 1.0f;
+        mirrorMat.reflective = true;
+        materials.push_back(mirrorMat);
+
+        presetIdx[static_cast<int>(MaterialPreset::Diffuse)] = base;
+        presetIdx[static_cast<int>(MaterialPreset::Metal)] = base + 1;
+        presetIdx[static_cast<int>(MaterialPreset::Mirror)] = base + 2;
     }
 
     auto cmdList = cmdQueue.getCmdList();

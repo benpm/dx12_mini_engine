@@ -19,11 +19,13 @@ module;
 
 export module application;
 
+export import window;
 export import camera;
 export import command_queue;
 export import input;
 export import scene;
 export import bloom;
+export import billboard;
 export import imgui_layer;
 export import shader_hotreload;
 
@@ -52,6 +54,7 @@ export class Application
     // Subsystems
     Scene scene;
     BloomRenderer bloom;
+    BillboardRenderer billboards;
     ImGuiLayer imguiLayer;
 
     // Depth buffer + scene PSO
@@ -72,6 +75,13 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO;
     bool shadowEnabled = true;
     float shadowBias = 0.0002f;
+    int shadowRasterDepthBias = 1000;
+    float shadowRasterSlopeBias = 1.0f;
+    float shadowRasterBiasClamp = 0.0f;
+    float shadowLightDistance = 25.0f;
+    float shadowOrthoSize = 30.0f;
+    float shadowNearPlane = 0.1f;
+    float shadowFarPlane = 60.0f;
     static constexpr uint32_t shadowMapSize = 2048;
 
     // Cubemap reflections
@@ -81,6 +91,8 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapDsvHeap;
     uint32_t cubemapResolution = 128;
     bool cubemapEnabled = true;
+    float cubemapNearPlane = 0.1f;
+    float cubemapFarPlane = 100.0f;
     void createCubemapResources();
 
     // Bloom / post-processing UI params
@@ -124,6 +136,12 @@ export class Application
     float recentFrameMs[3] = {};
     int recentFrameHead = 0;
     bool spawningStopped = false;
+    bool autoStopSpawning = true;
+    float spawnStopFrameMs = 10.0f;
+    int spawnBatchSize = 50;
+    bool animateEntities = true;
+    float lightAnimationSpeed = 1.0f;
+    bool showLightBillboards = true;
 
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID, mouseID, rawMouseID;

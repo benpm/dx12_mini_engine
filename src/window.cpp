@@ -10,47 +10,50 @@ module;
 #include <dxgi1_6.h>
 #include <wrl.h>
 #include <algorithm>
-#include <iostream>
+#include <cassert>
 #include <spdlog/spdlog.h>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 
 module window;
 
-import application;
 import input;
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
-    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
-);
+extern IMGUI_IMPL_API LRESULT
+ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam)) {
         return true;
+    }
 
-    Application* app = Window::get()->app;
+    auto* win = Window::get();
 
-    if (app != nullptr && app->isInitialized && app->contentLoaded) {
+    if (win->isReady) {
         switch (message) {
             case WM_PAINT:
                 inputManager.Update();
-                app->update();
-                app->render();
+                if (win->onPaintFn) {
+                    win->onPaintFn(win->callbackCtx);
+                }
                 ::ValidateRect(hwnd, nullptr);
                 break;
             case WM_SYSCHAR:
                 break;
             case WM_SIZE: {
                 RECT clientRect = {};
-                ::GetClientRect(app->hWnd, &clientRect);
-                app->onResize(
-                    static_cast<uint32_t>(clientRect.right - clientRect.left),
-                    static_cast<uint32_t>(clientRect.bottom - clientRect.top)
-                );
+                ::GetClientRect(win->hWnd, &clientRect);
+                if (win->onResizeFn) {
+                    win->onResizeFn(
+                        win->callbackCtx,
+                        static_cast<uint32_t>(clientRect.right - clientRect.left),
+                        static_cast<uint32_t>(clientRect.bottom - clientRect.top)
+                    );
+                }
             } break;
             case WM_DESTROY:
-                Window::get()->doExit = true;
+                win->doExit = true;
                 break;
             default:
                 return ::DefWindowProc(hwnd, message, wParam, lParam);
@@ -62,9 +65,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
+static void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
 {
-    // Register a window class for creating our render window with.
     WNDCLASSEXW windowClass = {};
 
     windowClass.cbSize = sizeof(WNDCLASSEX);
@@ -87,12 +89,9 @@ void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
     }
 }
 
-void enableDebugging()
+static void enableDebugging()
 {
 #if defined(_DEBUG)
-    // Always enable the debug layer before doing anything DX12 related
-    // so all possible errors generated while creating DX12 objects
-    // are caught by the debug layer.
     ComPtr<ID3D12Debug> debugInterface;
     chkDX(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
     debugInterface->EnableDebugLayer();
@@ -100,7 +99,7 @@ void enableDebugging()
 #endif
 }
 
-HWND makeWindow(
+static HWND makeWindow(
     const wchar_t* windowClassName,
     HINSTANCE hInst,
     const wchar_t* windowTitle,
@@ -117,8 +116,6 @@ HWND makeWindow(
     int windowWidth = windowRect.right - windowRect.left;
     int windowHeight = windowRect.bottom - windowRect.top;
 
-    // Center the window within the screen. Clamp to 0, 0 for the top-left
-    // corner.
     int windowX = std::max<int>(0, (screenWidth - windowWidth) / 2);
     int windowY = std::max<int>(0, (screenHeight - windowHeight) / 2);
 
@@ -135,8 +132,7 @@ HWND makeWindow(
     return hWnd;
 }
 
-// Query for compatible adapter (GPU device)
-ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
+static ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
 {
     ComPtr<IDXGIFactory4> dxgiFactory;
     UINT createFactoryFlags = 0;
@@ -158,9 +154,6 @@ ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
             DXGI_ADAPTER_DESC1 dxgiAdapterDesc1;
             dxgiAdapter1->GetDesc1(&dxgiAdapterDesc1);
 
-            // Check to see if the adapter can create a D3D12 device without
-            // actually creating it. The adapter with the largest dedicated
-            // video memory is favored.
             if ((dxgiAdapterDesc1.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
                 SUCCEEDED(D3D12CreateDevice(
                     dxgiAdapter1.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr
@@ -175,26 +168,19 @@ ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
     return dxgiAdapter4;
 }
 
-// Create the D3D12 device using the given adapter
-ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
+static ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
 {
     ComPtr<ID3D12Device2> d3d12Device2;
     chkDX(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3d12Device2)));
-    // Enable debug messages in debug mode.
 #if defined(_DEBUG)
     ComPtr<ID3D12InfoQueue> pInfoQueue;
     if (SUCCEEDED(d3d12Device2.As(&pInfoQueue))) {
-        // Disable hard breaks so we can see the errors in the log instead of silently aborting
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, FALSE);
-        // Suppress whole categories of messages
-        // D3D12_MESSAGE_CATEGORY Categories[] = {};
 
-        // Suppress messages based on their severity level
         D3D12_MESSAGE_SEVERITY Severities[] = { D3D12_MESSAGE_SEVERITY_INFO };
 
-        // Suppress individual messages by their ID
         D3D12_MESSAGE_ID DenyIds[] = {
             D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
             D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
@@ -202,8 +188,6 @@ ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
         };
 
         D3D12_INFO_QUEUE_FILTER NewFilter = {};
-        // NewFilter.DenyList.NumCategories = _countof(Categories);
-        // NewFilter.DenyList.pCategoryList = Categories;
         NewFilter.DenyList.NumSeverities = _countof(Severities);
         NewFilter.DenyList.pSeverityList = Severities;
         NewFilter.DenyList.NumIDs = _countof(DenyIds);
@@ -216,14 +200,10 @@ ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
     return d3d12Device2;
 }
 
-bool getTearingSupport()
+static bool getTearingSupport()
 {
     BOOL allowTearing = FALSE;
 
-    // Rather than create the DXGI 1.5 factory interface directly, we create the
-    // DXGI 1.4 interface and query for the 1.5 interface. This is to enable the
-    // graphics debugging tools which will not support the 1.5 factory interface
-    // until a future update.
     ComPtr<IDXGIFactory4> factory4;
     if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory4)))) {
         ComPtr<IDXGIFactory5> factory5;
@@ -237,18 +217,6 @@ bool getTearingSupport()
     }
 
     return allowTearing == TRUE;
-}
-
-void Window::registerApp(Application* application)
-{
-    assert(this->app == nullptr);
-
-    this->app = application;
-    this->app->hWnd = this->hWnd;
-    this->app->device = this->device;
-    this->app->tearingSupported = this->tearingSupported;
-    this->app->clientWidth = this->width;
-    this->app->clientHeight = this->height;
 }
 
 void Window::initialize(

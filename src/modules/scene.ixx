@@ -48,17 +48,19 @@ export struct SceneConstantBuffer
     float reflective;
     vec4 emissive;
     // Directional light (shadow-casting)
-    vec4 dirLightDir;           // xyz = direction (toward light), w = unused
-    vec4 dirLightColor;         // rgb = color * brightness
+    vec4 dirLightDir;    // xyz = direction (toward light), w = unused
+    vec4 dirLightColor;  // rgb = color * brightness
     mat4 lightViewProj;
     float shadowBias;
-    float shadowMapTexelSize;   // 1.0 / shadowMapResolution
+    float shadowMapTexelSize;  // 1.0 / shadowMapResolution
     float _pad2[2];
 };
 
 // ---------------------------------------------------------------------------
 // CPU-side material
 // ---------------------------------------------------------------------------
+export enum class MaterialPreset : int { Diffuse = 0, Metal = 1, Mirror = 2, Count = 3 };
+
 export struct Material
 {
     vec4 albedo{ 0.8f, 0.8f, 0.8f, 1.0f };
@@ -81,6 +83,7 @@ export class Scene
 
     flecs::world ecsWorld;
     std::vector<Material> materials;
+    int presetIdx[static_cast<int>(MaterialPreset::Count)] = { -1, -1, -1 };
     int selectedMaterialIdx = 0;
     std::vector<MeshRef> spawnableMeshRefs;
     float spawnTimer = 0.0f;
@@ -111,7 +114,9 @@ export class Scene
     );
     void clearScene(CommandQueue& cmdQueue);
     bool loadGltf(
-        const std::string& path, ID3D12Device2* device, CommandQueue& cmdQueue,
+        const std::string& path,
+        ID3D12Device2* device,
+        CommandQueue& cmdQueue,
         bool append = false
     );
     void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue);

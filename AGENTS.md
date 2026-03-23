@@ -26,14 +26,18 @@ cmake --build build --config Release
 - **Presets**: `windows-clang` (primary), `windows-msvc` (do not use!).
 - Shaders compiled via DXC to `.cso` headers at build time.
 
-### Rules
-- **After finishing every task**
-  - build then run `--test` and inspect `screenshot.png`
-    - read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
-  - `git pull`
-  - update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
-  - run cmake
-  - Run clang-tidy and clang-format on all source and header files
+### Rules (IMPORTANT)
+**Before working on a task / during planning phase:**
+- Determine the best place to added new functionality. If it's a new feature, try making a new module file for it
+
+**After finishing every task:**
+- build then run `--test` and inspect `screenshot.png`
+  - read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
+- `git pull`
+- Update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
+- Run clang-tidy and clang-format on all source and header files
+- If any of the changed files in the working tree are longer than 1100 lines, split the file
+  - Create new modules (.ixx) / source files (.cpp) as needed
 
 ---
 
@@ -66,7 +70,8 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - Mega vertex/index buffers (1M verts, 4M indices, default heap)
 - Triple-buffered structured draw-data buffers (`SceneConstantBuffer`)
 - Methods: `createMegaBuffers()`, `createDrawDataBuffers()`, `appendToMegaBuffers()`, `clearScene()`, `loadTeapot()`, `loadGltf()`
-- Also exports: `VertexPBR`, `SceneConstantBuffer`, `Material` structs
+- Also exports: `VertexPBR`, `SceneConstantBuffer`, `Material`, `MaterialPreset` structs/enums
+- **Preset materials**: `MaterialPreset` enum (`Diffuse`, `Metal`, `Mirror`). Created in both `loadTeapot()` and `loadGltf()`. Indices stored in `Scene::presetIdx[]`. Spawned entities get a random preset — diffuse uses random HSL color, metal darkens the color to 25%, mirror uses material's black albedo.
 
 **BloomRenderer** (`bloom.ixx` + `bloom.cpp`) — owns all bloom/post-processing state:
 - HDR render target, 5-mip bloom chain textures and descriptor heaps
@@ -102,7 +107,7 @@ update()  →  render()
 
 **Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `entityCount` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
 
-**Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*entityCount`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes.
+**Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*entityCount`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes. If there are no non-reflective entities, the cubemap pass is skipped and emits a warning.
 
 **Bloom**: 5-mip chain — prefilter (Karis average, soft threshold), 4× downsample, 4× upsample (tent filter, additive blend).
 
@@ -118,7 +123,7 @@ Cook-Torrance BRDF:
 - 1 directional light (shadow-casting) — direction, color, brightness configurable in UI.
 
 ### Scene loading
-- **Default**: teapot OBJ embedded as Win32 resource (`IDR_TEAPOT_OBJ`/`IDR_TEAPOT_MTL`).
+- **Default**: teapot OBJ embedded as Win32 resource (`IDR_TEAPOT_OBJ`/`IDR_TEAPOT_MTL`). `loadTeapot()` now creates a reflective teapot plus a non-reflective companion teapot so cubemap reflections always have environment content.
 - **Startup model loading**: all `.glb` files in `resources/models/` are loaded automatically at startup via `MODELS_DIR` (CMake-defined). Spawned entities pick randomly from all loaded mesh refs.
 - **GLB/glTF**: tinygltf v2.9.5 via FetchContent. Load from UI "Load GLB" panel (type path, press Load).
   - Supports binary GLB and ASCII glTF.
@@ -128,12 +133,17 @@ Cook-Torrance BRDF:
 - **Model files**: stored in `resources/models/` (teapot.obj/mtl + GLB primitives).
 
 ### ImGui UI panels
+- **Display**: vsync toggle, fullscreen toggle, tearing/test-mode status.
+- **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 - **Bloom**: threshold, intensity sliders.
 - **Tonemapping**: tonemapper combo.
 - **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness.
-- **Shadows**: enable/disable, bias slider.
+- **Shadows**: enable/disable; shader bias; raster depth/slope/clamp bias (rebuilds shadow PSO on change); shadow light distance, ortho size, near/far.
+- **Animation**: entity animation toggle; light animation speed; light time scrub.
+- **Spawning**: manual pause/resume, auto-stop toggle, frame-ms threshold, spawn batch size, reset perf gate.
+- **Lights**: billboard toggle/size; point-light brightness; per-light center/amplitude/frequency/color controls for all 8 animated lights.
 - **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
-- **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change).
+- **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
 
 ---

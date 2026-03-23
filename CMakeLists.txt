@@ -133,6 +133,7 @@ endfunction()
 add_executable(main
     src/main.cpp
     src/application.cpp
+    src/billboard.cpp
     src/scene.cpp
     src/bloom.cpp
     src/imgui_layer.cpp
@@ -159,6 +160,7 @@ target_sources(main
     src/modules/ecs_components.ixx
     src/modules/scene.ixx
     src/modules/bloom.ixx
+    src/modules/billboard.ixx
     src/modules/imgui_layer.ixx
     src/modules/shader_hotreload.ixx
     src/modules/application.ixx
@@ -178,11 +180,14 @@ compile_shader(src/bloom_prefilter_ps.hlsl ps 6_0 BLOOM_PREFILTER_HDR g_bloom_pr
 compile_shader(src/bloom_downsample_ps.hlsl ps 6_0 BLOOM_DOWNSAMPLE_HDR g_bloom_downsample_ps)
 compile_shader(src/bloom_upsample_ps.hlsl ps 6_0 BLOOM_UPSAMPLE_HDR g_bloom_upsample_ps)
 compile_shader(src/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_composite_ps)
+compile_shader(src/billboard_vs.hlsl vs 6_0 BILLBOARD_VS_HDR g_billboard_vs)
+compile_shader(src/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
     ${BLOOM_PREFILTER_HDR} ${BLOOM_DOWNSAMPLE_HDR}
     ${BLOOM_UPSAMPLE_HDR} ${BLOOM_COMPOSITE_HDR}
+    ${BILLBOARD_VS_HDR} ${BILLBOARD_PS_HDR}
 )
 add_dependencies(main shaders)
 
@@ -244,6 +249,13 @@ add_custom_command(TARGET main POST_BUILD
     ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
     $<TARGET_FILE_DIR:main>/Roboto-Medium.ttf
     COMMENT "Copying Roboto-Medium.ttf to output directory"
+)
+
+add_custom_command(TARGET main POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/light.png
+    $<TARGET_FILE_DIR:main>/light.png
+    COMMENT "Copying light sprite to output directory"
 )
 
 target_link_libraries(main PRIVATE
