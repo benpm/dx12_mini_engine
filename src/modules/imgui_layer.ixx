@@ -7,7 +7,7 @@ module;
 
 export module imgui_layer;
 
-export import common;
+import common;
 
 using Microsoft::WRL::ComPtr;
 

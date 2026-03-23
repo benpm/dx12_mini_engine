@@ -1,14 +1,7 @@
 module;
 
 #include <d3d12.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-#endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include "fullscreen_vs_cso.h"
 #include "bloom_prefilter_ps_cso.h"
 #include "bloom_downsample_ps_cso.h"

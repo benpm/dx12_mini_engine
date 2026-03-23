@@ -7,7 +7,7 @@ module;
 
 export module bloom;
 
-export import common;
+import common;
 
 using Microsoft::WRL::ComPtr;
 

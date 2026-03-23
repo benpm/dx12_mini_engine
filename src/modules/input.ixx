@@ -5,7 +5,7 @@ module;
 
 export module input;
 
-export import common;
+import common;
 
 export enum class Key : UINT {
     A = (UINT)('A'),
@@ -144,3 +144,7 @@ export namespace Button
 }
 
 export extern gainput::InputManager inputManager;
+
+module :private;
+
+gainput::InputManager inputManager = gainput::InputManager{};

@@ -4,14 +4,7 @@ module;
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-#endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_dx12.h>

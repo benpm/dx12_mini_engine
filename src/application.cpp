@@ -21,14 +21,7 @@ module;
 #include <ScreenGrab.h>
 #include <wincodec.h>
 #include <spdlog/spdlog.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-#endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include "resource.h"
 #include "vertex_shader_cso.h"
 #include "pixel_shader_cso.h"
@@ -39,6 +32,7 @@ module;
 module application;
 
 using Microsoft::WRL::ComPtr;
+using namespace DirectX;
 
 // Convert HSL to linear RGB. hue in [0,360), sat and light in [0,1].
 static vec4 hslToLinear(float hue, float sat, float light)

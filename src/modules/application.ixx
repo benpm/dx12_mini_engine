@@ -5,14 +5,7 @@ module;
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-#endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include <gainput/gainput.h>
 #include <unordered_set>
 #include <string>
@@ -32,6 +25,18 @@ export import shader_hotreload;
 export class Application
 {
    public:
+    Application();
+    ~Application();
+
+    void update();
+    void render();
+
+    bool testMode = false;
+    OrbitCamera cam;
+    gainput::InputMap inputMap;
+    gainput::DeviceId keyboardID;
+
+   private:
     constexpr static uint8_t nBuffers = 3u;
     bool useWarp = false;
     uint32_t clientWidth = 1280;
@@ -66,7 +71,6 @@ export class Application
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
     mat4 matModel;
-    OrbitCamera cam;
     bool contentLoaded = false;
 
     // Shadow mapping
@@ -128,7 +132,6 @@ export class Application
     bool vsync = true;
     bool tearingSupported = false;
     bool fullscreen = false;
-    bool testMode = false;
     int frameCount = 0;
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;
@@ -143,8 +146,7 @@ export class Application
     float lightAnimationSpeed = 1.0f;
     bool showLightBillboards = true;
 
-    gainput::InputMap inputMap;
-    gainput::DeviceId keyboardID, mouseID, rawMouseID;
+    gainput::DeviceId mouseID, rawMouseID;
 
     // Shader hot reload
     ShaderCompiler shaderCompiler;
@@ -155,9 +157,6 @@ export class Application
     size_t bloomDownIdx = 0;
     size_t bloomUpIdx = 0;
     size_t bloomCompIdx = 0;
-
-    Application();
-    ~Application();
 
     void transitionResource(
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
@@ -180,8 +179,6 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
     createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors);
     void updateRenderTargetViews(Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap);
-    void update();
-    void render();
     void setFullscreen(bool val);
     void flush();
     bool loadContent();

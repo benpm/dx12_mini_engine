@@ -6,7 +6,8 @@ Guidance for AI agents (Claude Code, Codex, etc.) working in this repository.
 
 ## Build
 
-- `VCPKG_ROOT` must be set to the `vcpkg` root dir!
+- `VCPKG_ROOT` should be assumed to be set correctly
+- If there is some external issue with the build environment that is not part of the task itself, wait, then retry the build. If it still fails, **STOP** and wait for user input, stating there is an issue with the build environment.
 
 ```bash
 # Configure (Ninja Multi-Config, Clang 22 from LLVM)
@@ -21,7 +22,7 @@ cmake --build build --config Release
 ```
 
 ### Toolchain notes
-- **Compiler**: `clang++` (v22). Do NOT use Git's clang (v18 — too old for VS 18 STL).
+- **Compiler**: `clang++` (v22 or newer). Do NOT use Git's clang (v18 — too old for VS 18 STL).
 - **vcpkg**: `$VCPKG_ROOT` (x64-windows-static triplet).
 - **Presets**: `windows-clang` (primary), `windows-msvc` (do not use!).
 - Shaders compiled via DXC to `.cso` headers at build time.
@@ -29,13 +30,15 @@ cmake --build build --config Release
 ### Rules (IMPORTANT)
 **Before working on a task / during planning phase:**
 - Determine the best place to added new functionality. If it's a new feature, try making a new module file for it
+- If working on a new feature, use the web search tool to perform initial research on the topic.
+- If asked to create a new feature/mode/option for objects, properties, or relationships, consider how to integrate it with the existing ECS system.
 
 **After finishing every task:**
 - build then run `--test` and inspect `screenshot.png`
   - read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
 - `git pull`
 - Update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
-- Run clang-tidy and clang-format on all source and header files
+- Run `clang-format` on all source and header files
 - If any of the changed files in the working tree are longer than 1100 lines, split the file
   - Create new modules (.ixx) / source files (.cpp) as needed
 
@@ -48,18 +51,27 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 ### Module files (`src/modules/*.ixx`)
 | Module                 | Purpose                                                                      |
 | ---------------------- | ---------------------------------------------------------------------------- |
-| `window.ixx`           | Singleton HWND + D3D12Device2 creation, adapter selection, tearing detection |
+| `math.ixx`             | Pure math types (vec2/3/4, mat4), matrix/vector functions                    |
+| `common.ixx`           | `chkDX()`, `_deg` literals, pi constants. Re-exports `math`                  |
+| `window.ixx`           | Singleton HWND + D3D12Device2 creation, adapter selection, callback-based render loop |
 | `application.ixx`      | Main Application class — orchestrates subsystems, render loop, input, UI     |
 | `scene.ixx`            | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading  |
 | `bloom.ixx`            | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs              |
 | `imgui_layer.ixx`      | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style           |
 | `command_queue.ixx`    | ID3D12CommandQueue + fence sync + command allocator pooling                  |
-| `camera.ixx`           | Base Camera + OrbitCamera (spherical yaw/pitch/radius)                       |
-| `input.ixx`            | Button/Key enums, gainput integration                                        |
-| `common.ixx`           | Math types (vec2/3/4, mat4), `chkDX()`, `_deg`/`_KB`/`_MB` literals          |
+| `camera.ixx`           | Base Camera + OrbitCamera (uses `module :private;` for implementation)       |
+| `input.ixx`            | Button/Key enums, gainput integration (uses `module :private;` for global)   |
 | `ecs_components.ixx`   | ECS components: `Transform`, `MeshRef`, `Animated` (orbit + pulse)           |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
+| `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
+
+### Module conventions
+- **No `export using namespace`** — each file declares its own `using` locally (e.g., `using Microsoft::WRL::ComPtr;`)
+- **`export import` only for types in public API** — use plain `import` for internal dependencies
+- **`module :private;`** for tiny implementations — avoids separate `.cpp` for <20 lines
+- **`include/d3dx12_clean.h`** wraps `d3dx12.h` with Clang warning suppression — use instead of raw include
+- **Application public API is minimal** — only `update()`, `render()`, `testMode`, `cam`, `inputMap`, `keyboardID` are public
 
 ### Subsystem architecture
 

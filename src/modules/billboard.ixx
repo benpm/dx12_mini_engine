@@ -7,7 +7,8 @@ module;
 
 export module billboard;
 
-export import common;
+import common;
+export import math;
 
 export struct BillboardInstance
 {

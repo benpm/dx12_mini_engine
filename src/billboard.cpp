@@ -7,14 +7,7 @@ module;
 #include <Windows.h>
 #include <d3d12.h>
 #include <wrl.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-#endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include <algorithm>
 #include <array>
 #include <cstring>

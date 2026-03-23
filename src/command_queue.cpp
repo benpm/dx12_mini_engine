@@ -8,6 +8,8 @@ module;
 
 module command_queue;
 
+using Microsoft::WRL::ComPtr;
+
 CommandQueue::CommandQueue(ComPtr<ID3D12Device2> device, D3D12_COMMAND_LIST_TYPE type)
     : device(device), fenceValue(0), type(type)
 {

@@ -8,7 +8,7 @@ module;
 
 export module window;
 
-export import common;
+import common;
 
 using Microsoft::WRL::ComPtr;
 

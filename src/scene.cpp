@@ -26,13 +26,8 @@ module;
 #include <tiny_gltf.h>
 #ifdef __clang__
     #pragma clang diagnostic pop
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
 #endif
-#include "d3dx12.h"
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include "d3dx12_clean.h"
 #include "resource.h"
 
 module scene;

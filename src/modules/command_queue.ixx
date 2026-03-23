@@ -7,7 +7,9 @@ module;
 
 export module command_queue;
 
-export import common;
+import common;
+
+using Microsoft::WRL::ComPtr;
 
 export class CommandQueue
 {

@@ -19,6 +19,8 @@ module window;
 
 import input;
 
+using Microsoft::WRL::ComPtr;
+
 extern IMGUI_IMPL_API LRESULT
 ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -46,8 +48,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ::GetClientRect(win->hWnd, &clientRect);
                 if (win->onResizeFn) {
                     win->onResizeFn(
-                        win->callbackCtx,
-                        static_cast<uint32_t>(clientRect.right - clientRect.left),
+                        win->callbackCtx, static_cast<uint32_t>(clientRect.right - clientRect.left),
                         static_cast<uint32_t>(clientRect.bottom - clientRect.top)
                     );
                 }

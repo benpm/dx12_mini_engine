@@ -142,8 +142,6 @@ add_executable(main
     src/command_queue.cpp
     src/window.cpp
     src/logging.cpp
-    src/camera.cpp
-    src/input.cpp
     resources.rc
 )
 target_sources(main
