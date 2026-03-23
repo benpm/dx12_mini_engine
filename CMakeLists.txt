@@ -86,6 +86,14 @@ set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(tinygltf)
 
+# Fetch PerlinNoise (header-only)
+FetchContent_Declare(
+    perlin_noise
+    GIT_REPOSITORY https://github.com/Reputeless/PerlinNoise.git
+    GIT_TAG v3.0.0
+)
+FetchContent_MakeAvailable(perlin_noise)
+
 # Fetch flecs ECS
 set(FLECS_STATIC ON CACHE BOOL "" FORCE)
 set(FLECS_SHARED OFF CACHE BOOL "" FORCE)
@@ -133,6 +141,8 @@ endfunction()
 add_executable(main
     src/main.cpp
     src/application.cpp
+    src/application_ui.cpp
+    src/application_setup.cpp
     src/billboard.cpp
     src/scene.cpp
     src/bloom.cpp
@@ -143,6 +153,7 @@ add_executable(main
     src/window.cpp
     src/logging.cpp
     src/object_picking.cpp
+    src/terrain.cpp
     resources.rc
 )
 target_sources(main
@@ -163,12 +174,13 @@ target_sources(main
     src/modules/imgui_layer.ixx
     src/modules/shader_hotreload.ixx
     src/modules/object_picking.ixx
+    src/modules/terrain.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
-target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR})
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR})
 
 # -------------------------------
 # Shader compilation

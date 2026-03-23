@@ -65,6 +65,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
 | `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
 | `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
+| `terrain.ixx`          | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh   |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -102,9 +103,13 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 - SRV descriptor heap for ImGui
 - Methods: `init()`, `shutdown()`, `styleColorsDracula()`
-- Note: `renderImGui()` stays in `application.cpp` (app-specific UI)
+- Note: `renderImGui()` is in `application_ui.cpp` (app-specific UI)
 
-### Application class (`src/application.cpp`)
+### Application class (split across 3 files)
+- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1000 lines)
+- `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips (~370 lines)
+- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createCubemapResources()`, `onResize()` (~520 lines)
+
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
 - **Root signature**: 4 root params — SRV descriptor table (t0, structured buffer), 1 root constant (`drawIndex`, b0), SRV descriptor table (t1, shadow map), SRV descriptor table (t2, cubemap). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
@@ -181,6 +186,7 @@ Cook-Torrance BRDF:
 | imgui v1.92.6                    | FetchContent                    | Win32 + DX12 backend |
 | tinyobjloader                    | FetchContent (git hash afdd3fa) | OBJ loading          |
 | tinygltf v2.9.5                  | FetchContent                    | GLB/glTF loading     |
+| PerlinNoise v3.0.0               | FetchContent                    | Terrain heightmap    |
 
 ---
 

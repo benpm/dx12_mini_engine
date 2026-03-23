@@ -24,6 +24,7 @@ export import billboard;
 export import imgui_layer;
 export import shader_hotreload;
 export import object_picking;
+export import terrain;
 
 export class Application
 {
