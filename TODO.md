@@ -2,8 +2,6 @@
 
 <!-- Any todo item that has insufficient detail should be ignored. Do these in order! -->
 
-- [ ] Add a sensible UI for creating new objects as well as manipulating existing ones.
-
 ---
 
 <!-- Move item here when completed, reference the hash of this commit -->
@@ -13,3 +11,4 @@
 - [X] Add object picking via ID render pass with Pickable component
 - [X] Entity hover highlight (emissive tint) + click-to-select + tabbed inspector UI
 - [X] Perlin noise terrain generation (256x256 grid, terrain module) — 9bdb739
+- [X] Create Entity UI + enhanced inspector (delete, add components) — b3fe8d1
