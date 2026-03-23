@@ -39,6 +39,14 @@ export class BloomRenderer
     // Runs the full bloom + composite pass.
     // backBuffer must be in PRESENT state on entry; leaves it in RENDER_TARGET state.
     // Resets hdrRenderTarget and bloomMips to RENDER_TARGET before returning.
+    // Sky/camera data for composite pass Rayleigh sky
+    struct SkyParams
+    {
+        vec3 camForward, camRight, camUp;
+        vec3 sunDir;
+        float aspectRatio, tanHalfFov;
+    };
+
     void render(
         ComPtr<ID3D12GraphicsCommandList2> cmdList,
         ComPtr<ID3D12Resource> backBuffer,
@@ -47,7 +55,8 @@ export class BloomRenderer
         uint32_t height,
         float threshold,
         float intensity,
-        int tonemapMode
+        int tonemapMode,
+        const SkyParams& sky
     );
 
     // Recreate PSOs with new shader bytecodes. Null bytecodes fall back to embedded defaults.

@@ -141,6 +141,10 @@ update()  →  render()
 
 **Tonemappers** (selectable in UI): ACES Filmic, AgX, AgX Punchy, Gran Turismo / Uchimura, PBR Neutral.
 
+**Rayleigh sky**: Computed in `bloom_composite_ps.hlsl` during the composite pass. When a pixel has near-zero scene luminance (background), reconstructs view direction from UV + camera orientation vectors (passed as root constants), then computes Rayleigh scattering with sun glow and horizon warmth. Camera forward/right/up and sun direction are computed in `application.cpp` and passed via `BloomRenderer::SkyParams`.
+
+**Ocean fog**: Height-based fog in `pixel_shader.hlsl`. Thickens exponentially below `FogStartY` (water surface). Fog color darkens with depth — near-surface uses `FogColor`, deep areas fade toward black. Also blends distance fog for depth cueing. Parameters (`FogStartY`, `FogDensity`, `FogColor`) stored in `SceneConstantBuffer` and editable in UI.
+
 ### PBR / BSRDF shader (`src/pixel_shader.hlsl`)
 Cook-Torrance BRDF:
 - **NDF**: GGX / Trowbridge-Reitz
@@ -165,7 +169,7 @@ Cook-Torrance BRDF:
 - **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 - **Bloom**: threshold, intensity sliders.
 - **Tonemapping**: tonemapper combo.
-- **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness.
+- **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness; ocean fog (start Y, density, color).
 - **Shadows**: enable/disable; shader bias; raster depth/slope/clamp bias (rebuilds shadow PSO on change); shadow light distance, ortho size, near/far.
 - **Animation**: entity animation toggle; light animation speed; light time scrub.
 - **Spawning**: manual pause/resume, auto-stop toggle, frame-ms threshold, spawn batch size, reset perf gate.
@@ -205,7 +209,7 @@ Cook-Torrance BRDF:
 Intermediate upload heaps from `UpdateSubresources` **must** stay alive until after `cmdQueue.waitForFenceVal()`. Pass a `vector<ComPtr<ID3D12Resource>>& temps` to `uploadMesh` and clear it only after the GPU wait.
 
 ### SceneConstantBuffer layout
-Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `viewProj`, `cameraPos`, `ambientColor`, `lightPos[8]`, `lightColor[8]`, `albedo`, roughness/metallic/emissiveStrength/reflective, `emissive`, `dirLightDir`, `dirLightColor`, `lightViewProj`, shadowBias/shadowMapTexelSize/_pad2[2].
+Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `viewProj`, `cameraPos`, `ambientColor`, `lightPos[8]`, `lightColor[8]`, `albedo`, roughness/metallic/emissiveStrength/reflective, `emissive`, `dirLightDir`, `dirLightColor`, `lightViewProj`, shadowBias/shadowMapTexelSize/fogStartY/fogDensity, `fogColor`.
 
 ### XMMATRIX alignment
 `SceneConstantBuffer` contains `XMMATRIX` members — declare on the stack with `alignas(16)`:

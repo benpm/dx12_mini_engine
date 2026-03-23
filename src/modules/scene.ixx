@@ -53,7 +53,9 @@ export struct SceneConstantBuffer
     mat4 lightViewProj;
     float shadowBias;
     float shadowMapTexelSize;  // 1.0 / shadowMapResolution
-    float _pad2[2];
+    float fogStartY;           // Y level where fog begins
+    float fogDensity;          // fog thickness per unit below fogStartY
+    vec4 fogColor;             // rgb = fog color, a = unused
 };
 
 // ---------------------------------------------------------------------------

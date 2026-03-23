@@ -7,6 +7,12 @@ cbuffer BloomConstants : register(b0)
     float2 texelSize;
     float bloomIntensity;
     uint tonemapMode;
+    float3 camForward;
+    float3 camRight;
+    float3 camUp;
+    float3 sunDir;
+    float aspectRatio;
+    float tanHalfFov;
 };
 
 // --- ACES Filmic (Narkowicz 2015) ---
@@ -22,14 +28,26 @@ float3 ACESFilm(float3 x)
 
 // --- AgX (Troy Sobotka) ---
 static const float3x3 AgXInsetMatrix = float3x3(
-    0.856627153315983f,  0.137318972929847f, 0.11189821299995f,
-    0.0951212405381588f, 0.761241990602591f, 0.0767994186031903f,
-    0.0482516061458583f, 0.101439036467562f, 0.811302368396859f
+    0.856627153315983f,
+    0.137318972929847f,
+    0.11189821299995f,
+    0.0951212405381588f,
+    0.761241990602591f,
+    0.0767994186031903f,
+    0.0482516061458583f,
+    0.101439036467562f,
+    0.811302368396859f
 );
 static const float3x3 AgXOutsetMatrix = float3x3(
-     1.1271005818144368f,  -0.1413297634984383f,  -0.14132976349843826f,
-    -0.11060664309660323f,  1.157823702216272f,    -0.11060664309660294f,
-    -0.016493938717834573f,-0.016493938717834257f,  1.2519364065950405f
+    1.1271005818144368f,
+    -0.1413297634984383f,
+    -0.14132976349843826f,
+    -0.11060664309660323f,
+    1.157823702216272f,
+    -0.11060664309660294f,
+    -0.016493938717834573f,
+    -0.016493938717834257f,
+    1.2519364065950405f
 );
 
 float3 AgXCore(float3 color)
@@ -44,12 +62,8 @@ float3 AgXCore(float3 color)
     // Coefficients from Godot PR #101406 — monotonic on [0,1], f(0)=0, f(1)≈1.
     float3 x2 = color * color;
     float3 x4 = x2 * x2;
-    color = 27.069f   * x4 * x2
-            - 74.778f * x4 * color
-            + 70.359f * x4
-            - 25.682f * x2 * color
-            + 4.0111f * x2
-            + 0.021f  * color;
+    color = 27.069f * x4 * x2 - 74.778f * x4 * color + 70.359f * x4 - 25.682f * x2 * color +
+            4.0111f * x2 + 0.021f * color;
     return color;
 }
 
@@ -101,8 +115,7 @@ float3 UchimuraTonemap(float3 x)
     const float c = 1.33f;  // toe curvature
     const float b = 0.0f;   // pedestal
     return float3(
-        UchimuraCurve(x.r, P, a, m, l, c, b),
-        UchimuraCurve(x.g, P, a, m, l, c, b),
+        UchimuraCurve(x.r, P, a, m, l, c, b), UchimuraCurve(x.g, P, a, m, l, c, b),
         UchimuraCurve(x.b, P, a, m, l, c, b)
     );
 }
@@ -118,7 +131,9 @@ float3 PBRNeutralTonemap(float3 color)
     color -= offset;
 
     float peak = max(color.r, max(color.g, color.b));
-    if (peak < startCompression) return color;
+    if (peak < startCompression) {
+        return color;
+    }
 
     float d = 1.0f - startCompression;
     float newPeak = 1.0f - d * d / (peak + d - startCompression);
@@ -128,26 +143,82 @@ float3 PBRNeutralTonemap(float3 color)
     return lerp(color, newPeak * float3(1, 1, 1), g);
 }
 
+// Rayleigh sky approximation
+float3 rayleighSky(float3 viewDir, float3 sunDirection)
+{
+    // Rayleigh scattering coefficients (proportional to 1/lambda^4)
+    static const float3 betaR = float3(5.8e-3f, 13.5e-3f, 33.1e-3f);
+
+    float sunDot = max(dot(viewDir, sunDirection), 0.0f);
+    float upDot = max(viewDir.y, 0.0f);
+
+    // Rayleigh phase function: (3/16pi)(1 + cos^2(theta))
+    float phase = 0.75f * (1.0f + sunDot * sunDot);
+
+    // Optical depth increases toward horizon (1/cos(zenith))
+    float opticalDepth = 1.0f / (upDot + 0.15f);
+
+    // Scattering: transmittance * phase * coefficients
+    float3 scatter = betaR * phase * opticalDepth;
+
+    // Base sky from scattering
+    float3 sky = scatter * 15.0f;
+
+    // Sun disc (soft glow)
+    float sunGlow = pow(sunDot, 256.0f) * 8.0f;
+    sky += float3(1.0f, 0.9f, 0.7f) * sunGlow;
+
+    // Warm horizon band
+    float horizonFade = exp(-upDot * 3.0f);
+    float3 horizonColor = float3(0.7f, 0.55f, 0.4f) * horizonFade * 0.4f;
+    sky += horizonColor;
+
+    return max(sky, 0.0f);
+}
+
 float4 main(float2 uv : TEXCOORD) : SV_Target
 {
     float3 scene = sceneTexture.Sample(linearClamp, uv).rgb;
     float3 bloom = bloomTexture.Sample(linearClamp, uv).rgb;
+
+    // If scene is near-black, render Rayleigh sky
+    float sceneLum = dot(scene, float3(0.299f, 0.587f, 0.114f));
+    if (sceneLum < 0.001f) {
+        // Reconstruct view direction from UV + camera orientation
+        float2 ndc = (uv - 0.5f) * 2.0f;
+        ndc.y = -ndc.y;
+        float3 viewDir = normalize(
+            camForward + camRight * ndc.x * aspectRatio * tanHalfFov + camUp * ndc.y * tanHalfFov
+        );
+        scene = rayleighSky(viewDir, sunDir);
+    }
+
     float3 hdr = scene + bloom * bloomIntensity;
 
     float3 ldr;
-    switch (tonemapMode)
-    {
-        case 0:  ldr = ACESFilm(hdr); break;
-        case 1:  ldr = AgXTonemap(hdr); break;
-        case 2:  ldr = AgXPunchy(hdr); break;
-        case 3:  ldr = UchimuraTonemap(hdr); break;
-        case 4:  ldr = PBRNeutralTonemap(hdr); break;
-        default: ldr = AgXTonemap(hdr); break;
+    switch (tonemapMode) {
+        case 0:
+            ldr = ACESFilm(hdr);
+            break;
+        case 1:
+            ldr = AgXTonemap(hdr);
+            break;
+        case 2:
+            ldr = AgXPunchy(hdr);
+            break;
+        case 3:
+            ldr = UchimuraTonemap(hdr);
+            break;
+        case 4:
+            ldr = PBRNeutralTonemap(hdr);
+            break;
+        default:
+            ldr = AgXTonemap(hdr);
+            break;
     }
 
     // sRGB OETF: linear segment below 0.0031308, power curve above
     ldr = max(ldr, 0.0f);
-    ldr = select(ldr <= 0.0031308f, ldr * 12.92f,
-                 1.055f * pow(ldr, 1.0f / 2.4f) - 0.055f);
+    ldr = select(ldr <= 0.0031308f, ldr * 12.92f, 1.055f * pow(ldr, 1.0f / 2.4f) - 0.055f);
     return float4(ldr, 1.0f);
 }

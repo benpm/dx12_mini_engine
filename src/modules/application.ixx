@@ -126,6 +126,10 @@ export class Application
     float dirLightDir[3] = { 0.5f, -0.8f, 0.3f };  // direction FROM light (negated in shader)
     float dirLightBrightness = 3.0f;
     float dirLightColor[3] = { 1.0f, 0.95f, 0.85f };  // warm white
+    // Ocean fog
+    float fogStartY = -4.0f;
+    float fogDensity = 0.4f;
+    float fogColor[3] = { 0.1f, 0.35f, 0.45f };  // ocean teal
     char gltfPathBuf[512] = "";
     bool pendingResetToTeapot{ false };
     std::string pendingGltfPath;

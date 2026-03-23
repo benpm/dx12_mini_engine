@@ -616,7 +616,9 @@ void Application::render()
         scb.lightViewProj = lightViewProj;
         scb.shadowBias = shadowBias;
         scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
-        scb._pad2[0] = scb._pad2[1] = 0.0f;
+        scb.fogStartY = fogStartY;
+        scb.fogDensity = fogDensity;
+        scb.fogColor = vec4(fogColor[0], fogColor[1], fogColor[2], 0.0f);
 
         if (mat.reflective && !anyReflective) {
             anyReflective = true;
@@ -944,9 +946,23 @@ void Application::render()
     CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
         rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx), rtvDescSize
     );
+    // Compute sky params for composite pass
+    BloomRenderer::SkyParams skyParams;
+    {
+        vec3 camPos3(camX, camY, camZ);
+        vec3 target3(0.0f, 0.0f, 0.0f);
+        skyParams.camForward =
+            normalize(vec3(target3.x - camPos3.x, target3.y - camPos3.y, target3.z - camPos3.z));
+        vec3 worldUp(0.0f, 1.0f, 0.0f);
+        skyParams.camRight = normalize(cross(worldUp, skyParams.camForward));
+        skyParams.camUp = cross(skyParams.camForward, skyParams.camRight);
+        skyParams.sunDir = normalize(vec3(-dirLightDir[0], -dirLightDir[1], -dirLightDir[2]));
+        skyParams.aspectRatio = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
+        skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
+    }
     bloom.render(
         cmdList, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
-        tonemapMode
+        tonemapMode, skyParams
     );
 
     if (!this->testMode) {

@@ -105,6 +105,11 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::Text("Point Lights");
             ImGui::SliderFloat("Point Brightness", &lightBrightness, 0.0f, 20.0f);
             ImGui::SliderFloat("Ambient Brightness", &ambientBrightness, 0.0f, 2.0f);
+            ImGui::Separator();
+            ImGui::Text("Height Fog");
+            ImGui::SliderFloat("Fog Start Y", &fogStartY, -20.0f, 10.0f);
+            ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 1.0f, "%.3f");
+            ImGui::ColorEdit3("Fog Color", fogColor);
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }

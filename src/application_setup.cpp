@@ -300,8 +300,8 @@ bool Application::loadContent()
         std::vector<ComPtr<ID3D12Resource>> temps;
 
         Material terrainMat;
-        terrainMat.albedo = vec4(0.3f, 0.35f, 0.15f, 1.0f);
-        terrainMat.roughness = 0.9f;
+        terrainMat.albedo = vec4(0.05f, 0.15f, 0.25f, 1.0f);
+        terrainMat.roughness = 0.3f;
         terrainMat.metallic = 0.0f;
         terrainMat.reflective = false;
         scene.materials.push_back(terrainMat);

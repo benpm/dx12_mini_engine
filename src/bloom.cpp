@@ -129,7 +129,7 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
         CD3DX12_ROOT_PARAMETER1 bloomRootParams[3];
         bloomRootParams[0].InitAsDescriptorTable(1, &srvRange0, D3D12_SHADER_VISIBILITY_PIXEL);
         bloomRootParams[1].InitAsDescriptorTable(1, &srvRange1, D3D12_SHADER_VISIBILITY_PIXEL);
-        bloomRootParams[2].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+        bloomRootParams[2].InitAsConstants(24, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
         D3D12_STATIC_SAMPLER_DESC staticSampler = {};
         staticSampler.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
@@ -253,7 +253,8 @@ void BloomRenderer::render(
     uint32_t height,
     float threshold,
     float intensity,
-    int tonemapMode
+    int tonemapMode,
+    const SkyParams& sky
 )
 {
     ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
@@ -367,12 +368,31 @@ void BloomRenderer::render(
     sr = { 0, 0, (LONG)width, (LONG)height };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    struct
-    {
-        float a, b, c;
-        uint32_t d;
-    } compositeCB = { 0, 0, intensity, (uint32_t)tonemapMode };
-    cmdList->SetGraphicsRoot32BitConstants(2, 4, &compositeCB, 0);
+    // 24 DWORDs matching HLSL cbuffer packing (float3 padded to 16-byte rows)
+    // Row0: texelW, texelH, intensity, tonemapMode
+    // Row1: camFwd.xyz, pad
+    // Row2: camRight.xyz, pad
+    // Row3: camUp.xyz, pad
+    // Row4: sunDir.xyz, aspectRatio
+    // Row5: tanHalfFov, pad, pad, pad
+    float compositeCB[24] = {};
+    compositeCB[2] = intensity;
+    *reinterpret_cast<uint32_t*>(&compositeCB[3]) = (uint32_t)tonemapMode;
+    compositeCB[4] = sky.camForward.x;
+    compositeCB[5] = sky.camForward.y;
+    compositeCB[6] = sky.camForward.z;
+    compositeCB[8] = sky.camRight.x;
+    compositeCB[9] = sky.camRight.y;
+    compositeCB[10] = sky.camRight.z;
+    compositeCB[12] = sky.camUp.x;
+    compositeCB[13] = sky.camUp.y;
+    compositeCB[14] = sky.camUp.z;
+    compositeCB[16] = sky.sunDir.x;
+    compositeCB[17] = sky.sunDir.y;
+    compositeCB[18] = sky.sunDir.z;
+    compositeCB[19] = sky.aspectRatio;
+    compositeCB[20] = sky.tanHalfFov;
+    cmdList->SetGraphicsRoot32BitConstants(2, 24, compositeCB, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 
     // Reset bloom resources to RENDER_TARGET for next frame
