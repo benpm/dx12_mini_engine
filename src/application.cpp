@@ -17,6 +17,7 @@ module;
 #include <string>
 #include <filesystem>
 #include <vector>
+#include <flecs.h>
 #include <gainput/gainput.h>
 #include <ScreenGrab.h>
 #include <wincodec.h>
@@ -385,7 +386,7 @@ void Application::update()
 
     // Spawn entities
     if (!scene.spawnableMeshRefs.empty()) {
-        std::uniform_real_distribution<float> scaleDist(0.05f, 0.7f);
+        std::uniform_real_distribution<float> scaleDist(0.05f, 0.35f);
         std::uniform_real_distribution<float> angleDist(0.0f, 6.2832f);
         std::uniform_real_distribution<float> axisDist(-1.0f, 1.0f);
         std::uniform_int_distribution<size_t> meshDist(0, scene.spawnableMeshRefs.size() - 1);
@@ -431,14 +432,14 @@ void Application::update()
             Animated anim{ speedDist(scene.rng), orbitRadius, orbitAngle, pos.y, s, axis, angle,
                            angleDist(scene.rng) };
 
-            scene.ecsWorld.entity().set(tf).set(mesh).set(anim);
+            scene.ecsWorld.entity().set(tf).set(mesh).set(anim).add<Pickable>();
         };
 
         int current = scene.ecsWorld.count<MeshRef>();
         int capacity = static_cast<int>(Scene::maxDrawsPerFrame) - 1;
 
         if (testMode) {
-            int toSpawn = 10;
+            int toSpawn = 6;
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
@@ -457,6 +458,29 @@ void Application::update()
                          this->inputMap.GetFloatDelta(Button::AxisDeltaY) };
     this->mousePos = { this->inputMap.GetFloat(Button::AxisX),
                        this->inputMap.GetFloat(Button::AxisY) };
+
+    // --- Entity picking from ID buffer ---
+    {
+        hoveredEntity = flecs::entity{};
+        uint32_t pickIdx = picker.pickedIndex;
+        if (pickIdx != ObjectPicker::invalidID && pickIdx < drawIndexToEntity.size()) {
+            hoveredEntity = drawIndexToEntity[pickIdx];
+        }
+
+        bool leftDown = this->inputMap.GetBool(Button::LeftClick);
+        if (leftDown && !leftClickActive) {
+            clickStartPos = mousePos;
+            leftClickActive = true;
+        }
+        if (!leftDown && leftClickActive) {
+            leftClickActive = false;
+            float dx = mousePos.x - clickStartPos.x;
+            float dy = mousePos.y - clickStartPos.y;
+            if (dx * dx + dy * dy < 9.0f) {  // < 3px drag = click
+                selectedEntity = hoveredEntity;
+            }
+        }
+    }
 
     this->matModel = mat4{};
     if (this->inputMap.GetBool(Button::LeftClick)) {
@@ -494,6 +518,9 @@ void Application::update()
 
 void Application::render()
 {
+    // Read back picked entity from previous frame
+    picker.readPickResult();
+
     auto backBuffer = this->backBuffers[this->curBackBufIdx];
     auto cmdList = this->cmdQueue.getCmdList();
 
@@ -566,12 +593,13 @@ void Application::render()
         uint32_t vertexOffset;
     };
     std::vector<DrawCmd> drawCmds;
+    drawIndexToEntity.clear();
     uint32_t drawIdx = 0;
     SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
     bool anyReflective = false;
     vec3 reflectivePos{};
 
-    scene.ecsWorld.each([&](const Transform& tf, const MeshRef& mesh) {
+    scene.ecsWorld.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
         assert(drawIdx < Scene::maxDrawsPerFrame / 3);
         const Material& mat = scene.materials[mesh.materialIndex];
 
@@ -604,7 +632,17 @@ void Application::render()
             reflectivePos = vec3(m._41, m._42, m._43);
         }
 
+        // Highlight hovered/selected entities with emissive tint
+        if (e == selectedEntity) {
+            scb.emissive = vec4(1.0f, 0.6f, 0.0f, 1.0f);
+            scb.emissiveStrength = 0.8f;
+        } else if (e == hoveredEntity) {
+            scb.emissive = vec4(1.0f, 0.5f, 0.0f, 1.0f);
+            scb.emissiveStrength = 0.3f;
+        }
+
         drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
+        drawIndexToEntity.push_back(e);
         drawIdx++;
     });
 
@@ -854,6 +892,47 @@ void Application::render()
         }
 
         this->lastFrameVertexCount = currentVertexCount;
+    }
+
+    // --- Object ID pass (for picking) ---
+    {
+        auto idRtv = picker.getRTV();
+        auto idDsv = picker.getDSV();
+        // Clear ID RT to invalidID
+        FLOAT clearColor[] = { static_cast<float>(ObjectPicker::invalidID), 0.0f, 0.0f, 0.0f };
+        cmdList->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
+        cmdList->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+        cmdList->SetPipelineState(picker.pso.Get());
+        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmdList->RSSetViewports(1, &this->viewport);
+        cmdList->RSSetScissorRects(1, &this->scissorRect);
+        cmdList->OMSetRenderTargets(1, &idRtv, true, &idDsv);
+
+        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
+        cmdList->IASetIndexBuffer(&scene.megaIBV);
+
+        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, sceneHeaps);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+
+        for (uint32_t i = 0; i < entityCount; ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+            cmdList->DrawIndexedInstanced(
+                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                static_cast<INT>(drawCmds[i].vertexOffset), 0
+            );
+        }
+
+        // Copy pixel under mouse cursor to readback buffer
+        uint32_t mx = static_cast<uint32_t>(mousePos.x);
+        uint32_t my = static_cast<uint32_t>(mousePos.y);
+        picker.copyPickedPixel(cmdList, mx, my);
     }
 
     // --- Light billboards pass (batched instancing) ---
@@ -1151,6 +1230,105 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::Text("Camera Radius: %.2f", cam.radius);
         ImGui::Text("Shadow: %s", shadowEnabled ? "On" : "Off");
         ImGui::Text("Cubemap: %s", cubemapEnabled ? "On" : "Off");
+        ImGui::End();
+    }
+
+    // --- Entity Inspector ---
+    if (selectedEntity.is_alive()) {
+        ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Entity Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Entity ID: %llu", selectedEntity.id());
+
+            if (ImGui::BeginTabBar("Components")) {
+                if (selectedEntity.has<Transform>()) {
+                    if (ImGui::BeginTabItem("Transform")) {
+                        auto tf = selectedEntity.get_mut<Transform>();
+                        auto& m = tf.world;
+                        ImGui::Text("Position: %.2f, %.2f, %.2f", m._41, m._42, m._43);
+                        float pos[3] = { m._41, m._42, m._43 };
+                        if (ImGui::DragFloat3("Pos", pos, 0.1f)) {
+                            m._41 = pos[0];
+                            m._42 = pos[1];
+                            m._43 = pos[2];
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
+                if (selectedEntity.has<MeshRef>()) {
+                    if (ImGui::BeginTabItem("MeshRef")) {
+                        auto mr = selectedEntity.get_mut<MeshRef>();
+                        ImGui::Text("Vertices: %u (offset %u)", mr.indexCount, mr.vertexOffset);
+                        ImGui::Text("Indices: %u (offset %u)", mr.indexCount, mr.indexOffset);
+                        ImGui::Text("Material: %d", mr.materialIndex);
+                        if (mr.materialIndex >= 0 &&
+                            mr.materialIndex < static_cast<int>(scene.materials.size())) {
+                            Material& mat = scene.materials[mr.materialIndex];
+                            float alb[4] = { mat.albedo.x, mat.albedo.y, mat.albedo.z,
+                                             mat.albedo.w };
+                            if (ImGui::ColorEdit3("Albedo", alb)) {
+                                mat.albedo = { alb[0], alb[1], alb[2], alb[3] };
+                            }
+                            ImGui::SliderFloat("Roughness", &mat.roughness, 0.0f, 1.0f);
+                            ImGui::SliderFloat("Metallic", &mat.metallic, 0.0f, 1.0f);
+                            float em[3] = { mat.emissive.x, mat.emissive.y, mat.emissive.z };
+                            if (ImGui::ColorEdit3("Emissive", em)) {
+                                mat.emissive = { em[0], em[1], em[2], mat.emissive.w };
+                            }
+                            ImGui::SliderFloat("EmissiveStr", &mat.emissiveStrength, 0.0f, 10.0f);
+                            ImGui::Checkbox("Reflective", &mat.reflective);
+                        }
+                        float ov[4] = { mr.albedoOverride.x, mr.albedoOverride.y,
+                                        mr.albedoOverride.z, mr.albedoOverride.w };
+                        if (ImGui::ColorEdit4("Albedo Override", ov)) {
+                            mr.albedoOverride = { ov[0], ov[1], ov[2], ov[3] };
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
+                if (selectedEntity.has<Animated>()) {
+                    if (ImGui::BeginTabItem("Animated")) {
+                        auto a = selectedEntity.get_mut<Animated>();
+                        ImGui::SliderFloat("Speed", &a.speed, 0.0f, 5.0f);
+                        ImGui::DragFloat("Orbit Radius", &a.orbitRadius, 0.1f);
+                        ImGui::DragFloat("Orbit Y", &a.orbitY, 0.1f);
+                        ImGui::SliderFloat("Scale", &a.initialScale, 0.1f, 5.0f);
+                        ImGui::EndTabItem();
+                    }
+                }
+                if (selectedEntity.has<Pickable>()) {
+                    if (ImGui::BeginTabItem("Pickable")) {
+                        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Entity is pickable");
+                        if (ImGui::Button("Remove Pickable")) {
+                            selectedEntity.remove<Pickable>();
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
+                ImGui::EndTabBar();
+            }
+
+            if (ImGui::Button("Deselect")) {
+                selectedEntity = flecs::entity{};
+            }
+        }
+        ImGui::End();
+    }
+
+    // --- Hover tooltip ---
+    if (hoveredEntity.is_alive() && hoveredEntity != selectedEntity &&
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+        ImGui::SetNextWindowPos(ImVec2(mousePos.x + 15.0f, mousePos.y + 15.0f), ImGuiCond_Always);
+        ImGui::Begin(
+            "##hover", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing
+        );
+        ImGui::Text("Entity %llu", hoveredEntity.id());
+        if (hoveredEntity.has<MeshRef>()) {
+            auto mr = hoveredEntity.get<MeshRef>();
+            ImGui::Text("Material: %d", mr.materialIndex);
+        }
+        ImGui::Text("Click to select");
         ImGui::End();
     }
 
@@ -1563,6 +1741,8 @@ bool Application::loadContent()
         }
     }
 
+    picker.createResources(device, clientWidth, clientHeight, rootSignature);
+
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
     bloom.createResources(device.Get(), clientWidth, clientHeight);
@@ -1596,6 +1776,7 @@ void Application::onResize(uint32_t width, uint32_t height)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         bloom.resize(device.Get(), clientWidth, clientHeight);
+        picker.resize(device, clientWidth, clientHeight);
         this->flush();
     }
 }

@@ -142,6 +142,7 @@ add_executable(main
     src/command_queue.cpp
     src/window.cpp
     src/logging.cpp
+    src/object_picking.cpp
     resources.rc
 )
 target_sources(main
@@ -161,6 +162,7 @@ target_sources(main
     src/modules/billboard.ixx
     src/modules/imgui_layer.ixx
     src/modules/shader_hotreload.ixx
+    src/modules/object_picking.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
@@ -180,12 +182,14 @@ compile_shader(src/bloom_upsample_ps.hlsl ps 6_0 BLOOM_UPSAMPLE_HDR g_bloom_upsa
 compile_shader(src/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_composite_ps)
 compile_shader(src/billboard_vs.hlsl vs 6_0 BILLBOARD_VS_HDR g_billboard_vs)
 compile_shader(src/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
+compile_shader(src/id_ps.hlsl ps 6_0 ID_PS_HDR g_id_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
     ${BLOOM_PREFILTER_HDR} ${BLOOM_DOWNSAMPLE_HDR}
     ${BLOOM_UPSAMPLE_HDR} ${BLOOM_COMPOSITE_HDR}
     ${BILLBOARD_VS_HDR} ${BILLBOARD_PS_HDR}
+    ${ID_PS_HDR}
 )
 add_dependencies(main shaders)
 

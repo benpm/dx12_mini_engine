@@ -425,14 +425,14 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
     mirrorRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Mirror)];
     Transform tf;
     tf.world = mat4{};
-    ecsWorld.entity().set(tf).set(mirrorRef);
+    ecsWorld.entity().set(tf).set(mirrorRef).add<Pickable>();
 
     // Companion teapot: diffuse (non-reflective, provides cubemap content)
     MeshRef matteRef = meshRef;
     matteRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Diffuse)];
     Transform tfMatte;
     tfMatte.world = translate(3.5f, -0.6f, 0.0f) * scale(0.8f, 0.8f, 0.8f);
-    ecsWorld.entity().set(tfMatte).set(matteRef);
+    ecsWorld.entity().set(tfMatte).set(matteRef).add<Pickable>();
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     cmdQueue.waitForFenceVal(fv);
@@ -604,7 +604,7 @@ bool Scene::loadGltf(
                 if (!append) {
                     Transform tf;
                     tf.world = worldTf;
-                    ecsWorld.entity().set(tf).set(meshRef);
+                    ecsWorld.entity().set(tf).set(meshRef).add<Pickable>();
                 }
             }
         }

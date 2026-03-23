@@ -9,6 +9,8 @@ module;
 #include <gainput/gainput.h>
 #include <unordered_set>
 #include <string>
+#include <vector>
+#include <flecs.h>
 
 export module application;
 
@@ -21,6 +23,7 @@ export import bloom;
 export import billboard;
 export import imgui_layer;
 export import shader_hotreload;
+export import object_picking;
 
 export class Application
 {
@@ -61,6 +64,16 @@ export class Application
     BloomRenderer bloom;
     BillboardRenderer billboards;
     ImGuiLayer imguiLayer;
+    ObjectPicker picker;
+
+    // Maps draw index → flecs entity (rebuilt each frame)
+    std::vector<flecs::entity> drawIndexToEntity;
+
+    // Entity picking/selection
+    flecs::entity hoveredEntity;
+    flecs::entity selectedEntity;
+    vec2 clickStartPos;
+    bool leftClickActive = false;
 
     // Depth buffer + scene PSO
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer;

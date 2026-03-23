@@ -61,9 +61,10 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `command_queue.ixx`    | ID3D12CommandQueue + fence sync + command allocator pooling                  |
 | `camera.ixx`           | Base Camera + OrbitCamera (uses `module :private;` for implementation)       |
 | `input.ixx`            | Button/Key enums, gainput integration (uses `module :private;` for global)   |
-| `ecs_components.ixx`   | ECS components: `Transform`, `MeshRef`, `Animated` (orbit + pulse)           |
+| `ecs_components.ixx`   | ECS components: `Transform`, `MeshRef`, `Animated`, `Pickable`               |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
 | `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
+| `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -90,6 +91,14 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - Bloom root signature + 4 PSOs (prefilter, downsample, upsample, composite)
 - Methods: `createResources()`, `resize()`, `render()`
 
+**ObjectPicker** (`object_picking.ixx` + `object_picking.cpp`) — entity picking via ID render pass:
+- R32_UINT render target (viewport-sized), own depth buffer
+- Reuses scene vertex shader + ID pixel shader (`id_ps.hlsl`) that outputs draw index
+- PSO created from scene root signature (needs structured buffer + drawIndex root constant)
+- Single-pixel readback at mouse position each frame (1-frame latency)
+- `drawIndexToEntity` vector (in Application) maps draw index → flecs entity
+- Methods: `createResources()`, `resize()`, `readPickResult()`, `copyPickedPixel()`
+
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 - SRV descriptor heap for ImGui
 - Methods: `init()`, `shutdown()`, `styleColorsDracula()`
@@ -112,6 +121,8 @@ update()  →  render()
               ├─ Shadow pass      (depth-only to 2048² shadow map, directional light ortho VP)
               ├─ Cubemap pass     (6-face env map from first reflective entity, non-reflective only)
               ├─ Scene pass       (HDR RT, depth, per-mesh draw calls, samples shadow map + cubemap)
+              ├─ ID pass          (R32_UINT RT, own depth, same draw calls → entity index per pixel)
+              ├─ Readback copy    (single pixel at mouse pos → CPU readback buffer)
               ├─ Bloom prefilter  → downsample chain → upsample chain
               ├─ Composite        (HDR + bloom → swap chain backbuffer)
               └─ ImGui overlay    (directly to backbuffer)
@@ -157,6 +168,7 @@ Cook-Torrance BRDF:
 - **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
 - **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
+- **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle). Hover tooltip shows entity ID + material on mouseover.
 
 ---
 

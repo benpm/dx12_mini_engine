@@ -19,14 +19,19 @@ export struct Transform
 // Animation state for orbiting entities
 export struct Animated
 {
-    float speed;          // orbital speed (rad/s)
-    float orbitRadius;    // distance from Y axis
-    float orbitAngle;     // current angle (updated each frame)
-    float orbitY;         // fixed Y height
-    float initialScale;   // preserved from spawn
-    vec3 rotAxis;         // preserved rotation axis
-    float rotAngle;       // preserved rotation angle
-    float pulsePhase;     // phase offset for scale pulsing
+    float speed;         // orbital speed (rad/s)
+    float orbitRadius;   // distance from Y axis
+    float orbitAngle;    // current angle (updated each frame)
+    float orbitY;        // fixed Y height
+    float initialScale;  // preserved from spawn
+    vec3 rotAxis;        // preserved rotation axis
+    float rotAngle;      // preserved rotation angle
+    float pulsePhase;    // phase offset for scale pulsing
+};
+
+// Tag: entity is pickable via ID render pass
+export struct Pickable
+{
 };
 
 // Reference into shared mega vertex/index buffers
