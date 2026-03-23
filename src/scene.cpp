@@ -311,6 +311,7 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     megaIBUsed = 0;
     ecsWorld.delete_with<MeshRef>();
     spawnableMeshRefs.clear();
+    spawnableMeshNames.clear();
     spawnTimer = 0.0f;
 }
 
@@ -419,6 +420,7 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
 
     MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, base, temps);
     spawnableMeshRefs.push_back(meshRef);
+    spawnableMeshNames.push_back("Teapot");
 
     // Central teapot: mirror
     MeshRef mirrorRef = meshRef;
@@ -601,6 +603,10 @@ bool Scene::loadGltf(
                 int matIdx = (prim.material >= 0) ? materialBaseIdx + prim.material : 0;
                 MeshRef meshRef = appendToMegaBuffers(cmdList, verts, indices, matIdx, uploadTemps);
                 spawnableMeshRefs.push_back(meshRef);
+                spawnableMeshNames.push_back(
+                    gMesh.name.empty() ? "GLB mesh " + std::to_string(spawnableMeshNames.size())
+                                       : gMesh.name
+                );
                 if (!append) {
                     Transform tf;
                     tf.world = worldTf;

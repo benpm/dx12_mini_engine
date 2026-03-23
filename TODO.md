@@ -2,7 +2,6 @@
 
 <!-- Any todo item that has insufficient detail should be ignored. Do these in order! -->
 
-- [ ] Generate a plane with many vertices. Using simplex noise (web search for best implementation), create basic terrain. Make sure the scale of the object is large.
 - [ ] Add a sensible UI for creating new objects as well as manipulating existing ones.
 
 ---
@@ -13,3 +12,4 @@
 - [X] Add UI scaling
 - [X] Add object picking via ID render pass with Pickable component
 - [X] Entity hover highlight (emissive tint) + click-to-select + tabbed inspector UI
+- [X] Perlin noise terrain generation (256x256 grid, terrain module) — 9bdb739

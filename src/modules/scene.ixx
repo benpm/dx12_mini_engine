@@ -86,6 +86,7 @@ export class Scene
     int presetIdx[static_cast<int>(MaterialPreset::Count)] = { -1, -1, -1 };
     int selectedMaterialIdx = 0;
     std::vector<MeshRef> spawnableMeshRefs;
+    std::vector<std::string> spawnableMeshNames;
     float spawnTimer = 0.0f;
     std::mt19937 rng{ std::random_device{}() };
 

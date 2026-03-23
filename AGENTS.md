@@ -173,7 +173,8 @@ Cook-Torrance BRDF:
 - **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
 - **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
-- **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle). Hover tooltip shows entity ID + material on mouseover.
+- **Create**: mesh selector (from loaded mesh refs), material selector, position/scale, animated toggle with speed/radius. Spawns entity on click.
+- **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle). Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
 
 ---
 

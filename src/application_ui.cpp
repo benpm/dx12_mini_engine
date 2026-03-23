@@ -243,6 +243,57 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Create")) {
+            ImGui::PushItemWidth(220.0f);
+            if (!scene.spawnableMeshNames.empty()) {
+                std::vector<const char*> meshNames;
+                meshNames.reserve(scene.spawnableMeshNames.size());
+                for (const auto& n : scene.spawnableMeshNames) {
+                    meshNames.push_back(n.c_str());
+                }
+                ImGui::Combo("Mesh", &createMeshIdx, meshNames.data(), (int)meshNames.size());
+            }
+            if (!scene.materials.empty()) {
+                std::vector<const char*> matNames;
+                matNames.reserve(scene.materials.size());
+                for (const auto& m : scene.materials) {
+                    matNames.push_back(m.name.empty() ? "Unnamed" : m.name.c_str());
+                }
+                ImGui::Combo("Material", &createMatIdx, matNames.data(), (int)matNames.size());
+            }
+            ImGui::DragFloat3("Position", createPos, 0.5f);
+            ImGui::SliderFloat("Scale", &createScale, 0.01f, 10.0f, "%.2f");
+            ImGui::Checkbox("Animated", &createAnimated);
+            if (createAnimated) {
+                ImGui::SliderFloat("Anim Speed", &createAnimSpeed, 0.0f, 5.0f);
+                ImGui::SliderFloat("Orbit Radius", &createAnimRadius, 0.0f, 30.0f);
+            }
+            if (ImGui::Button("Spawn Entity")) {
+                if (!scene.spawnableMeshRefs.empty()) {
+                    int mi = std::clamp(createMeshIdx, 0, (int)scene.spawnableMeshRefs.size() - 1);
+                    MeshRef mesh = scene.spawnableMeshRefs[mi];
+                    mesh.materialIndex =
+                        std::clamp(createMatIdx, 0, (int)scene.materials.size() - 1);
+                    Transform tf;
+                    tf.world = scale(createScale, createScale, createScale) *
+                               translate(createPos[0], createPos[1], createPos[2]);
+                    auto e = scene.ecsWorld.entity().set(tf).set(mesh).add<Pickable>();
+                    if (createAnimated) {
+                        Animated anim;
+                        anim.speed = createAnimSpeed;
+                        anim.orbitRadius = createAnimRadius;
+                        anim.orbitY = createPos[1];
+                        anim.initialScale = createScale;
+                        anim.pulsePhase = static_cast<float>(scene.rng() % 1000) / 1000.0f * 6.28f;
+                        e.set(anim);
+                    }
+                    selectedEntity = e;
+                }
+            }
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
         ImGui::EndMainMenuBar();
     }
 
@@ -340,9 +391,34 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 ImGui::EndTabBar();
             }
 
+            ImGui::Separator();
+            if (!selectedEntity.has<Animated>()) {
+                if (ImGui::Button("Add Animated")) {
+                    Animated anim;
+                    if (selectedEntity.has<Transform>()) {
+                        auto tf = selectedEntity.get<Transform>();
+                        anim.orbitY = tf.world._42;
+                    }
+                    selectedEntity.set(anim);
+                }
+                ImGui::SameLine();
+            }
+            if (!selectedEntity.has<Pickable>()) {
+                if (ImGui::Button("Add Pickable")) {
+                    selectedEntity.add<Pickable>();
+                }
+                ImGui::SameLine();
+            }
             if (ImGui::Button("Deselect")) {
                 selectedEntity = flecs::entity{};
             }
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+            if (ImGui::Button("Delete")) {
+                selectedEntity.destruct();
+                selectedEntity = flecs::entity{};
+            }
+            ImGui::PopStyleColor();
         }
         ImGui::End();
     }

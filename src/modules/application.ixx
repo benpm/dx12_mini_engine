@@ -160,6 +160,15 @@ export class Application
     float lightAnimationSpeed = 1.0f;
     bool showLightBillboards = true;
 
+    // Create Entity panel state
+    int createMeshIdx = 0;
+    int createMatIdx = 0;
+    float createPos[3] = { 0.0f, 0.0f, 0.0f };
+    float createScale = 1.0f;
+    bool createAnimated = false;
+    float createAnimSpeed = 1.0f;
+    float createAnimRadius = 5.0f;
+
     gainput::DeviceId mouseID, rawMouseID;
 
     // Shader hot reload
