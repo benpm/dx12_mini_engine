@@ -1,20 +1,29 @@
 If:
   PathMatch:
-    - .*\.(cpp|hpp|h|ixx)$
+    - build/.*
+    - .*/pch\.hpp
+Diagnostics:
+  Suppress: "*"
+Index:
+  Background: Skip
+
+---
+If:
+  PathMatch:
+    - .*\.(cpp|hpp|h)$
   PathExclude:
-    - .*\.pch
-    - .*pch\.?
-    - .*\build\_deps
+    - include/llvm-c/.*
+    - external/.*
+    - build/.*
+    - .*/pch\..*
 
 CompileFlags:
   CompilationDatabase: build
-  Remove:
-    - -W*
-    - -std=c++*
+  Remove: [-O*, -f*, -m*, -W*, gl*, -std=*]
   Add:
-    - -Ibuild/Debug
+    - -Ibuild/debug
     - -Iinclude
-    - -std=c++26
+    - -std=c++2c
 
 Diagnostics:
   Includes:
@@ -33,14 +42,3 @@ Diagnostics:
 Index:
   Background: Build
   StandardLibrary: true
-
-InlayHints:
-  Enabled: false
-
----
-If:
-  PathMatch: .*/(external|third_party|submodules|build)/.*
-Diagnostics:
-  Suppress: "*"
-Index:
-  Background: Skip

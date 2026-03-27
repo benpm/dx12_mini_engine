@@ -7,22 +7,21 @@ AlwaysBreakTemplateDeclarations: No
 FixNamespaceComments: false
 NamespaceIndentation: All
 ColumnLimit: 100
-SortIncludes: false
+SortIncludes: CaseInsensitive
 AllowAllArgumentsOnNextLine: true
 Cpp11BracedListStyle: false
 
 BraceWrapping:
-  AfterClass:      true
-  AfterControlStatement: false
-  AfterEnum:       true
-  AfterFunction:   true
-  AfterNamespace:  true
+  AfterClass: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
   AfterObjCDeclaration: true
-  AfterStruct:     true
-  AfterUnion:      true
-  BeforeCatch:     false
-  BeforeElse:      false
-  IndentBraces:    false
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
 BreakBeforeBraces: Custom
 
-ReflowComments: false
+ReflowComments: true

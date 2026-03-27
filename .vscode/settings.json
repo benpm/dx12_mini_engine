@@ -76,11 +76,6 @@
     },
     "C_Cpp.errorSquiggles": "enabled",
     "editor.formatOnSave": true,
-    "yaml.schemas": {
-        "https://www.schemastore.org/clang-format-18.x.json": "**/.clang-format",
-        "https://www.schemastore.org/clangd.json": "file:///c%3A/Users/ben/projects/dx12_mini_engine/.clangd",
-        "https://www.schemastore.org/clang-tidy.json": "file:///c%3A/Users/ben/projects/dx12_mini_engine/.clang-tidy"
-    },
     "files.exclude": {
         "**/.git": true,
         "**/.svn": true,
