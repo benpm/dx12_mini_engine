@@ -14,7 +14,7 @@ CMake LLVM toolchain with Ninja is preferred, you can also use MSVC. Check out `
 ## Building
 ```bash
 cmake --preset windows-clang
-cmake --build --preset windows-clang-debug
+cmake --build build --config Debug
 ```
 
 ## Agents

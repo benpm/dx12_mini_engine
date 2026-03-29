@@ -1,9 +1,10 @@
 module;
 
-#include <cstdint>
 #include <cmath>
-#include <vector>
+#include <cstdint>
 #include <PerlinNoise.hpp>
+#include <vector>
+#include "terrain_types.h"
 
 module terrain;
 

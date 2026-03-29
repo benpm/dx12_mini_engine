@@ -1,19 +1,23 @@
 module;
 
-#include <Windows.h>
 #include <d3d12.h>
-#include <wrl.h>
 #include <flecs.h>
-#include <vector>
-#include <string>
-#include <random>
+#include <Windows.h>
+#include <wrl.h>
 #include <cstdint>
+#include <random>
+#include <string>
+#include <vector>
+#include "material_types.h"
 
 export module scene;
 
 export import common;
 export import ecs_components;
 export import command_queue;
+
+export using ::Material;
+export using ::MaterialPreset;
 
 using Microsoft::WRL::ComPtr;
 
@@ -59,22 +63,6 @@ export struct SceneConstantBuffer
 };
 
 // ---------------------------------------------------------------------------
-// CPU-side material
-// ---------------------------------------------------------------------------
-export enum class MaterialPreset : int { Diffuse = 0, Metal = 1, Mirror = 2, Count = 3 };
-
-export struct Material
-{
-    vec4 albedo{ 0.8f, 0.8f, 0.8f, 1.0f };
-    float roughness{ 0.4f };
-    float metallic{ 0.0f };
-    float emissiveStrength{ 0.0f };
-    bool reflective{ false };
-    vec4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
-    std::string name;
-};
-
-// ---------------------------------------------------------------------------
 // Scene — owns ECS world, mega-buffers, draw-data buffers, materials
 // ---------------------------------------------------------------------------
 export class Scene
@@ -91,6 +79,13 @@ export class Scene
     std::vector<std::string> spawnableMeshNames;
     float spawnTimer = 0.0f;
     std::mt19937 rng{ std::random_device{}() };
+
+    // Cached ECS queries
+    flecs::query<const Transform, const MeshRef> drawQuery{
+        ecsWorld.query<const Transform, const MeshRef>()
+    };
+    flecs::query<Transform, Animated> animQuery{ ecsWorld.query<Transform, Animated>() };
+    flecs::query<PointLight> lightQuery{ ecsWorld.query<PointLight>() };
 
     ComPtr<ID3D12Resource> megaVB;
     ComPtr<ID3D12Resource> megaIB;

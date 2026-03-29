@@ -13,14 +13,14 @@
         "tonemapMode": 2
     },
     "dirLight": {
-        "dir": [0.5, -0.8, 0.3],
+        "dir": { "x": 0.5, "y": -0.8, "z": 0.3 },
         "brightness": 3.0,
-        "color": [1.0, 0.95, 0.85]
+        "color": { "x": 1.0, "y": 0.95, "z": 0.85 }
     },
     "fog": {
         "startY": -4.0,
         "density": 0.4,
-        "color": [0.1, 0.35, 0.45]
+        "color": { "x": 0.1, "y": 0.35, "z": 0.45 }
     },
     "shadow": {
         "enabled": true,
@@ -57,7 +57,7 @@
         "showBillboards": true
     },
     "terrain": {},
-    "bgColor": [0.0, 0.0, 0.0],
+    "bgColor": {},
     "materials": [],
     "entities": [],
     "runtime": {

@@ -99,11 +99,11 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
         if (ImGui::BeginMenu("Scene")) {
             ImGui::PushItemWidth(220.0f);
-            ImGui::ColorEdit3("Background", bgColor);
+            ImGui::ColorEdit3("Background", &bgColor.x);
             ImGui::Separator();
             ImGui::Text("Directional Light");
-            ImGui::SliderFloat3("Direction", dirLightDir, -1.0f, 1.0f);
-            ImGui::ColorEdit3("Dir Color", dirLightColor);
+            ImGui::SliderFloat3("Direction", &dirLightDir.x, -1.0f, 1.0f);
+            ImGui::ColorEdit3("Dir Color", &dirLightColor.x);
             ImGui::SliderFloat("Dir Brightness", &dirLightBrightness, 0.0f, 20.0f);
             ImGui::Separator();
             ImGui::Text("Point Lights");
@@ -113,7 +113,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::Text("Height Fog");
             ImGui::SliderFloat("Fog Start Y", &fogStartY, -20.0f, 10.0f);
             ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 1.0f, "%.3f");
-            ImGui::ColorEdit3("Fog Color", fogColor);
+            ImGui::ColorEdit3("Fog Color", &fogColor.x);
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
@@ -172,21 +172,19 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::SliderFloat("Billboard Size", &billboards.spriteSize, 0.01f, 3.0f, "%.2f");
             ImGui::SliderFloat("Point Brightness", &lightBrightness, 0.0f, 20.0f);
             ImGui::Separator();
-            for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
-                ImGui::PushID(i);
-                if (ImGui::TreeNode("Light", "Light %d", i)) {
-                    ImGui::SliderFloat3("Center", &lightAnims[i].center.x, -50.0f, 50.0f);
-                    ImGui::SliderFloat("Amp X", &lightAnims[i].ampX, 0.0f, 20.0f);
-                    ImGui::SliderFloat("Amp Y", &lightAnims[i].ampY, 0.0f, 20.0f);
-                    ImGui::SliderFloat("Amp Z", &lightAnims[i].ampZ, 0.0f, 20.0f);
-                    ImGui::SliderFloat("Freq X", &lightAnims[i].freqX, 0.0f, 3.0f);
-                    ImGui::SliderFloat("Freq Y", &lightAnims[i].freqY, 0.0f, 3.0f);
-                    ImGui::SliderFloat("Freq Z", &lightAnims[i].freqZ, 0.0f, 3.0f);
-                    ImGui::ColorEdit3("Color", &lightAnims[i].color.x);
+            int li = 0;
+            scene.lightQuery.each([&](flecs::entity e, PointLight& pl) {
+                ImGui::PushID((int)e.id());
+                if (ImGui::TreeNode("Light", "Light %d", li)) {
+                    ImGui::SliderFloat3("Center", &pl.center.x, -50.0f, 50.0f);
+                    ImGui::SliderFloat3("Amplitude", &pl.amp.x, 0.0f, 20.0f);
+                    ImGui::SliderFloat3("Frequency", &pl.freq.x, 0.0f, 3.0f);
+                    ImGui::ColorEdit3("Color", &pl.color.x);
                     ImGui::TreePop();
                 }
                 ImGui::PopID();
-            }
+                li++;
+            });
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
@@ -285,7 +283,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 }
                 ImGui::Combo("Material", &createMatIdx, matNames.data(), (int)matNames.size());
             }
-            ImGui::DragFloat3("Position", createPos, 0.5f);
+            ImGui::DragFloat3("Position", &createPos.x, 0.5f);
             ImGui::SliderFloat("Scale", &createScale, 0.01f, 10.0f, "%.2f");
             ImGui::Checkbox("Animated", &createAnimated);
             if (createAnimated) {
@@ -299,14 +297,13 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                     mesh.materialIndex =
                         std::clamp(createMatIdx, 0, (int)scene.materials.size() - 1);
                     Transform tf;
-                    tf.world = scale(createScale, createScale, createScale) *
-                               translate(createPos[0], createPos[1], createPos[2]);
+                    tf.world = scale(createScale) * translate(createPos);
                     auto e = scene.ecsWorld.entity().set(tf).set(mesh).add<Pickable>();
                     if (createAnimated) {
                         Animated anim;
                         anim.speed = createAnimSpeed;
                         anim.orbitRadius = createAnimRadius;
-                        anim.orbitY = createPos[1];
+                        anim.orbitY = createPos.y;
                         anim.initialScale = createScale;
                         anim.pulsePhase = static_cast<float>(scene.rng() % 1000) / 1000.0f * 6.28f;
                         e.set(anim);

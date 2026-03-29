@@ -124,17 +124,17 @@ export class Application
     int tonemapMode = 2;
 
     // GUI-controlled scene parameters
-    float bgColor[3] = { 0.0f, 0.0f, 0.0f };
+    vec3 bgColor;
     float lightBrightness = 0.1f;
     float ambientBrightness = 0.01f;
     // Directional light
-    float dirLightDir[3] = { 0.5f, -0.8f, 0.3f };  // direction FROM light (negated in shader)
+    vec3 dirLightDir{ 0.5f, -0.8f, 0.3f };  // direction FROM light (negated in shader)
     float dirLightBrightness = 3.0f;
-    float dirLightColor[3] = { 1.0f, 0.95f, 0.85f };  // warm white
+    vec3 dirLightColor{ 1.0f, 0.95f, 0.85f };  // warm white
     // Ocean fog
     float fogStartY = -4.0f;
     float fogDensity = 0.4f;
-    float fogColor[3] = { 0.1f, 0.35f, 0.45f };  // ocean teal
+    vec3 fogColor{ 0.1f, 0.35f, 0.45f };  // ocean teal
     char gltfPathBuf[512] = "";
     char scenePathBuf[512] = "";
     bool pendingResetToTeapot{ false };
@@ -144,15 +144,6 @@ export class Application
 
     uint64_t frameFenceValues[nBuffers] = {};
 
-    // Animated lights
-    struct LightAnim
-    {
-        vec3 center;
-        float ampX, ampY, ampZ;
-        float freqX, freqY, freqZ;
-        vec4 color;  // rgb = hdr color (pre-multiplied brightness)
-    };
-    LightAnim lightAnims[8] = {};
     float lightTime = 0.0f;
 
     bool vsync = true;
@@ -175,7 +166,7 @@ export class Application
     // Create Entity panel state
     int createMeshIdx = 0;
     int createMatIdx = 0;
-    float createPos[3] = { 0.0f, 0.0f, 0.0f };
+    vec3 createPos;
     float createScale = 1.0f;
     bool createAnimated = false;
     float createAnimSpeed = 1.0f;

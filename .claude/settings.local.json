@@ -10,7 +10,9 @@
       "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
       "Bash(clang++:*)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(./build/Debug/main.exe resources/scenes/test.json)",
+      "Bash(clang-format -i include/camera_types.h include/terrain_types.h src/glaze_impl.cpp src/modules/camera.ixx src/modules/terrain.ixx src/modules/scene_file.ixx include/scene_data.h src/terrain.cpp src/application_scene.cpp src/application_setup.cpp)"
     ]
   },
   "autoMemoryEnabled": true

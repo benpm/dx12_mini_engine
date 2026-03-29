@@ -4,24 +4,24 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
-#include <DirectXMath.h>
 #include <d3d12.h>
 #include <d3dcompiler.h>
+#include <DirectXMath.h>
 #include <dxgi1_6.h>
+#include <flecs.h>
+#include <spdlog/spdlog.h>
+#include <Windows.h>
 #include <wrl.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <random>
 #include <string>
-#include <filesystem>
 #include <vector>
-#include <flecs.h>
-#include <spdlog/spdlog.h>
 #include "d3dx12_clean.h"
-#include "vertex_shader_cso.h"
 #include "pixel_shader_cso.h"
+#include "vertex_shader_cso.h"
 
 module application;
 
@@ -300,8 +300,8 @@ bool Application::loadContent()
         std::vector<ComPtr<ID3D12Resource>> temps;
 
         Material terrainMat;
-        terrainMat.albedo = vec4(0.05f, 0.15f, 0.25f, 1.0f);
-        terrainMat.roughness = 0.3f;
+        terrainMat.albedo = tp.materialAlbedo;
+        terrainMat.roughness = tp.materialRoughness;
         terrainMat.metallic = 0.0f;
         terrainMat.reflective = false;
         scene.materials.push_back(terrainMat);
@@ -313,7 +313,7 @@ bool Application::loadContent()
         cmdQueue.waitForFenceVal(fv);
 
         Transform tf;
-        tf.world = translate(0.0f, -5.0f, 0.0f);
+        tf.world = translate(0.0f, tp.positionY, 0.0f);
         scene.ecsWorld.entity().set(tf).set(terrainMesh).add<Pickable>();
         spdlog::info(
             "Terrain: {}x{} grid, {} verts, {} tris", tp.gridSize, tp.gridSize, terrainVerts.size(),
@@ -453,7 +453,7 @@ bool Application::loadContent()
         bloomCompIdx = shaderCompiler.watch("bloom_composite_ps.hlsl", "ps_6_0");
     }
 
-    // Initialize 8 animated lights with random hue colors and sine/cosine coefficients
+    // Spawn animated point light entities
     {
         std::mt19937 lightRng(42u);
         std::uniform_real_distribution<float> hDist(0.0f, 360.0f);
@@ -461,17 +461,15 @@ bool Application::loadContent()
         std::uniform_real_distribution<float> freqDist(0.2f, 0.8f);
         std::uniform_real_distribution<float> ampDist(3.0f, 8.0f);
         const float orbitR = 8.0f;
-        for (int i = 0; i < 8; ++i) {
-            float angle = (float)i * (6.2831853f / 8.0f);
-            lightAnims[i].center = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
-                                     orbitR * std::sin(angle) };
-            lightAnims[i].ampX = ampDist(lightRng);
-            lightAnims[i].ampY = ampDist(lightRng) * 0.5f;
-            lightAnims[i].ampZ = ampDist(lightRng);
-            lightAnims[i].freqX = freqDist(lightRng);
-            lightAnims[i].freqY = freqDist(lightRng);
-            lightAnims[i].freqZ = freqDist(lightRng);
-            lightAnims[i].color = hslToLinear(hDist(lightRng), 0.9f, 0.65f);
+        for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
+            float angle = (float)i * (6.2831853f / (float)SceneConstantBuffer::maxLights);
+            PointLight pl;
+            pl.center = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
+                          orbitR * std::sin(angle) };
+            pl.amp = { ampDist(lightRng), ampDist(lightRng) * 0.5f, ampDist(lightRng) };
+            pl.freq = { freqDist(lightRng), freqDist(lightRng), freqDist(lightRng) };
+            pl.color = hslToLinear(hDist(lightRng), 0.9f, 0.65f);
+            scene.ecsWorld.entity().set(pl);
         }
     }
 

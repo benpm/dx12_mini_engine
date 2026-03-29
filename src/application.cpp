@@ -521,7 +521,7 @@ void Application::update()
 
     // Animate orbiting entities
     if (animateEntities) {
-        scene.ecsWorld.each([&](Transform& tf, Animated& anim) {
+        scene.animQuery.each([&](Transform& tf, Animated& anim) {
             anim.orbitAngle += anim.speed * dt;
             float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
             float s = anim.initialScale * pulse;
@@ -550,22 +550,27 @@ void Application::render()
     float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
     vec4 cameraPos(camX, camY, camZ, 1.0f);
     vec4 ambientColor(
-        bgColor[0] * ambientBrightness, bgColor[1] * ambientBrightness,
-        bgColor[2] * ambientBrightness, 1.0f
+        bgColor.x * ambientBrightness, bgColor.y * ambientBrightness, bgColor.z * ambientBrightness,
+        1.0f
     );
 
     // Compute animated light positions for this frame
-    vec4 animLightPos[SceneConstantBuffer::maxLights];
-    vec4 animLightColor[SceneConstantBuffer::maxLights];
-    for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
-        const LightAnim& la = lightAnims[i];
-        animLightPos[i] = { la.center.x + la.ampX * std::sin(la.freqX * lightTime),
-                            la.center.y + la.ampY * std::cos(la.freqY * lightTime),
-                            la.center.z + la.ampZ * std::sin(la.freqZ * lightTime + (float)i),
-                            1.0f };
-        animLightColor[i] = { la.color.x * lightBrightness, la.color.y * lightBrightness,
-                              la.color.z * lightBrightness, 1.0f };
-    }
+    vec4 animLightPos[SceneConstantBuffer::maxLights] = {};
+    vec4 animLightColor[SceneConstantBuffer::maxLights] = {};
+    int lightIdx = 0;
+    scene.lightQuery.each([&](const PointLight& pl) {
+        if (lightIdx >= SceneConstantBuffer::maxLights) {
+            return;
+        }
+        animLightPos[lightIdx] = { pl.center.x + pl.amp.x * std::sin(pl.freq.x * lightTime),
+                                   pl.center.y + pl.amp.y * std::cos(pl.freq.y * lightTime),
+                                   pl.center.z +
+                                       pl.amp.z * std::sin(pl.freq.z * lightTime + (float)lightIdx),
+                                   1.0f };
+        animLightColor[lightIdx] = { pl.color.x * lightBrightness, pl.color.y * lightBrightness,
+                                     pl.color.z * lightBrightness, 1.0f };
+        lightIdx++;
+    });
     billboards.updateInstances(
         animLightPos, animLightColor, static_cast<uint32_t>(SceneConstantBuffer::maxLights)
     );
@@ -578,12 +583,12 @@ void Application::render()
         using namespace DirectX;
         // UI stores direction FROM light; negate to get direction TOWARD light for shader
         XMVECTOR fromLight =
-            XMVector3Normalize(XMVectorSet(dirLightDir[0], dirLightDir[1], dirLightDir[2], 0.0f));
+            XMVector3Normalize(XMVectorSet(dirLightDir.x, dirLightDir.y, dirLightDir.z, 0.0f));
         XMVECTOR toLight = XMVectorNegate(fromLight);
         XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&dirLightDirVec), XMVectorSetW(toLight, 0.0f));
-        dirLightColorVec = { dirLightColor[0] * dirLightBrightness,
-                             dirLightColor[1] * dirLightBrightness,
-                             dirLightColor[2] * dirLightBrightness, 1.0f };
+        dirLightColorVec = { dirLightColor.x * dirLightBrightness,
+                             dirLightColor.y * dirLightBrightness,
+                             dirLightColor.z * dirLightBrightness, 1.0f };
 
         // Place virtual light position far along the direction for LookAt
         XMVECTOR lightP = XMVectorScale(toLight, shadowLightDistance);
@@ -618,7 +623,7 @@ void Application::render()
     bool anyReflective = false;
     vec3 reflectivePos{};
 
-    scene.ecsWorld.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
+    scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
         assert(drawIdx < Scene::maxDrawsPerFrame / 3);
         const Material& mat = scene.materials[mesh.materialIndex];
 
@@ -644,7 +649,7 @@ void Application::render()
         scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
         scb.fogStartY = fogStartY;
         scb.fogDensity = fogDensity;
-        scb.fogColor = vec4(fogColor[0], fogColor[1], fogColor[2], 0.0f);
+        scb.fogColor = vec4(fogColor, 0.0f);
 
         if (mat.reflective && !anyReflective) {
             anyReflective = true;
@@ -834,7 +839,7 @@ void Application::render()
                     cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
                     dsvSize
                 );
-                FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
+                FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
                 this->clearRTV(cmdList, faceRtv, clearColor);
                 this->clearDepth(cmdList, faceDsv);
                 cmdList->RSSetViewports(1, &cubeVP);
@@ -862,7 +867,7 @@ void Application::render()
 
     // --- Scene pass: render to HDR render target ---
     {
-        FLOAT clearColor[] = { bgColor[0], bgColor[1], bgColor[2], 1.0f };
+        FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
             bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
         );
@@ -982,7 +987,7 @@ void Application::render()
         vec3 worldUp(0.0f, 1.0f, 0.0f);
         skyParams.camRight = normalize(cross(worldUp, skyParams.camForward));
         skyParams.camUp = cross(skyParams.camForward, skyParams.camRight);
-        skyParams.sunDir = normalize(vec3(-dirLightDir[0], -dirLightDir[1], -dirLightDir[2]));
+        skyParams.sunDir = normalize(-dirLightDir);
         skyParams.aspectRatio = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
         skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
     }

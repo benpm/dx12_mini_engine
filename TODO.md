@@ -2,7 +2,12 @@
 
 <!-- Any todo item that has insufficient detail should be ignored. Do these in order! -->
 
+- [ ] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. 
 - [ ] Add LuaJIT for dynamic scripting support
+- [ ] Remove explicit clang diagnostic ignore pragmas
+- [ ] Add SSAO (Screen-Space Ambient Occlusion)
+- [ ] Add rebindable keybinds for various editor actions (see EditorAction::keyName in @src/gui.cpp). Allow these to be configured through a JSON file, use glaze lib to load. Show keybinds for editor actions in the tooltips.
+- [ ] Add an optional title and description field to the scene .json, which are displayed as text in the bottom right of the screen.
 
 ---
 

@@ -5,19 +5,16 @@ module;
 
 export module scene_file;
 
-export using ::CameraData;
+export using ::OrbitCamera;
 export using ::BloomData;
 export using ::DirLightData;
 export using ::FogData;
 export using ::ShadowData;
 export using ::CubemapData;
-export using ::LightAnimData;
 export using ::PointLightsData;
 export using ::SpawningData;
 export using ::DisplayData;
-export using ::TerrainData;
-export using ::MaterialData;
-export using ::AnimatedData;
+export using ::TerrainParams;
 export using ::EntityData;
 export using ::RuntimeData;
 export using ::SceneFileData;

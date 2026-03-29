@@ -2,6 +2,8 @@
 
 Guidance for AI agents (Claude Code, Codex, etc.) working in this repository.
 
+See @README.md
+
 ---
 
 ## Build
@@ -34,7 +36,8 @@ cmake --build build --config Release
 - If asked to create a new feature/mode/option for objects, properties, or relationships, consider how to integrate it with the existing ECS system.
 
 **After finishing every task:**
-- build then run `--test` and inspect `screenshot.png`
+- build then run test scene and inspect `screenshot.png`
+  - `./build/Debug/main.exe resources/scenes/test.json`
   - read `screenshot.png` with the Read tool, and visually verify the result looks correct before reporting done
 - `git pull`
 - Update `AGENTS.md` to reflect any new or modified architecture, modules, rendering pipeline steps, UI panels, key patterns, or dependencies. Keep it accurate and current.
@@ -51,7 +54,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 ### Module files (`src/modules/*.ixx`)
 | Module                 | Purpose                                                                      |
 | ---------------------- | ---------------------------------------------------------------------------- |
-| `math.ixx`             | Pure math types (vec2/3/4, mat4), matrix/vector functions                    |
+| `math.ixx`             | Re-exports math types from `include/math_types.h`                            |
 | `common.ixx`           | `chkDX()`, `_deg` literals, pi constants. Re-exports `math`                  |
 | `window.ixx`           | Singleton HWND + D3D12Device2 creation, adapter selection, callback-based render loop |
 | `application.ixx`      | Main Application class — orchestrates subsystems, render loop, input, UI     |
@@ -59,9 +62,9 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `bloom.ixx`            | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs              |
 | `imgui_layer.ixx`      | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style           |
 | `command_queue.ixx`    | ID3D12CommandQueue + fence sync + command allocator pooling                  |
-| `camera.ixx`           | Base Camera + OrbitCamera (uses `module :private;` for implementation)       |
+| `camera.ixx`           | Re-exports Camera + OrbitCamera from `include/camera_types.h`                |
 | `input.ixx`            | Button/Key enums, gainput integration (uses `module :private;` for global)   |
-| `ecs_components.ixx`   | ECS components: `Transform`, `MeshRef`, `Animated`, `Pickable`               |
+| `ecs_components.ixx`   | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, PointLight) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
 | `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
 | `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
@@ -73,7 +76,12 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 - **No `export using namespace`** — each file declares its own `using` locally (e.g., `using Microsoft::WRL::ComPtr;`)
 - **`export import` only for types in public API** — use plain `import` for internal dependencies
 - **`module :private;`** for tiny implementations — avoids separate `.cpp` for <20 lines
-- **`include/d3dx12_clean.h`** wraps `d3dx12.h` with Clang warning suppression — use instead of raw include
+- **`include/math_types.h`** defines vec2/vec3/vec4/mat4 and math functions — included by both modules and plain TUs (e.g. `glaze_impl.cpp`)
+- **`include/ecs_types.h`** defines Transform, Animated, Pickable, MeshRef, PointLight — included by `ecs_components.ixx`, `scene_data.h`
+- **`include/material_types.h`** defines Material, MaterialPreset — included by `scene.ixx` and `scene_data.h`
+- **`include/camera_types.h`** defines Camera (abstract base) + OrbitCamera — included by `camera.ixx` and `scene_data.h`; `OrbitCamera` used directly in `SceneFileData` (glz::meta excludes `aspectRatio`)
+- **`include/terrain_types.h`** defines TerrainParams (geometry + material/position fields) — included by `terrain.ixx` and `scene_data.h`; replaces former `TerrainData` duplicate
+- **`include/d3dx12_clean.h`** wraps `<directx/d3dx12.h>` (from DirectX-Headers vcpkg) with Clang warning suppression
 - **Application public API is minimal** — only `update()`, `render()`, `runtimeConfig`, `cam`, `inputMap`, `keyboardID`, `applySceneData()`, `extractSceneData()` are public
 
 ### Subsystem architecture
@@ -81,7 +89,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`.
 
 **Scene** (`scene.ixx` + `scene.cpp`) — owns all scene state:
-- ECS world (`flecs::world`), materials, spawn system
+- ECS world (`flecs::world`), cached queries (`drawQuery`, `animQuery`, `lightQuery`), materials, spawn system
 - Mega vertex/index buffers (1M verts, 4M indices, default heap)
 - Triple-buffered structured draw-data buffers (`SceneConstantBuffer`)
 - Methods: `createMegaBuffers()`, `createDrawDataBuffers()`, `appendToMegaBuffers()`, `clearScene()`, `loadTeapot()`, `loadGltf()`
@@ -107,10 +115,10 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - Note: `renderImGui()` is in `application_ui.cpp` (app-specific UI)
 
 ### Application class (split across 4 files)
-- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1070 lines)
+- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1080 lines)
 - `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips (~470 lines)
-- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createCubemapResources()`, `onResize()` (~520 lines)
-- `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization (~360 lines)
+- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createCubemapResources()`, `onResize()` (~515 lines)
+- `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization (~270 lines)
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
@@ -119,7 +127,7 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 - Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
 - **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO + shadow PSO via `createScenePSO()` / `createShadowPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
-- **Animation system**: `update()` runs `ecsWorld.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary.
+- **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary.
 
 ### Rendering pipeline
 
@@ -153,7 +161,7 @@ Cook-Torrance BRDF:
 - **Geometry**: Smith + Schlick-GGX
 - **Fresnel**: Schlick approximation
 - **Inputs** (from `SceneConstantBuffer`): albedo RGBA, roughness, metallic, reflective flag, emissive color + strength
-- 8 animated point lights with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
+- Up to 8 animated point lights (queried from ECS `PointLight` component entities via `lightQuery`) with scaled inverse-square attenuation (`1 / max(d² × 0.01, ε)`).
 - 1 directional light (shadow-casting) — direction, color, brightness configurable in UI.
 
 ### Scene loading
@@ -175,7 +183,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
   - `empty.json` — empty scene with defaults, spawning stopped
 - **Runtime block**: optional section in scene files for automation: `useWarp`, `hideWindow`, `screenshotFrame`, `exitAfterScreenshot`, `spawnPerFrame`, `skipImGui`
 - **UI**: Scene menu has save/load path input + buttons
-- **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `application_scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` use only standard C++ types (no engine math types).
+- **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `application_scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` reuse engine types directly — `OrbitCamera`, `TerrainParams`, `Material`, `Animated`, `PointLight` — no duplicate "data" structs.
 
 ### ImGui UI panels
 - **Display**: vsync toggle, fullscreen toggle, tearing status, runtime mode.
@@ -186,7 +194,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 - **Shadows**: enable/disable; shader bias; raster depth/slope/clamp bias (rebuilds shadow PSO on change); shadow light distance, ortho size, near/far.
 - **Animation**: entity animation toggle; light animation speed; light time scrub.
 - **Spawning**: manual pause/resume, auto-stop toggle, frame-ms threshold, spawn batch size, reset perf gate.
-- **Lights**: billboard toggle/size; point-light brightness; per-light center/amplitude/frequency/color controls for all 8 animated lights.
+- **Lights**: billboard toggle/size; point-light brightness; per-light center/amplitude/frequency/color controls for all `PointLight` entities (iterated via `lightQuery`).
 - **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
 - **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
 - **Load GLB**: path input + Load button + Reset-to-Teapot button.
@@ -234,6 +242,9 @@ alignas(16) SceneConstantBuffer scb = {};
 
 ### No GPU ops inside renderImGui
 `renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`.
+
+### PointLight entities survive clearScene()
+`clearScene()` removes entities via `delete_with<MeshRef>()` — only entities that have a `MeshRef` component are deleted. `PointLight` entities have no `MeshRef`, so they persist across scene resets. Light data is restored from JSON via `lightQuery.each(...)` in `applySceneData()`.
 
 ### tinygltf in a separate TU
 `TINYGLTF_IMPLEMENTATION` and `STB_IMAGE_IMPLEMENTATION` must be in `src/gltf_impl.cpp` (not in `application.cpp`) to avoid `stb_image` / `Windows.h` macro conflicts in the module implementation file.
