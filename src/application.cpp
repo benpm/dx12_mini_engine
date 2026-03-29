@@ -4,24 +4,24 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
-#include <DirectXMath.h>
 #include <d3d12.h>
+#include <DirectXMath.h>
 #include <dxgi1_6.h>
+#include <flecs.h>
+#include <gainput/gainput.h>
+#include <ScreenGrab.h>
+#include <spdlog/spdlog.h>
+#include <wincodec.h>
+#include <Windows.h>
 #include <wrl.h>
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <random>
 #include <string>
-#include <filesystem>
 #include <vector>
-#include <flecs.h>
-#include <gainput/gainput.h>
-#include <ScreenGrab.h>
-#include <wincodec.h>
-#include <spdlog/spdlog.h>
 #include "d3dx12_clean.h"
 #include "resource.h"
 
@@ -332,6 +332,32 @@ void Application::update()
         }
     }
 
+    // Deferred scene file load/save
+    if (!pendingSceneLoad.empty()) {
+        std::string path = std::move(pendingSceneLoad);
+        pendingSceneLoad.clear();
+        SceneFileData data;
+        if (loadSceneFile(path, data)) {
+            scene.clearScene(cmdQueue);
+            scene.loadTeapot(device.Get(), cmdQueue);
+            for (const auto& entry : std::filesystem::directory_iterator(MODELS_DIR)) {
+                if (entry.path().extension() == ".glb") {
+                    scene.loadGltf(entry.path().string(), device.Get(), cmdQueue, true);
+                }
+            }
+            applySceneData(data);
+            spawningStopped = data.spawning.stopped;
+            recentFrameHead = 0;
+            recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
+        }
+    }
+    if (!pendingSceneSave.empty()) {
+        std::string path = std::move(pendingSceneSave);
+        pendingSceneSave.clear();
+        auto data = extractSceneData();
+        saveSceneFile(path, data);
+    }
+
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
 
@@ -431,8 +457,8 @@ void Application::update()
         int current = scene.ecsWorld.count<MeshRef>();
         int capacity = static_cast<int>(Scene::maxDrawsPerFrame) - 1;
 
-        if (testMode) {
-            int toSpawn = 6;
+        if (runtimeConfig.spawnPerFrame > 0) {
+            int toSpawn = std::min(runtimeConfig.spawnPerFrame, capacity - current);
             for (int i = 0; i < toSpawn; ++i) {
                 spawnOne();
             }
@@ -965,7 +991,7 @@ void Application::render()
         tonemapMode, skyParams
     );
 
-    if (!this->testMode) {
+    if (!this->runtimeConfig.skipImGui) {
         this->renderImGui(cmdList);
     }
 
@@ -975,15 +1001,15 @@ void Application::render()
 
     this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
 
-    UINT syncInterval = (this->vsync && !this->testMode) ? 1 : 0;
+    UINT syncInterval = (this->vsync && !this->runtimeConfig.skipImGui) ? 1 : 0;
     UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     chkDX(this->swapChain->Present(syncInterval, presentFlags));
     this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
     this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
 
-    if (this->testMode) {
+    if (this->runtimeConfig.screenshotFrame > 0) {
         this->frameCount++;
-        if (this->frameCount == 10) {
+        if (this->frameCount == this->runtimeConfig.screenshotFrame) {
             spdlog::info("Saving screenshot and exiting...");
             HRESULT hr = DirectX::SaveWICTextureToFile(
                 this->cmdQueue.queue.Get(), backBuffer.Get(), GUID_ContainerFormatPng,
@@ -994,7 +1020,9 @@ void Application::render()
                     "Failed to save screenshot! HRESULT: {:#010x}", static_cast<uint32_t>(hr)
                 );
             }
-            Window::get()->doExit = true;
+            if (this->runtimeConfig.exitAfterScreenshot) {
+                Window::get()->doExit = true;
+            }
         }
     }
 }

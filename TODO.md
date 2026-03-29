@@ -2,6 +2,8 @@
 
 <!-- Any todo item that has insufficient detail should be ignored. Do these in order! -->
 
+- [ ] Add LuaJIT for dynamic scripting support
+
 ---
 
 <!-- Move item here when completed, reference the hash of this commit -->

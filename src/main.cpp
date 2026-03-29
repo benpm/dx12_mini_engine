@@ -2,15 +2,17 @@
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
 #include <gainput/gainput.h>
-#include <shellapi.h>
 #include <objbase.h>
+#include <shellapi.h>
 #include <spdlog/spdlog.h>
+#include <Windows.h>
+#include "scene_data.h"
 
 import application;
 import input;
 import logging;
+import scene_file;
 import window;
 
 // NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
@@ -19,7 +21,8 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
     // Disable error popup
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 
-    // Setup logging before doing anything else so we can capture any errors that happen during initialization
+    // Setup logging before doing anything else so we can capture any errors that happen during
+    // initialization
     setupLogging();
 
     // Initialize COM for WIC (required for saving screenshots)
@@ -28,39 +31,55 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         return -1;
     }
 
-    // Parse CLI arguments
+    // Parse CLI arguments: first non-flag argument is the scene file path
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     spdlog::info("Command line: {}", GetCommandLineA());
-    bool useWarp = false;
-    bool testMode = false;
+    std::string sceneFilePath;
     if (argv) {
-        for (int i = 0; i < argc; ++i) {
-            if (wcscmp(argv[i], L"--test") == 0) {
-                testMode = true;
-                useWarp = true;  // Use WARP in test mode for headless environments
-                spdlog::info("Running in test mode");
+        for (int i = 1; i < argc; ++i) {
+            // Convert wide string to narrow
+            int len = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, nullptr, nullptr);
+            std::string arg(len - 1, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, arg.data(), len, nullptr, nullptr);
+            if (!arg.empty() && arg[0] != '-') {
+                sceneFilePath = arg;
+                break;
             }
         }
         LocalFree(static_cast<HLOCAL>(argv));
     }
+
+    // Load scene file (if provided) before window init to read runtime.useWarp
+    SceneFileData sceneData;
+    bool hasSceneFile = false;
+    if (!sceneFilePath.empty()) {
+        hasSceneFile = loadSceneFile(sceneFilePath, sceneData);
+        if (!hasSceneFile) {
+            spdlog::error("Failed to load scene file '{}', using defaults", sceneFilePath);
+        }
+    }
+
+    bool useWarp = hasSceneFile && sceneData.runtime.useWarp;
+    bool hideWindow = hasSceneFile && sceneData.runtime.hideWindow;
 
     try {
         spdlog::info("Initializing window...");
         Window::get()->initialize(hInstance, "D3D12 Experiment", 1280, 720, nCmdShow, useWarp);
         spdlog::info("Creating Application...");
         Application app;
-        app.testMode = testMode;
-        if (testMode) {
-            app.cam.radius = 8.0f;
+
+        if (hasSceneFile) {
+            app.applySceneData(sceneData);
+            spdlog::info("Applied scene file: {}", sceneFilePath);
         }
+
         spdlog::info("Application created.");
 
         // Input map just to show example for closing window with escape
         app.inputMap.MapBool(Button::Exit, app.keyboardID, gainput::KeyEscape);
 
-        // In test mode, keep the window hidden so no visible window appears
-        ::ShowWindow(Window::get()->hWnd, testMode ? SW_HIDE : SW_SHOW);
+        ::ShowWindow(Window::get()->hWnd, hideWindow ? SW_HIDE : SW_SHOW);
         ::UpdateWindow(Window::get()->hWnd);
 
         MSG msg = {};

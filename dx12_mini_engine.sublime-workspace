@@ -1,0 +1,422 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"MS",
+				"msys2_shell"
+			],
+			[
+				"SHEL",
+				"SHELL_INTEGRATION_PATH"
+			]
+		]
+	},
+	"buffers":
+	[
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"setting",
+				"Preferences: Settings"
+			],
+			[
+				"package",
+				"Package Control: Install Package"
+			],
+			[
+				"insta",
+				"Package Control: Install Package"
+			],
+			[
+				"wrap",
+				"Word Wrap: Toggle"
+			],
+			[
+				"keyb",
+				"Preferences: Key Bindings"
+			],
+			[
+				"sett",
+				"Preferences: Settings"
+			],
+			[
+				"pref",
+				"Preferences: Settings"
+			],
+			[
+				"preferences",
+				"Preferences: Settings"
+			],
+			[
+				"comment",
+				"Toggle Block Comment"
+			],
+			[
+				"save proje",
+				"Project: Save As"
+			],
+			[
+				"key",
+				"Preferences: Key Bindings"
+			],
+			[
+				"color",
+				"UI: Select Color Scheme"
+			],
+			[
+				"theme",
+				"UI: Select Theme"
+			],
+			[
+				"settin",
+				"Preferences: Settings"
+			],
+			[
+				"uniqu",
+				"Permute Lines: Unique"
+			],
+			[
+				"markd",
+				"Set Syntax: MultiMarkdown"
+			],
+			[
+				"settings",
+				"Preferences: Settings"
+			],
+			[
+				"inst",
+				"Package Control: Install Package"
+			],
+			[
+				"hex",
+				"HexViewer: Show Hex Inspector"
+			],
+			[
+				"instal",
+				"Package Control: Install Package"
+			],
+			[
+				"install",
+				"Package Control: Install Package"
+			]
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/C/Users/ben/projects/patchwork"
+	],
+	"file_history":
+	[
+		"/C/Users/ben/projects/dx12_mini_engine/.clangd",
+		"/C/Users/ben/projects/dx12_mini_engine/.gitignore",
+		"/C/Users/ben/projects/dx12_mini_engine/AGENTS.md",
+		"/C/Users/ben/projects/dx12_mini_engine/TODO.md",
+		"/C/Users/ben/projects/dx12_mini_engine/screenshot.png",
+		"/C/Users/ben/.claude/CLAUDE.md",
+		"/C/Users/ben/.claude.json",
+		"/C/Users/ben/.zshrc",
+		"/C/Users/ben/scripts/devbash.bat",
+		"/C/Users/ben/.wezterm.lua",
+		"/C/msys64/clang64.ini",
+		"/C/Program Files/Git/etc/profile.d/env.sh",
+		"/C/Program Files/Git/etc/bash.bashrc",
+		"/C/Program Files/Git/etc/profile",
+		"/C/Program Files/Microsoft Visual Studio/18/Community/VC/Auxiliary/Build/vcvarsall.bat",
+		"/C/msys64/msys2_shell.cmd",
+		"/C/Program Files/Microsoft Visual Studio/18/Community/VC/Auxiliary/Build/vcvars64.bat",
+		"/C/cygwin64/etc/nsswitch.conf",
+		"/C/Users/ben/.bashrc",
+		"/C/Users/ben/.bash_profile",
+		"/C/Users/ben/projects/config/linux/home/.zshrc",
+		"/C/cygwin64/Cygwin.bat",
+		"/C/Users/ben/Downloads/kenney_tiny-ski/Tilesheet.txt",
+		"/C/Program Files/Microsoft Visual Studio/18/Community/Common7/Tools/VsDevCmd.bat",
+		"/C/Users/ben/%VC_ROOT_DIR%/VC/Auxiliary/Build/vcvars64.bat",
+		"/C/Users/ben/projects/xbrzscale/python/pyproject.toml",
+		"/C/Users/ben/Downloads/apt-cyg.txt",
+		"/C/etc/nsswitch.conf",
+		"/C/Users/ben/Documents/audacious_sun/.obsidian/snippets/font_adjust.css",
+		"/C/Users/ben/Downloads/Dialogue Trees.canvas",
+		"/E/Samples/game-sounds/_readme_and_license.txt",
+		"/C/Users/ben/Downloads/dialogue_trees.ron",
+		"/C/Users/ben/Downloads/dialogue_trees_1.ron",
+		"/C/Users/ben/Downloads/canvas_to_ron.py",
+		"/C/Users/ben/Downloads/dialog.ron",
+		"/C/Users/ben/.config/git/ignore",
+		"/C/Users/ben/Downloads/benpm.github.io-1771226499761.log",
+		"/C/Users/ben/Downloads/canvas_to_ron_1.py",
+		"/V/My Drive/stuff/audacious_sun/Projects/Bevy Jam 7/Dialogue Trees.canvas",
+		"/C/Users/ben/Downloads/shader_1.wgsl",
+		"/C/Users/ben/Documents/git/patchwork/logs.txt",
+		"/C/Users/ben/projects/config/linux/home/.wezterm.lua",
+		"/C/Users/ben/AppData/Local/Packages/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe/LocalState/settings.json",
+		"/C/Users/ben/.local/bin/aseprite",
+		"/C/Users/ben/.local/bin/aseprite.sh",
+		"/C/Users/ben/scripts/vscode.cmd",
+		"/C/Users/ben/projects/obsidian/cache/cache/.obsidian/snippets/font_adjust.css",
+		"/C/Users/ben/scripts/load_msys_zsh.sh",
+		"/C/Users/ben/scripts/instructions.txt",
+		"/C/Users/ben/scripts/msys_zsh.bat",
+		"/C/Users/ben/projects/config/win/home/.config/obsidian/snippets/font_adjust.css",
+		"/C/Users/ben/Downloads/dotgrid-main/README.txt",
+		"/C/Users/ben/.bash_gitbash_env",
+		"/C/Users/ben/Downloads/Tilesheet.txt",
+		"/C/msys64/mingw64.ini",
+		"/C/msys64/msys2.ini",
+		"/C/msys64/home/ben/.bashrc",
+		"/C/msys64/autorebase.bat",
+		"/C/Users/ben/.gitconfig",
+		"/C/Users/ben/.minttyrc.sublime-workspace",
+		"/C/Users/ben/.zsh_history",
+		"/C/Users/ben/.git-credentials",
+		"/C/Users/ben/.claude.json.backup",
+		"/C/Users/ben/hotkeys.json",
+		"/C/Users/ben/.minttyrc",
+		"/C/Users/ben/.ssh/config",
+		"/C/Users/ben/projects/sublime-text/config.sublime-project",
+		"/C/Users/ben/Downloads/Default.sublime-keymap",
+		"/C/Users/ben/Documents/beaker/.obsidian/plugins/obsidian-icon-folder/styles.css",
+		"/C/Users/ben/AppData/Local/Temp/LHHEqslfeFnP.md",
+		"/C/Users/ben/Downloads/context_zola.md",
+		"/C/Users/ben/Downloads/cpp_examples/scripts",
+		"/C/Users/ben/AppData/Local/Temp/claude-prompt-f6438eb5-7ef0-46ba-8693-53ec15a913f7.md",
+		"/C/Users/ben/Downloads/obsidian-hotkeys.schema.json",
+		"/C/Users/ben/Downloads/obsidian-hotkeys.schema_1.json",
+		"/C/Users/ben/Downloads/RemoveChromePolicy.ps1.txt",
+		"/C/Users/ben/Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+		"/C/Users/ben/AppData/Local/Temp/claude-prompt-1f370536-ba82-4bd2-b32c-b9f6975f36ed.md",
+		"/C/Users/ben/AppData/Local/Temp/1618714412.vs_code_clang_cpp.md",
+		"/?SCIXOPENSPACE/Users/Public/Documents/info.txt",
+		"/?SCIXOPENSPACE/Users/Public/Documents/id_ed25519",
+		"/?SCIXOPENSPACE/Users/Public/Documents/id_ed25519.pub",
+		"/C/Users/ben/AppData/Roaming/Parsec/config.txt",
+		"/C/Users/ben/AppData/Roaming/Voidstar/FilePilot/FPilot-Config.json",
+		"/V/My Drive/grad_school/official_transcript_utah_2025.LOG",
+		"/V/My Drive/stuff/research/remeshing_paper.md",
+		"/C/Users/ben/Downloads/CodeLLB_Initialize_issue.txt",
+		"/C/Users/ben/Documents/git/patchwork/.vscode/launch.json",
+		"/C/Users/ben/AppData/Roaming/Claude/claude_desktop_config.json",
+		"/C/Users/ben/scripts/vscode.bat",
+		"/C/Users/ben/.vscode/argv.json",
+		"/C/Users/ben/AppData/Local/Programs/Microsoft VS Code/bin/code",
+		"/C/Users/ben/AppData/Local/Programs/Microsoft VS Code/bin/code.cmd",
+		"/C/Users/ben/scripts/vscode_vs2022.cmd",
+		"/C/Users/ben/Downloads/vsdev_env.sh",
+		"/C/Users/ben/.oh-my-zsh/custom/example.zsh",
+		"/C/Users/ben/Documents/git/patchwork/CMakePresets.json",
+		"/C/Users/ben/Downloads/env1.batch",
+		"/C/Users/ben/Documents/openspace/Tldraw 2025-11-11 5.04PM.md",
+		"/C/Users/ben/AppData/Local/Temp/7zO845644E2/README.txt",
+		"/C/Users/ben/scripts/devcmd.bat",
+		"/C/Users/ben/Documents/git/OpenSpace/user/config/two-viewports.json",
+		"/C/Users/socks/Pictures/carettab-settings.json",
+		"/C/Users/ben/Downloads/YiffyMix v5x-v6x-SDXL-lightning workflow.json",
+		"/C/Users/ben/Documents/PowerShell/profile.ps1",
+		"/C/Users/ben/Downloads/Deadheart Public Key.asc.txt",
+		"/C/Users/ben/AppData/Local/Temp/7zO8A6EB043/A15_LM.profile",
+		"/H/My Drive/stuff/research/remeshing_paper.md",
+		"/C/Users/ben/AppData/Roaming/ComfyUI/logs/main.log",
+		"/C/Users/ben/AppData/Roaming/ComfyUI/extra_models_config.yaml",
+		"/C/Users/ben/Downloads/Random OpenSpace Improvements Page.md",
+		"/C/Users/ben/Documents/git/glad-inline-docs/glad_gen/src/gl.c",
+		"/C/Users/ben/Documents/git/glad-inline-docs/glad_gen/include/glad/gl.h",
+		"/C/Users/socks/AppData/Local/Google/DriveFS/pid.txt",
+		"/C/Users/socks/AppData/Local/Google/DriveFS/com.google.drive.nativeproxy.json",
+		"/C/Users/ben/Downloads/Preferences.sublime-settings",
+		"/C/Users/ben/projects/git/glad-inline-docs/glad_gen/include/glad/gl.h",
+		"/C/Users/ben/Documents/git/patchwork/scratch/scaledPlane.data"
+	],
+	"find":
+	{
+		"height": 23.0
+	},
+	"find_in_files":
+	{
+		"height": 109.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": true,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"scrollbar_highlights": true,
+		"show_context": true,
+		"use_buffer2": true,
+		"use_gitignore": true,
+		"whole_word": true,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 23.0
+	},
+	"input":
+	{
+		"height": 48.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": false,
+	"output.find_results":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.hex_viewer_inspector":
+	{
+		"height": 337.0,
+		"history":
+		[
+		]
+	},
+	"pinned_build_system": "",
+	"project": "dx12_mini_engine.sublime-project",
+	"replace":
+	{
+		"height": 42.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"todo",
+				"TODO.md"
+			],
+			[
+				".wezter",
+				"ben\\.wezterm.lua"
+			],
+			[
+				"apt-",
+				"ben\\Downloads\\apt-cyg.txt"
+			],
+			[
+				".wezterm",
+				"ben\\.wezterm.lua"
+			],
+			[
+				"bash_pr",
+				"ben\\.bash_profile"
+			],
+			[
+				".bash",
+				"C:\\Users\\ben\\.bashrc"
+			],
+			[
+				"dev",
+				"scripts\\devbash.bat"
+			],
+			[
+				"",
+				"config\\linux\\home\\.wezterm.lua"
+			]
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 200.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

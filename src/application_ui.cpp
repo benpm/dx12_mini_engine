@@ -4,19 +4,19 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
-#include <DirectXMath.h>
 #include <d3d12.h>
+#include <DirectXMath.h>
 #include <dxgi1_6.h>
+#include <flecs.h>
+#include <imgui.h>
+#include <imgui_impl_dx12.h>
+#include <imgui_impl_win32.h>
+#include <spdlog/spdlog.h>
+#include <Windows.h>
 #include <wrl.h>
 #include <algorithm>
 #include <string>
 #include <vector>
-#include <flecs.h>
-#include <spdlog/spdlog.h>
-#include <imgui.h>
-#include <imgui_impl_win32.h>
-#include <imgui_impl_dx12.h>
 
 module application;
 
@@ -46,7 +46,11 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             }
             ImGui::Separator();
             ImGui::Text("Tearing Supported: %s", tearingSupported ? "Yes" : "No");
-            ImGui::Text("Test Mode: %s", testMode ? "On" : "Off");
+            ImGui::Text(
+                "Runtime: %s",
+                (runtimeConfig.spawnPerFrame > 0 || runtimeConfig.screenshotFrame > 0) ? "Scene"
+                                                                                       : "Default"
+            );
             ImGui::EndMenu();
         }
 
@@ -232,12 +236,27 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Scene File")) {
+        if (ImGui::BeginMenu("Scene")) {
             ImGui::PushItemWidth(300.0f);
-            ImGui::InputText("##path", gltfPathBuf, sizeof(gltfPathBuf));
+            ImGui::InputText("##scenePath", scenePathBuf, sizeof(scenePathBuf));
             ImGui::PopItemWidth();
             ImGui::SameLine();
-            if (ImGui::MenuItem("Load")) {
+            if (ImGui::MenuItem("Load Scene")) {
+                if (scenePathBuf[0] != '\0') {
+                    pendingSceneLoad = scenePathBuf;
+                }
+            }
+            if (ImGui::MenuItem("Save Scene")) {
+                if (scenePathBuf[0] != '\0') {
+                    pendingSceneSave = scenePathBuf;
+                }
+            }
+            ImGui::Separator();
+            ImGui::PushItemWidth(300.0f);
+            ImGui::InputText("##gltfPath", gltfPathBuf, sizeof(gltfPathBuf));
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            if (ImGui::MenuItem("Load GLB")) {
                 if (gltfPathBuf[0] != '\0') {
                     pendingGltfPath = gltfPathBuf;
                 }

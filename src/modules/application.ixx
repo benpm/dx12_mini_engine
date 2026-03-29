@@ -1,16 +1,16 @@
 module;
 
-#include <Windows.h>
-#include <DirectXMath.h>
 #include <d3d12.h>
+#include <DirectXMath.h>
 #include <dxgi1_6.h>
-#include <wrl.h>
-#include "d3dx12_clean.h"
-#include <gainput/gainput.h>
-#include <unordered_set>
-#include <string>
-#include <vector>
 #include <flecs.h>
+#include <gainput/gainput.h>
+#include <Windows.h>
+#include <wrl.h>
+#include <string>
+#include <unordered_set>
+#include <vector>
+#include "d3dx12_clean.h"
 
 export module application;
 
@@ -25,6 +25,7 @@ export import imgui_layer;
 export import shader_hotreload;
 export import object_picking;
 export import terrain;
+export import scene_file;
 
 export class Application
 {
@@ -35,10 +36,14 @@ export class Application
     void update();
     void render();
 
-    bool testMode = false;
+    RuntimeData runtimeConfig;
     OrbitCamera cam;
     gainput::InputMap inputMap;
     gainput::DeviceId keyboardID;
+
+    // Scene file serialization
+    SceneFileData extractSceneData() const;
+    void applySceneData(const SceneFileData& data);
 
    private:
     constexpr static uint8_t nBuffers = 3u;
@@ -131,8 +136,11 @@ export class Application
     float fogDensity = 0.4f;
     float fogColor[3] = { 0.1f, 0.35f, 0.45f };  // ocean teal
     char gltfPathBuf[512] = "";
+    char scenePathBuf[512] = "";
     bool pendingResetToTeapot{ false };
     std::string pendingGltfPath;
+    std::string pendingSceneLoad;
+    std::string pendingSceneSave;
 
     uint64_t frameFenceValues[nBuffers] = {};
 

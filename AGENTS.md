@@ -17,8 +17,8 @@ cmake --preset windows-clang
 cmake --build build --config Debug
 cmake --build build --config Release
 
-# Test (runs 10 frames, saves screenshot.png, exits)
-./build/Debug/main.exe --test
+# Test (loads test scene: WARP adapter, 10 frames, screenshot, exit)
+./build/Debug/main.exe resources/scenes/test.json
 ```
 
 ### Toolchain notes
@@ -66,6 +66,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
 | `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
 | `terrain.ixx`          | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh   |
+| `scene_file.ixx`       | Scene file serialization — load/save JSON scene files via glaze              |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -73,7 +74,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 - **`export import` only for types in public API** — use plain `import` for internal dependencies
 - **`module :private;`** for tiny implementations — avoids separate `.cpp` for <20 lines
 - **`include/d3dx12_clean.h`** wraps `d3dx12.h` with Clang warning suppression — use instead of raw include
-- **Application public API is minimal** — only `update()`, `render()`, `testMode`, `cam`, `inputMap`, `keyboardID` are public
+- **Application public API is minimal** — only `update()`, `render()`, `runtimeConfig`, `cam`, `inputMap`, `keyboardID`, `applySceneData()`, `extractSceneData()` are public
 
 ### Subsystem architecture
 
@@ -105,10 +106,11 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - Methods: `init()`, `shutdown()`, `styleColorsDracula()`
 - Note: `renderImGui()` is in `application_ui.cpp` (app-specific UI)
 
-### Application class (split across 3 files)
-- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1000 lines)
-- `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips (~370 lines)
+### Application class (split across 4 files)
+- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1070 lines)
+- `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips (~470 lines)
 - `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createCubemapResources()`, `onResize()` (~520 lines)
+- `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization (~360 lines)
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
@@ -164,8 +166,19 @@ Cook-Torrance BRDF:
   - Traverses node hierarchy with TRS / matrix transforms.
 - **Model files**: stored in `resources/models/` (teapot.obj/mtl + GLB primitives).
 
+### Scene file system
+JSON scene files (via glaze) store all configurable scene state: camera, bloom, lighting, fog, shadows, cubemap, terrain params, materials, entities, and display settings. Entities reference meshes by name (resolved against `spawnableMeshNames` on load).
+
+- **CLI**: first positional argument is a scene file path (replaces old `--test` flag)
+- **Scene files**: stored in `resources/scenes/` (`SCENES_DIR` CMake define)
+  - `test.json` — test automation scene (WARP, hidden window, screenshot at frame 10, exit)
+  - `empty.json` — empty scene with defaults, spawning stopped
+- **Runtime block**: optional section in scene files for automation: `useWarp`, `hideWindow`, `screenshotFrame`, `exitAfterScreenshot`, `spawnPerFrame`, `skipImGui`
+- **UI**: Scene menu has save/load path input + buttons
+- **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `application_scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` use only standard C++ types (no engine math types).
+
 ### ImGui UI panels
-- **Display**: vsync toggle, fullscreen toggle, tearing/test-mode status.
+- **Display**: vsync toggle, fullscreen toggle, tearing status, runtime mode.
 - **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 - **Bloom**: threshold, intensity sliders.
 - **Tonemapping**: tonemapper combo.
@@ -187,11 +200,13 @@ Cook-Torrance BRDF:
 | Library                          | Source                          | Notes                |
 | -------------------------------- | ------------------------------- | -------------------- |
 | directxtk12, directxmath, spdlog | vcpkg (x64-windows-static)      |                      |
+| directx-headers                  | vcpkg (transitive via directxtk12) | d3dx12 helpers    |
 | gainput                          | FetchContent (git hash 2be0a50) | Input                |
 | imgui v1.92.6                    | FetchContent                    | Win32 + DX12 backend |
 | tinyobjloader                    | FetchContent (git hash afdd3fa) | OBJ loading          |
 | tinygltf v2.9.5                  | FetchContent                    | GLB/glTF loading     |
 | PerlinNoise v3.0.0               | FetchContent                    | Terrain heightmap    |
+| glaze v5.2.1                     | FetchContent                    | JSON serialization   |
 
 ---
 

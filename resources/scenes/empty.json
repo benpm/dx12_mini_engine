@@ -1,0 +1,20 @@
+{
+    "camera": {},
+    "bloom": {},
+    "dirLight": {},
+    "fog": {},
+    "shadow": {},
+    "cubemap": {},
+    "pointLights": {
+        "lights": [{}, {}, {}, {}, {}, {}, {}, {}]
+    },
+    "spawning": {
+        "stopped": true
+    },
+    "display": {},
+    "terrain": {},
+    "bgColor": [0.0, 0.0, 0.0],
+    "materials": [],
+    "entities": [],
+    "runtime": {}
+}

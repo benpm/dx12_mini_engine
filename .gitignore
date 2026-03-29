@@ -2,3 +2,4 @@ build
 CONERR$
 log.txt
 .cache
+imgui.ini

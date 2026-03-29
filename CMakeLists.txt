@@ -12,6 +12,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 find_package(directxtk12 CONFIG REQUIRED)
 find_package(directxmath CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(directx-headers CONFIG REQUIRED)
 
 include(FetchContent)
 
@@ -108,6 +109,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(flecs_static PRIVATE -Wno-everything)
 endif()
 
+# Fetch glaze (JSON serialization, header-only)
+FetchContent_Declare(
+    glaze
+    GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+    GIT_TAG v5.2.1
+    SYSTEM
+)
+FetchContent_MakeAvailable(glaze)
+
 # -------------------------------
 # Find DXC shader compiler
 # -------------------------------
@@ -154,6 +164,9 @@ add_executable(main
     src/logging.cpp
     src/object_picking.cpp
     src/terrain.cpp
+    src/glaze_impl.cpp
+    src/scene_file.cpp
+    src/application_scene.cpp
     resources.rc
 )
 target_sources(main
@@ -175,12 +188,13 @@ target_sources(main
     src/modules/shader_hotreload.ixx
     src/modules/object_picking.ixx
     src/modules/terrain.ixx
+    src/modules/scene_file.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
-target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR})
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR} ${glaze_SOURCE_DIR}/include)
 
 # -------------------------------
 # Shader compilation
@@ -237,6 +251,7 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     DXC_PATH="${DXC_EXECUTABLE}"
     SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
     MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
+    SCENES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scenes"
 )
 
 target_compile_definitions(main PRIVATE
@@ -285,4 +300,6 @@ target_link_libraries(main PRIVATE
     tinyobjloader
     imgui_lib
     flecs::flecs_static
+    glaze::glaze
+    Microsoft::DirectX-Headers
 )
