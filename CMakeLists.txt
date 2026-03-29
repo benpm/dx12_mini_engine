@@ -168,6 +168,7 @@ add_executable(main
     src/glaze_impl.cpp
     src/scene_file.cpp
     src/application_scene.cpp
+    src/ssao.cpp
     resources.rc
 )
 target_sources(main
@@ -190,6 +191,7 @@ target_sources(main
     src/modules/object_picking.ixx
     src/modules/terrain.ixx
     src/modules/scene_file.ixx
+    src/modules/ssao.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
@@ -213,6 +215,9 @@ compile_shader(src/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
 compile_shader(src/id_ps.hlsl ps 6_0 ID_PS_HDR g_id_ps)
 compile_shader(src/outline_vs.hlsl vs 6_0 OUTLINE_VS_HDR g_outline_vs)
 compile_shader(src/outline_ps.hlsl ps 6_0 OUTLINE_PS_HDR g_outline_ps)
+compile_shader(src/normal_ps.hlsl ps 6_0 NORMAL_PS_HDR g_normal_ps)
+compile_shader(src/ssao_ps.hlsl ps 6_0 SSAO_PS_HDR g_ssao_ps)
+compile_shader(src/ssao_blur_ps.hlsl ps 6_0 SSAO_BLUR_PS_HDR g_ssao_blur_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
@@ -221,6 +226,7 @@ add_custom_target(shaders DEPENDS
     ${BILLBOARD_VS_HDR} ${BILLBOARD_PS_HDR}
     ${ID_PS_HDR}
     ${OUTLINE_VS_HDR} ${OUTLINE_PS_HDR}
+    ${NORMAL_PS_HDR} ${SSAO_PS_HDR} ${SSAO_BLUR_PS_HDR}
 )
 add_dependencies(main shaders)
 

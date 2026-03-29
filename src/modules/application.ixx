@@ -26,6 +26,7 @@ export import shader_hotreload;
 export import object_picking;
 export import terrain;
 export import scene_file;
+export import ssao;
 
 export class Application
 {
@@ -71,6 +72,7 @@ export class Application
     BillboardRenderer billboards;
     ImGuiLayer imguiLayer;
     ObjectPicker picker;
+    SsaoRenderer ssao;
 
     // Maps draw index → flecs entity (rebuilt each frame)
     std::vector<flecs::entity> drawIndexToEntity;
@@ -87,6 +89,7 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> normalPSO;
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
@@ -215,5 +218,6 @@ export class Application
     void createScenePSO();
     void createShadowPSO();
     void createOutlinePSO();
+    void createNormalPSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };

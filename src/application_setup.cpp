@@ -20,6 +20,7 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "normal_ps_cso.h"
 #include "outline_ps_cso.h"
 #include "outline_vs_cso.h"
 #include "pixel_shader_cso.h"
@@ -365,12 +366,16 @@ bool Application::loadContent()
     CD3DX12_DESCRIPTOR_RANGE1 cubemapSrvRange;
     cubemapSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2: cubemap
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[5];
+    CD3DX12_DESCRIPTOR_RANGE1 ssaoSrvRange;
+    ssaoSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3: SSAO
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[6];
     rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[2].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
     rootParams[3].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
     rootParams[4].InitAsConstants(4, 1, 0, D3D12_SHADER_VISIBILITY_ALL);  // b1: outline params
+    rootParams[5].InitAsDescriptorTable(1, &ssaoSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     // Static samplers: s0 = shadow comparison, s1 = cubemap linear
     D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
@@ -493,6 +498,11 @@ bool Application::loadContent()
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
     bloom.createResources(device.Get(), clientWidth, clientHeight);
+    ssao.createResources(
+        device.Get(), clientWidth, clientHeight, depthBuffer.Get(), scene.sceneSrvHeap.Get(),
+        scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
+    );
+    createNormalPSO();
 
     return true;
 }
@@ -544,6 +554,34 @@ void Application::createOutlinePSO()
     chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->outlinePSO)));
 }
 
+void Application::createNormalPSO()
+{
+    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = this->rootSignature.Get();
+    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
+    psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+    psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_normal_ps, sizeof(g_normal_ps));
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+    psoDesc.SampleDesc = { 1, 0 };
+    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->normalPSO)));
+}
+
 void Application::onResize(uint32_t width, uint32_t height)
 {
     if (this->clientWidth != width || this->clientHeight != height) {
@@ -571,6 +609,10 @@ void Application::onResize(uint32_t width, uint32_t height)
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         bloom.resize(device.Get(), clientWidth, clientHeight);
         picker.resize(device, clientWidth, clientHeight);
+        ssao.resize(
+            device.Get(), clientWidth, clientHeight, depthBuffer.Get(), scene.sceneSrvHeap.Get(),
+            scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
+        );
         this->flush();
     }
 }

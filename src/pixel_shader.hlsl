@@ -7,6 +7,7 @@ struct PixelIn
     float3 WorldPos : POSITION;
     float2 UV : TEXCOORD0;
     uint DrawIndex : BLENDINDICES0;
+    float4 Position : SV_Position;
 };
 
 struct SceneCB
@@ -37,6 +38,7 @@ struct SceneCB
 StructuredBuffer<SceneCB> drawData : register(t0);
 Texture2D<float> shadowMapTex : register(t1);
 TextureCube<float3> envMap : register(t2);
+Texture2D<float> ssaoTex : register(t3);
 SamplerComparisonState shadowSampler : register(s0);
 SamplerState envSampler : register(s1);
 
@@ -147,8 +149,9 @@ float4 main(PixelIn IN) : SV_Target
         Lo += (kD * albedo / PI + specular) * radiance * NdL * shadow;
     }
 
-    // Simple ambient term (skybox-tinted)
-    float3 ambient = cb.AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f);
+    // Simple ambient term with SSAO
+    float ao = ssaoTex.Load(int3((int2)IN.Position.xy, 0));
+    float3 ambient = cb.AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f) * ao;
 
     float3 color = ambient + Lo + emissive;
 

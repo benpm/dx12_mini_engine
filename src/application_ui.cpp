@@ -234,6 +234,17 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("SSAO")) {
+            ImGui::PushItemWidth(220.0f);
+            ImGui::Checkbox("Enabled", &ssao.enabled);
+            ImGui::SliderFloat("Radius", &ssao.radius, 0.01f, 2.0f, "%.3f");
+            ImGui::SliderFloat("Bias", &ssao.bias, 0.001f, 0.1f, "%.4f");
+            ImGui::SliderInt("Kernel Size", &ssao.kernelSize, 4, 32);
+            ssao.kernelSize = std::clamp(ssao.kernelSize, 4, 32);
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Scene")) {
             ImGui::PushItemWidth(300.0f);
             ImGui::InputText("##scenePath", scenePathBuf, sizeof(scenePathBuf));

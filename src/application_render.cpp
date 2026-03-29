@@ -343,6 +343,64 @@ void Application::render()
         }
     }
 
+    // --- Normal pre-pass: render world normals for SSAO ---
+    if (ssao.enabled) {
+        ssao.transitionResource(
+            cmdList, ssao.normalRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
+        auto normalRtv = ssao.normalRtvCpu();
+        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+        FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+        cmdList->ClearRenderTargetView(normalRtv, clearNormal, 0, nullptr);
+        this->clearDepth(cmdList, dsv);
+
+        cmdList->SetPipelineState(this->normalPSO.Get());
+        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmdList->RSSetViewports(1, &this->viewport);
+        cmdList->RSSetScissorRects(1, &this->scissorRect);
+        cmdList->OMSetRenderTargets(1, &normalRtv, true, &dsv);
+
+        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
+        cmdList->IASetIndexBuffer(&scene.megaIBV);
+
+        ID3D12DescriptorHeap* prepassHeaps[] = { scene.sceneSrvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, prepassHeaps);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE prepassSrv(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(0, prepassSrv);
+
+        for (uint32_t i = 0; i < entityCount; ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+            cmdList->DrawIndexedInstanced(
+                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                static_cast<INT>(drawCmds[i].vertexOffset), 0
+            );
+        }
+
+        ssao.transitionResource(
+            cmdList, ssao.normalRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+
+        // Transition depth to shader-readable state for SSAO
+        this->transitionResource(
+            cmdList, depthBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
+
+        ssao.render(cmdList, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
+
+        // Restore depth for scene pass
+        this->transitionResource(
+            cmdList, depthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE
+        );
+    }
+
     // --- Scene pass: render to HDR render target ---
     {
         FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
@@ -384,6 +442,13 @@ void Application::render()
             static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
         );
         cmdList->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
+
+        // Bind SSAO output SRV (descriptor index nBuffers+2 in sceneSrvHeap)
+        CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
+            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+            static_cast<INT>(Scene::nBuffers + 2), scene.sceneSrvDescSize
+        );
+        cmdList->SetGraphicsRootDescriptorTable(5, ssaoSrvHandle);
 
         cmdList->OMSetStencilRef(1);
         uint32_t currentVertexCount = 0;
