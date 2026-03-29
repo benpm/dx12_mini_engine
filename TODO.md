@@ -2,7 +2,7 @@
 
 <!-- Any todo item that has insufficient detail should be ignored. Do these in order! -->
 
-- [ ] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. 
+- [X] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. — fd67af8
 - [ ] Add LuaJIT for dynamic scripting support
 - [ ] Remove explicit clang diagnostic ignore pragmas
 - [ ] Add SSAO (Screen-Space Ambient Occlusion)

@@ -4,29 +4,16 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
 #include <d3d12.h>
-#include <wrl.h>
-#include <cassert>
-#include <sstream>
-#include <functional>
-#include <algorithm>
 #include <spdlog/spdlog.h>
-#include <tiny_obj_loader.h>
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wswitch"
-    #pragma clang diagnostic ignored "-Wunused-function"
-    #pragma clang diagnostic ignored "-Wunused-variable"
-    #pragma clang diagnostic ignored "-Wmissing-field-initializers"
-    #pragma clang diagnostic ignored "-Wsign-compare"
-    #pragma clang diagnostic ignored "-Wnullability-completeness"
-    #pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
-#endif
 #include <tiny_gltf.h>
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#include <tiny_obj_loader.h>
+#include <Windows.h>
+#include <wrl.h>
+#include <algorithm>
+#include <cassert>
+#include <functional>
+#include <sstream>
 #include "d3dx12_clean.h"
 #include "resource.h"
 

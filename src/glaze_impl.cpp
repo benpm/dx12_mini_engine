@@ -1,12 +1,5 @@
 // Separate TU for glaze so its heavy templates don't mix with Windows.h/DirectX headers
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Weverything"
-#endif
 #include <glaze/glaze.hpp>
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
 
 #include "camera_types.h"
 #include "scene_data.h"

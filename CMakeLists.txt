@@ -195,7 +195,8 @@ target_sources(main
 )
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
-target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR} ${glaze_SOURCE_DIR}/include)
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(main SYSTEM PRIVATE ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR})
 
 # -------------------------------
 # Shader compilation
