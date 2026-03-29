@@ -152,6 +152,7 @@ add_executable(main
     src/main.cpp
     src/application.cpp
     src/application_ui.cpp
+    src/application_render.cpp
     src/application_setup.cpp
     src/billboard.cpp
     src/scene.cpp
@@ -209,6 +210,8 @@ compile_shader(src/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_co
 compile_shader(src/billboard_vs.hlsl vs 6_0 BILLBOARD_VS_HDR g_billboard_vs)
 compile_shader(src/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
 compile_shader(src/id_ps.hlsl ps 6_0 ID_PS_HDR g_id_ps)
+compile_shader(src/outline_vs.hlsl vs 6_0 OUTLINE_VS_HDR g_outline_vs)
+compile_shader(src/outline_ps.hlsl ps 6_0 OUTLINE_PS_HDR g_outline_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
@@ -216,6 +219,7 @@ add_custom_target(shaders DEPENDS
     ${BLOOM_UPSAMPLE_HDR} ${BLOOM_COMPOSITE_HDR}
     ${BILLBOARD_VS_HDR} ${BILLBOARD_PS_HDR}
     ${ID_PS_HDR}
+    ${OUTLINE_VS_HDR} ${OUTLINE_PS_HDR}
 )
 add_dependencies(main shaders)
 

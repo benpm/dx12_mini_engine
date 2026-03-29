@@ -207,7 +207,9 @@ void Application::clearDepth(
     FLOAT depth
 )
 {
-    cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, depth, 0, 0, nullptr);
+    cmdList->ClearDepthStencilView(
+        dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, depth, 0, 0, nullptr
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -222,11 +224,12 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     height = std::max(1u, height);
 
     D3D12_CLEAR_VALUE optimizedClearValue = {};
-    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     optimizedClearValue.DepthStencil = { 1.0f, 0 };
     const CD3DX12_HEAP_PROPERTIES pHeapProperties(D3D12_HEAP_TYPE_DEFAULT);
     const CD3DX12_RESOURCE_DESC pDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        DXGI_FORMAT_R32G8X24_TYPELESS, width, height, 1, 0, 1, 0,
+        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
     );
     chkDX(device->CreateCommittedResource(
         &pHeapProperties, D3D12_HEAP_FLAG_NONE, &pDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE,
@@ -234,7 +237,7 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     ));
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
@@ -381,6 +384,8 @@ void Application::update()
         flush();
         bool sceneChanged =
             shaderCompiler.wasRecompiled(sceneVSIdx) || shaderCompiler.wasRecompiled(scenePSIdx);
+        bool outlineChanged = shaderCompiler.wasRecompiled(outlineVSIdx) ||
+                              shaderCompiler.wasRecompiled(outlinePSIdx);
         bool bloomChanged = shaderCompiler.wasRecompiled(bloomFsVsIdx) ||
                             shaderCompiler.wasRecompiled(bloomPreIdx) ||
                             shaderCompiler.wasRecompiled(bloomDownIdx) ||
@@ -389,6 +394,9 @@ void Application::update()
         if (sceneChanged) {
             createScenePSO();
             createShadowPSO();
+        }
+        if (outlineChanged) {
+            createOutlinePSO();
         }
         if (bloomChanged) {
             auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
@@ -534,505 +542,6 @@ void Application::update()
         });
     }
 }
-
-void Application::render()
-{
-    // Read back picked entity from previous frame
-    picker.readPickResult();
-
-    auto backBuffer = this->backBuffers[this->curBackBufIdx];
-    auto cmdList = this->cmdQueue.getCmdList();
-
-    // --- Compute per-frame scene data ---
-    mat4 viewProj = this->cam.view() * this->cam.proj();
-    float camX = this->cam.radius * cos(this->cam.pitch) * cos(this->cam.yaw);
-    float camY = this->cam.radius * sin(this->cam.pitch);
-    float camZ = this->cam.radius * cos(this->cam.pitch) * sin(this->cam.yaw);
-    vec4 cameraPos(camX, camY, camZ, 1.0f);
-    vec4 ambientColor(
-        bgColor.x * ambientBrightness, bgColor.y * ambientBrightness, bgColor.z * ambientBrightness,
-        1.0f
-    );
-
-    // Compute animated light positions for this frame
-    vec4 animLightPos[SceneConstantBuffer::maxLights] = {};
-    vec4 animLightColor[SceneConstantBuffer::maxLights] = {};
-    int lightIdx = 0;
-    scene.lightQuery.each([&](const PointLight& pl) {
-        if (lightIdx >= SceneConstantBuffer::maxLights) {
-            return;
-        }
-        animLightPos[lightIdx] = { pl.center.x + pl.amp.x * std::sin(pl.freq.x * lightTime),
-                                   pl.center.y + pl.amp.y * std::cos(pl.freq.y * lightTime),
-                                   pl.center.z +
-                                       pl.amp.z * std::sin(pl.freq.z * lightTime + (float)lightIdx),
-                                   1.0f };
-        animLightColor[lightIdx] = { pl.color.x * lightBrightness, pl.color.y * lightBrightness,
-                                     pl.color.z * lightBrightness, 1.0f };
-        lightIdx++;
-    });
-    billboards.updateInstances(
-        animLightPos, animLightColor, static_cast<uint32_t>(SceneConstantBuffer::maxLights)
-    );
-
-    // Directional light shadow map viewProj
-    mat4 lightViewProj{};
-    vec4 dirLightDirVec{};  // toward light (negated from UI direction)
-    vec4 dirLightColorVec{};
-    if (shadowEnabled) {
-        using namespace DirectX;
-        // UI stores direction FROM light; negate to get direction TOWARD light for shader
-        XMVECTOR fromLight =
-            XMVector3Normalize(XMVectorSet(dirLightDir.x, dirLightDir.y, dirLightDir.z, 0.0f));
-        XMVECTOR toLight = XMVectorNegate(fromLight);
-        XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&dirLightDirVec), XMVectorSetW(toLight, 0.0f));
-        dirLightColorVec = { dirLightColor.x * dirLightBrightness,
-                             dirLightColor.y * dirLightBrightness,
-                             dirLightColor.z * dirLightBrightness, 1.0f };
-
-        // Place virtual light position far along the direction for LookAt
-        XMVECTOR lightP = XMVectorScale(toLight, shadowLightDistance);
-        XMVECTOR target = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
-        XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        float dotUp = fabsf(XMVectorGetByIndex(
-            XMVector3Dot(XMVector3Normalize(XMVectorSubtract(target, lightP)), up), 0
-        ));
-        if (dotUp > 0.99f) {
-            up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-        }
-        XMMATRIX lightView = XMMatrixLookAtLH(lightP, target, up);
-        XMMATRIX lightProj = XMMatrixOrthographicLH(
-            shadowOrthoSize, shadowOrthoSize, std::max(0.001f, shadowNearPlane),
-            std::max(shadowNearPlane + 0.001f, shadowFarPlane)
-        );
-        XMMATRIX lvp = XMMatrixMultiply(lightView, lightProj);
-        XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&lightViewProj), lvp);
-    }
-
-    // --- Fill structured buffer (scene + shadow draw data) ---
-    struct DrawCmd
-    {
-        uint32_t indexCount;
-        uint32_t indexOffset;
-        uint32_t vertexOffset;
-    };
-    std::vector<DrawCmd> drawCmds;
-    drawIndexToEntity.clear();
-    uint32_t drawIdx = 0;
-    SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
-    bool anyReflective = false;
-    vec3 reflectivePos{};
-
-    scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
-        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
-        const Material& mat = scene.materials[mesh.materialIndex];
-
-        SceneConstantBuffer& scb = mapped[drawIdx];
-        scb.model = tf.world * this->matModel;
-        scb.viewProj = viewProj;
-        scb.cameraPos = cameraPos;
-        scb.ambientColor = ambientColor;
-        for (int li = 0; li < SceneConstantBuffer::maxLights; ++li) {
-            scb.lightPos[li] = animLightPos[li];
-            scb.lightColor[li] = animLightColor[li];
-        }
-        scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
-        scb.roughness = mat.roughness;
-        scb.metallic = mat.metallic;
-        scb.emissiveStrength = mat.emissiveStrength;
-        scb.reflective = mat.reflective ? 1.0f : 0.0f;
-        scb.emissive = mat.emissive;
-        scb.dirLightDir = dirLightDirVec;
-        scb.dirLightColor = dirLightColorVec;
-        scb.lightViewProj = lightViewProj;
-        scb.shadowBias = shadowBias;
-        scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
-        scb.fogStartY = fogStartY;
-        scb.fogDensity = fogDensity;
-        scb.fogColor = vec4(fogColor, 0.0f);
-
-        if (mat.reflective && !anyReflective) {
-            anyReflective = true;
-            // Extract translation from world matrix (row 3 in row-major XMFLOAT4X4)
-            const auto& m = scb.model;
-            reflectivePos = vec3(m._41, m._42, m._43);
-        }
-
-        // Highlight hovered/selected entities with emissive tint
-        if (e == selectedEntity) {
-            scb.emissive = vec4(1.0f, 0.6f, 0.0f, 1.0f);
-            scb.emissiveStrength = 0.8f;
-        } else if (e == hoveredEntity) {
-            scb.emissive = vec4(1.0f, 0.5f, 0.0f, 1.0f);
-            scb.emissiveStrength = 0.3f;
-        }
-
-        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
-        drawIndexToEntity.push_back(e);
-        drawIdx++;
-    });
-
-    uint32_t entityCount = drawIdx;
-
-    // Shadow draw data (same model transforms, light viewProj instead of camera viewProj)
-    if (shadowEnabled) {
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            SceneConstantBuffer& shadow = mapped[entityCount + i];
-            shadow.model = mapped[i].model;
-            shadow.viewProj = lightViewProj;
-        }
-    }
-
-    this->lastFrameObjectCount = entityCount;
-
-    // --- Shadow pass ---
-    if (shadowEnabled) {
-        this->transitionResource(
-            cmdList, shadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE
-        );
-        auto shadowDsv = shadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
-        this->clearDepth(cmdList, shadowDsv);
-
-        cmdList->SetPipelineState(this->shadowPSO.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-        D3D12_VIEWPORT shadowVP = { 0.0f, 0.0f, (float)shadowMapSize, (float)shadowMapSize,
-                                    0.0f, 1.0f };
-        D3D12_RECT shadowScissor = { 0, 0, (LONG)shadowMapSize, (LONG)shadowMapSize };
-        cmdList->RSSetViewports(1, &shadowVP);
-        cmdList->RSSetScissorRects(1, &shadowScissor);
-        cmdList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, entityCount + i, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        this->transitionResource(
-            cmdList, shadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-        );
-    }
-
-    // --- Cubemap pass: render environment for reflective objects ---
-    if (cubemapEnabled && anyReflective) {
-        // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
-        XMVECTOR eyePos = XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
-        XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
-            XM_PIDIV2, 1.0f, std::max(0.001f, cubemapNearPlane),
-            std::max(cubemapNearPlane + 0.001f, cubemapFarPlane)
-        );
-        struct CubeFace
-        {
-            XMVECTOR dir;
-            XMVECTOR up;
-        };
-        CubeFace cubeFaces[6] = {
-            { XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },   // +X
-            { XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },  // -X
-            { XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0) },  // +Y
-            { XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0) },  // -Y
-            { XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0) },   // +Z
-            { XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0) },  // -Z
-        };
-
-        // Write cubemap draw data: non-reflective entities only, 6 copies with different viewProj
-        // Placed at offset 2*entityCount in the structured buffer
-        uint32_t cubemapBaseIdx = 2 * entityCount;
-        std::vector<uint32_t> nonReflectiveIndices;
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            if (mapped[i].reflective < 0.5f) {
-                nonReflectiveIndices.push_back(i);
-            }
-        }
-        uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
-
-        static bool warnedMissingCubemapSources = false;
-        if (nonReflCount == 0) {
-            if (!warnedMissingCubemapSources) {
-                spdlog::warn(
-                    "Cubemap pass skipped: no non-reflective entities available to render."
-                );
-                warnedMissingCubemapSources = true;
-            }
-        } else {
-            warnedMissingCubemapSources = false;
-        }
-
-        if (nonReflCount > 0) {
-            this->transitionResource(
-                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                D3D12_RESOURCE_STATE_RENDER_TARGET
-            );
-
-            for (uint32_t face = 0; face < 6; ++face) {
-                XMMATRIX faceView = XMMatrixLookAtLH(
-                    eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
-                );
-                mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
-                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-                for (uint32_t j = 0; j < nonReflCount; ++j) {
-                    uint32_t srcIdx = nonReflectiveIndices[j];
-                    SceneConstantBuffer& dst = mapped[faceOffset + j];
-                    dst = mapped[srcIdx];
-                    dst.viewProj = faceVP;
-                    dst.reflective = 0.0f;
-                }
-            }
-
-            // Render 6 cubemap faces
-            D3D12_VIEWPORT cubeVP = {
-                0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1
-            };
-            D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
-            UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-            UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-
-            cmdList->SetPipelineState(this->pipelineState.Get());
-            cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-            cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-            ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-            cmdList->SetDescriptorHeaps(1, sceneHeaps);
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-            );
-            cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-            // Bind shadow map for cubemap pass too
-            CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
-            );
-            cmdList->SetGraphicsRootDescriptorTable(2, shadowSrv);
-            // Bind cubemap SRV (will be black/uninitialized but reflective=0 prevents sampling)
-            CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
-            );
-            cmdList->SetGraphicsRootDescriptorTable(3, cubeSrv);
-
-            for (uint32_t face = 0; face < 6; ++face) {
-                CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
-                    cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                    rtvSize
-                );
-                CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
-                    cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                    dsvSize
-                );
-                FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
-                this->clearRTV(cmdList, faceRtv, clearColor);
-                this->clearDepth(cmdList, faceDsv);
-                cmdList->RSSetViewports(1, &cubeVP);
-                cmdList->RSSetScissorRects(1, &cubeScissor);
-                cmdList->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
-
-                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-                for (uint32_t j = 0; j < nonReflCount; ++j) {
-                    uint32_t drawDataIdx = faceOffset + j;
-                    uint32_t srcIdx = nonReflectiveIndices[j];
-                    cmdList->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
-                    cmdList->DrawIndexedInstanced(
-                        drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
-                        static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
-                    );
-                }
-            }
-
-            this->transitionResource(
-                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-            );
-        }
-    }
-
-    // --- Scene pass: render to HDR render target ---
-    {
-        FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
-            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-        this->clearRTV(cmdList, hdrRtv, clearColor);
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        this->clearDepth(cmdList, dsv);
-
-        cmdList->SetPipelineState(this->pipelineState.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-
-        // Bind shadow map SRV (descriptor index 3 in sceneSrvHeap)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
-
-        // Bind cubemap SRV (descriptor index nBuffers+1 in sceneSrvHeap)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
-
-        uint32_t currentVertexCount = 0;
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            currentVertexCount += drawCmds[i].indexCount;
-            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        this->lastFrameVertexCount = currentVertexCount;
-    }
-
-    // --- Object ID pass (for picking) ---
-    {
-        auto idRtv = picker.getRTV();
-        auto idDsv = picker.getDSV();
-        // Clear ID RT to invalidID
-        FLOAT clearColor[] = { static_cast<float>(ObjectPicker::invalidID), 0.0f, 0.0f, 0.0f };
-        cmdList->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
-        cmdList->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-
-        cmdList->SetPipelineState(picker.pso.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &idRtv, true, &idDsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        // Copy pixel under mouse cursor to readback buffer
-        uint32_t mx = static_cast<uint32_t>(mousePos.x);
-        uint32_t my = static_cast<uint32_t>(mousePos.y);
-        picker.copyPickedPixel(cmdList, mx, my);
-    }
-
-    // --- Light billboards pass (batched instancing) ---
-    if (showLightBillboards) {
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
-            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-        billboards.render(cmdList, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
-    }
-
-    // --- Bloom + composite ---
-    CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
-        rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx), rtvDescSize
-    );
-    // Compute sky params for composite pass
-    BloomRenderer::SkyParams skyParams;
-    {
-        vec3 camPos3(camX, camY, camZ);
-        vec3 target3(0.0f, 0.0f, 0.0f);
-        skyParams.camForward =
-            normalize(vec3(target3.x - camPos3.x, target3.y - camPos3.y, target3.z - camPos3.z));
-        vec3 worldUp(0.0f, 1.0f, 0.0f);
-        skyParams.camRight = normalize(cross(worldUp, skyParams.camForward));
-        skyParams.camUp = cross(skyParams.camForward, skyParams.camRight);
-        skyParams.sunDir = normalize(-dirLightDir);
-        skyParams.aspectRatio = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
-        skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
-    }
-    bloom.render(
-        cmdList, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
-        tonemapMode, skyParams
-    );
-
-    if (!this->runtimeConfig.skipImGui) {
-        this->renderImGui(cmdList);
-    }
-
-    this->transitionResource(
-        cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT
-    );
-
-    this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
-
-    UINT syncInterval = (this->vsync && !this->runtimeConfig.skipImGui) ? 1 : 0;
-    UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    chkDX(this->swapChain->Present(syncInterval, presentFlags));
-    this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
-    this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
-
-    if (this->runtimeConfig.screenshotFrame > 0) {
-        this->frameCount++;
-        if (this->frameCount == this->runtimeConfig.screenshotFrame) {
-            spdlog::info("Saving screenshot and exiting...");
-            HRESULT hr = DirectX::SaveWICTextureToFile(
-                this->cmdQueue.queue.Get(), backBuffer.Get(), GUID_ContainerFormatPng,
-                L"screenshot.png", D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT
-            );
-            if (FAILED(hr)) {
-                spdlog::error(
-                    "Failed to save screenshot! HRESULT: {:#010x}", static_cast<uint32_t>(hr)
-                );
-            }
-            if (this->runtimeConfig.exitAfterScreenshot) {
-                Window::get()->doExit = true;
-            }
-        }
-    }
-}
-
-// renderImGui is in application_ui.cpp
 
 // ---------------------------------------------------------------------------
 // Fullscreen

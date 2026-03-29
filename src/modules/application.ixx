@@ -81,11 +81,12 @@ export class Application
     vec2 clickStartPos;
     bool leftClickActive = false;
 
-    // Depth buffer + scene PSO
+    // Depth buffer + scene PSOs
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePSO;
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
@@ -178,6 +179,8 @@ export class Application
     ShaderCompiler shaderCompiler;
     size_t sceneVSIdx = 0;
     size_t scenePSIdx = 0;
+    size_t outlineVSIdx = 0;
+    size_t outlinePSIdx = 0;
     size_t bloomFsVsIdx = 0;
     size_t bloomPreIdx = 0;
     size_t bloomDownIdx = 0;
@@ -211,5 +214,6 @@ export class Application
     void onResize(uint32_t width, uint32_t height);
     void createScenePSO();
     void createShadowPSO();
+    void createOutlinePSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };

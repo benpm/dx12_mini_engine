@@ -20,6 +20,8 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "outline_ps_cso.h"
+#include "outline_vs_cso.h"
 #include "pixel_shader_cso.h"
 #include "vertex_shader_cso.h"
 
@@ -113,6 +115,7 @@ void Application::createScenePSO()
         CD3DX12_PIPELINE_STATE_STREAM_PS PS;
         CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
         CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL DepthStencil;
     } pipelineStateStream;
     D3D12_RT_FORMAT_ARRAY rtvFormats = {};
     rtvFormats.NumRenderTargets = 1;
@@ -122,8 +125,16 @@ void Application::createScenePSO()
     pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pipelineStateStream.VS = vs;
     pipelineStateStream.PS = ps;
-    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     pipelineStateStream.RTVFormats = rtvFormats;
+    {
+        CD3DX12_DEPTH_STENCIL_DESC dsDesc(D3D12_DEFAULT);
+        dsDesc.StencilEnable = TRUE;
+        dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+        dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        dsDesc.BackFace = dsDesc.FrontFace;
+        pipelineStateStream.DepthStencil = dsDesc;
+    }
     D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
                                                  &pipelineStateStream };
     chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
@@ -354,11 +365,12 @@ bool Application::loadContent()
     CD3DX12_DESCRIPTOR_RANGE1 cubemapSrvRange;
     cubemapSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2: cubemap
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[4];
+    CD3DX12_ROOT_PARAMETER1 rootParams[5];
     rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
     rootParams[2].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
     rootParams[3].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParams[4].InitAsConstants(4, 1, 0, D3D12_SHADER_VISIBILITY_ALL);  // b1: outline params
 
     // Static samplers: s0 = shadow comparison, s1 = cubemap linear
     D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
@@ -439,6 +451,7 @@ bool Application::loadContent()
     }
 
     createShadowPSO();
+    createOutlinePSO();
     createCubemapResources();
     billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
 
@@ -446,6 +459,8 @@ bool Application::loadContent()
     if (shaderCompiler.init(DXC_PATH, SHADER_SRC_DIR)) {
         sceneVSIdx = shaderCompiler.watch("vertex_shader.hlsl", "vs_6_0");
         scenePSIdx = shaderCompiler.watch("pixel_shader.hlsl", "ps_6_0");
+        outlineVSIdx = shaderCompiler.watch("outline_vs.hlsl", "vs_6_0");
+        outlinePSIdx = shaderCompiler.watch("outline_ps.hlsl", "ps_6_0");
         bloomFsVsIdx = shaderCompiler.watch("fullscreen_vs.hlsl", "vs_6_0");
         bloomPreIdx = shaderCompiler.watch("bloom_prefilter_ps.hlsl", "ps_6_0");
         bloomDownIdx = shaderCompiler.watch("bloom_downsample_ps.hlsl", "ps_6_0");
@@ -480,6 +495,53 @@ bool Application::loadContent()
     bloom.createResources(device.Get(), clientWidth, clientHeight);
 
     return true;
+}
+
+void Application::createOutlinePSO()
+{
+    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    auto vsData = shaderCompiler.data(outlineVSIdx);
+    auto psData = shaderCompiler.data(outlinePSIdx);
+    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(outlineVSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_outline_vs, sizeof(g_outline_vs));
+    auto ps = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(outlinePSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_outline_ps, sizeof(g_outline_ps));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = this->rootSignature.Get();
+    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
+    psoDesc.VS = vs;
+    psoDesc.PS = ps;
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    dsDesc.StencilEnable = TRUE;
+    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NOT_EQUAL;
+    dsDesc.BackFace = dsDesc.FrontFace;
+    psoDesc.DepthStencilState = dsDesc;
+
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+    psoDesc.SampleDesc = { 1, 0 };
+
+    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->outlinePSO)));
 }
 
 void Application::onResize(uint32_t width, uint32_t height)
