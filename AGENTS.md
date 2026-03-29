@@ -70,6 +70,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
 | `terrain.ixx`          | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh   |
 | `scene_file.ixx`       | Scene file serialization — load/save JSON scene files via glaze              |
+| `ssao.ixx`             | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes        |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -109,23 +110,32 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - `drawIndexToEntity` vector (in Application) maps draw index → flecs entity
 - Methods: `createResources()`, `resize()`, `readPickResult()`, `copyPickedPixel()`
 
+**SsaoRenderer** (`ssao.ixx` + `ssao.cpp`) — SSAO subsystem:
+- Normal pre-pass RT (`R8G8B8A8_UNORM`, world-space normals), SSAO RT (`R8_UNORM`), blur RT (`R8_UNORM`)
+- Own RTV heap (3) and SRV heap (4: normal, depth, noise, ssaoRT); SSAO output SRV placed in `sceneSrvHeap[nBuffers+2]` for scene pass
+- Hemisphere kernel (32 samples, seed 42), 4×4 `R32G32_FLOAT` random-rotation noise texture (deferred upload on first render)
+- Persistently-mapped CBV upload buffer with view/proj/invProj matrices + kernel + params
+- Methods: `createResources()`, `resize()`, `render()`, `transitionResource()` (public static)
+- UI params: `enabled`, `radius`, `bias`, `kernelSize` (SSAO menu)
+
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 - SRV descriptor heap for ImGui
 - Methods: `init()`, `shutdown()`, `styleColorsDracula()`
 - Note: `renderImGui()` is in `application_ui.cpp` (app-specific UI)
 
-### Application class (split across 4 files)
-- `application.cpp` — constructor, destructor, `update()`, `render()`, helpers (~1080 lines)
-- `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips (~470 lines)
-- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createCubemapResources()`, `onResize()` (~515 lines)
-- `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization (~270 lines)
+### Application class (split across 5 files)
+- `application.cpp` — constructor, destructor, `update()`, helpers
+- `application_render.cpp` — `render()` — shadow, cubemap, normal pre-pass, SSAO, scene, outline, ID, billboards, bloom, imgui, present
+- `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips
+- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createNormalPSO()`, `createOutlinePSO()`, `createCubemapResources()`, `onResize()`
+- `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
-- **Root signature**: 4 root params — SRV descriptor table (t0, structured buffer), 1 root constant (`drawIndex`, b0), SRV descriptor table (t1, shadow map), SRV descriptor table (t2, cubemap). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
-- **Scene PSO**: standard rasterization to HDR RT. **Shadow PSO**: depth-only, front-face culling, depth bias.
+- **Root signature**: 6 root params — [0] SRV table (t0, structured buffer), [1] 1 root constant (`drawIndex`, b0), [2] SRV table (t1, shadow map), [3] SRV table (t2, cubemap), [4] 4 root constants (b1, outline params), [5] SRV table (t3, SSAO). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
+- **Scene PSO**: standard rasterization to HDR RT, stencil write. **Shadow PSO**: depth-only, front-face culling, depth bias. **Normal PSO**: vertex shader + `normal_ps.hlsl` → `R8G8B8A8_UNORM`. **Outline PSO**: extrude verts along normal, stencil test NOT_EQUAL.
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
-- Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`.
+- Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`.
 - **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO + shadow PSO via `createScenePSO()` / `createShadowPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
 - **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary.
 
@@ -135,7 +145,10 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 update()  →  render()
               ├─ Shadow pass      (depth-only to 2048² shadow map, directional light ortho VP)
               ├─ Cubemap pass     (6-face env map from first reflective entity, non-reflective only)
-              ├─ Scene pass       (HDR RT, depth, per-mesh draw calls, samples shadow map + cubemap)
+              ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT, writes main depth)
+              ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT, 3×3 blur → ssaoBlurRT)
+              ├─ Scene pass       (HDR RT, depth, samples shadow+cubemap+SSAO; stencil write)
+              ├─ Outline pass     (stencil NOT_EQUAL, extrude normals → silhouette)
               ├─ ID pass          (R32_UINT RT, own depth, same draw calls → entity index per pixel)
               ├─ Readback copy    (single pixel at mouse pos → CPU readback buffer)
               ├─ Bloom prefilter  → downsample chain → upsample chain
@@ -146,6 +159,8 @@ update()  →  render()
 **Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `entityCount` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
 
 **Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*entityCount`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes. If there are no non-reflective entities, the cubemap pass is skipped and emits a warning.
+
+**SSAO**: Screen-Space Ambient Occlusion computed in two passes. Normal pre-pass renders world-space normals to `R8G8B8A8_UNORM` normalRT; main depth buffer transitions DEPTH_WRITE → PIXEL_SHADER_RESOURCE for SSAO read, then back. SSAO shader reconstructs view-space position from depth + invProj, transforms normals to view space, builds TBN from tiled 4×4 random noise, samples 32-point hemisphere kernel, range-checks occlusion. Blur pass applies 3×3 box filter. Output (`ssaoBlurRT`, `R8_UNORM`) SRV at `sceneSrvHeap[nBuffers+2]` (root param [5], t3 in pixel shader). Scene PSO uses `normalPSO` (vertex_shader.hlsl + normal_ps.hlsl → normalRT). `SsaoRenderer::enabled` skips all passes when false.
 
 **Bloom**: 5-mip chain — prefilter (Karis average, soft threshold), 4× downsample, 4× upsample (tent filter, additive blend).
 
@@ -197,9 +212,11 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 - **Lights**: billboard toggle/size; point-light brightness; per-light center/amplitude/frequency/color controls for all `PointLight` entities (iterated via `lightQuery`).
 - **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
 - **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
-- **Load GLB**: path input + Load button + Reset-to-Teapot button.
+- **SSAO**: enable/disable, radius, bias, kernel size sliders.
+- **Scene** (file menu): scene path input + Load/Save buttons; GLB path input + Load button + Reset-to-Teapot; title/description text inputs (saved in scene JSON, shown as bottom-right overlay).
 - **Create**: mesh selector (from loaded mesh refs), material selector, position/scale, animated toggle with speed/radius. Spawns entity on click.
 - **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle). Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
+- **Title/Description overlay**: when `sceneTitle` / `sceneDescription` are set, drawn directly to foreground via `ImGui::GetForegroundDrawList()` in the bottom-right corner. Title at 1.4× font size, description at normal size, both with 1-pixel drop shadow.
 
 ---
 

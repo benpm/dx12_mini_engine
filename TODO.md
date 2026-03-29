@@ -7,7 +7,7 @@
 - [X] Remove explicit clang diagnostic ignore pragmas — de0ee11
 - [X] Add SSAO (Screen-Space Ambient Occlusion) — f7c410c
 - [ ] Add rebindable keybinds for various editor actions (see EditorAction::keyName in @src/gui.cpp). Allow these to be configured through a JSON file, use glaze lib to load. Show keybinds for editor actions in the tooltips.
-- [ ] Add an optional title and description field to the scene .json, which are displayed as text in the bottom right of the screen.
+- [X] Add an optional title and description field to the scene .json, which are displayed as text in the bottom right of the screen. — d5bb439
 
 ---
 
