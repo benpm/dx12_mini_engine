@@ -29,6 +29,9 @@ SceneFileData Application::extractSceneData() const
 {
     SceneFileData d;
 
+    d.title = sceneTitle;
+    d.description = sceneDescription;
+
     // Camera (aspectRatio is runtime state, not serialized)
     d.camera.fov = cam.fov;
     d.camera.nearPlane = cam.nearPlane;
@@ -124,6 +127,11 @@ SceneFileData Application::extractSceneData() const
 
 void Application::applySceneData(const SceneFileData& d)
 {
+    sceneTitle = d.title;
+    sceneDescription = d.description;
+    snprintf(sceneTitleBuf, sizeof(sceneTitleBuf), "%s", sceneTitle.c_str());
+    snprintf(sceneDescBuf, sizeof(sceneDescBuf), "%s", sceneDescription.c_str());
+
     // Camera (don't copy aspectRatio — set by onResize)
     cam.fov = d.camera.fov;
     cam.nearPlane = d.camera.nearPlane;

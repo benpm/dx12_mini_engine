@@ -273,6 +273,15 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             if (ImGui::MenuItem("Reset to Teapot")) {
                 pendingResetToTeapot = true;
             }
+            ImGui::Separator();
+            ImGui::PushItemWidth(300.0f);
+            if (ImGui::InputText("Title##sceneTitle", sceneTitleBuf, sizeof(sceneTitleBuf))) {
+                sceneTitle = sceneTitleBuf;
+            }
+            if (ImGui::InputText("Description##sceneDesc", sceneDescBuf, sizeof(sceneDescBuf))) {
+                sceneDescription = sceneDescBuf;
+            }
+            ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
 
@@ -471,6 +480,37 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         }
         ImGui::Text("Click to select");
         ImGui::End();
+    }
+
+    // --- Scene title/description overlay (bottom-right) ---
+    if (!sceneTitle.empty() || !sceneDescription.empty()) {
+        const float margin = 10.0f;
+        ImGuiIO& io = ImGui::GetIO();
+        ImVec2 displaySize = io.DisplaySize;
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+        float y = displaySize.y - margin;
+        if (!sceneDescription.empty()) {
+            ImVec2 descSz = ImGui::CalcTextSize(sceneDescription.c_str());
+            y -= descSz.y;
+            float x = displaySize.x - descSz.x - margin;
+            dl->AddText(ImVec2(x + 1, y + 1), IM_COL32(0, 0, 0, 180), sceneDescription.c_str());
+            dl->AddText(ImVec2(x, y), IM_COL32(200, 200, 200, 220), sceneDescription.c_str());
+            y -= margin * 0.5f;
+        }
+        if (!sceneTitle.empty()) {
+            ImFont* font = ImGui::GetFont();
+            float titleFontSz = ImGui::GetFontSize() * 1.4f;
+            ImVec2 titleSz = font->CalcTextSizeA(titleFontSz, FLT_MAX, 0.0f, sceneTitle.c_str());
+            y -= titleSz.y;
+            float x = displaySize.x - titleSz.x - margin;
+            dl->AddText(
+                font, titleFontSz, ImVec2(x + 1, y + 1), IM_COL32(0, 0, 0, 180), sceneTitle.c_str()
+            );
+            dl->AddText(
+                font, titleFontSz, ImVec2(x, y), IM_COL32(255, 255, 255, 230), sceneTitle.c_str()
+            );
+        }
     }
 
     ImGui::Render();

@@ -141,6 +141,10 @@ export class Application
     vec3 fogColor{ 0.1f, 0.35f, 0.45f };  // ocean teal
     char gltfPathBuf[512] = "";
     char scenePathBuf[512] = "";
+    char sceneTitleBuf[256] = "";
+    char sceneDescBuf[512] = "";
+    std::string sceneTitle;
+    std::string sceneDescription;
     bool pendingResetToTeapot{ false };
     std::string pendingGltfPath;
     std::string pendingSceneLoad;

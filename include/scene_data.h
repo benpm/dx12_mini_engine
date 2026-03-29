@@ -101,6 +101,8 @@ struct RuntimeData
 
 struct SceneFileData
 {
+    std::string title;
+    std::string description;
     OrbitCamera camera;
     BloomData bloom;
     DirLightData dirLight;
