@@ -19,11 +19,9 @@ If:
 
 CompileFlags:
   CompilationDatabase: build
-  Remove: [-O*, -f*, -m*, -W*, gl*, -std=*]
   Add:
     - -Ibuild/debug
     - -Iinclude
-    - -std=c++2c
 
 Diagnostics:
   Includes:

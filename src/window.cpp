@@ -4,16 +4,16 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
-#include <windowsx.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <imgui.h>
+#include <imgui_impl_win32.h>
+#include <spdlog/spdlog.h>
+#include <Windows.h>
+#include <windowsx.h>
 #include <wrl.h>
 #include <algorithm>
 #include <cassert>
-#include <spdlog/spdlog.h>
-#include <imgui.h>
-#include <imgui_impl_win32.h>
 
 module window;
 
@@ -85,8 +85,7 @@ static void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
 
     [[maybe_unused]] static ATOM atom = ::RegisterClassExW(&windowClass);
     if (atom == 0) {
-        spdlog::error("Failed to register window class! Error: {}", GetLastError());
-        throw std::exception();
+        throwLastWin32Error("RegisterClassExW");
     }
 }
 
@@ -126,8 +125,7 @@ static HWND makeWindow(
     );
 
     if (!hWnd) {
-        spdlog::error("Failed to create window! Error: {}", GetLastError());
-        throw std::exception();
+        throwLastWin32Error("CreateWindowExW");
     }
 
     return hWnd;

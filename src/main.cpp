@@ -19,7 +19,7 @@ import window;
 _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     // Disable error popup
-    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    // _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 
     // Setup logging before doing anything else so we can capture any errors that happen during
     // initialization
@@ -27,7 +27,7 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
     // Initialize COM for WIC (required for saving screenshots)
     if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) {
-        spdlog::error("Failed to initialize COM");
+        spdlog::warn("Failed to initialize COM");
         return -1;
     }
 
@@ -56,12 +56,13 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
     if (!sceneFilePath.empty()) {
         hasSceneFile = loadSceneFile(sceneFilePath, sceneData);
         if (!hasSceneFile) {
-            spdlog::error("Failed to load scene file '{}', using defaults", sceneFilePath);
+            spdlog::warn("Failed to load scene file '{}', using defaults", sceneFilePath);
         }
     }
 
     bool useWarp = hasSceneFile && sceneData.runtime.useWarp;
     bool hideWindow = hasSceneFile && sceneData.runtime.hideWindow;
+    int exitCode = 0;
 
     try {
         spdlog::info("Initializing window...");
@@ -109,9 +110,13 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
             }
         }
     } catch (const std::exception& e) {
-        spdlog::error("Exception caught: {}", e.what());
+        spdlog::warn("Fatal exception: {}", e.what());
+        exitCode = -1;
+    } catch (...) {
+        spdlog::warn("Fatal unknown exception");
+        exitCode = -1;
     }
 
     CoUninitialize();
-    return 0;
+    return exitCode;
 }

@@ -42,7 +42,8 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::Checkbox("VSync", &vsync);
             bool fs = fullscreen;
             if (ImGui::Checkbox("Fullscreen", &fs)) {
-                setFullscreen(fs);
+                pendingFullscreenValue = fs;
+                pendingFullscreenChange = true;
             }
             ImGui::Separator();
             ImGui::Text("Tearing Supported: %s", tearingSupported ? "Yes" : "No");

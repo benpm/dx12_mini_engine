@@ -157,6 +157,8 @@ export class Application
     bool vsync = true;
     bool tearingSupported = false;
     bool fullscreen = false;
+    bool pendingFullscreenChange = false;
+    bool pendingFullscreenValue = false;
     int frameCount = 0;
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;

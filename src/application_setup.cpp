@@ -584,6 +584,10 @@ void Application::createNormalPSO()
 
 void Application::onResize(uint32_t width, uint32_t height)
 {
+    if (width == 0 || height == 0) {
+        return;
+    }
+
     if (this->clientWidth != width || this->clientHeight != height) {
         this->clientWidth = std::max(1u, width);
         this->clientHeight = std::max(1u, height);

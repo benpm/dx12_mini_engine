@@ -13,7 +13,9 @@
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
             "internalConsoleOptions": "openOnSessionStart",
-            "preLaunchTask": "Build Debug"
+            "preLaunchTask": "Build Debug",
+            "terminal": "integrated",
+            "expressions": "native"
         }
     ]
 }

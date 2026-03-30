@@ -160,6 +160,10 @@ Application::Application() : inputMap(inputManager, "input_map")
     this->imguiLayer.init(
         hWnd, device.Get(), cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
     );
+
+    // Enter fullscreen only after all rendering resources/subsystems are initialized.
+    this->setFullscreen(true);
+
     this->isInitialized = true;
     Window::get()->isReady = true;
 }
@@ -315,6 +319,12 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 
 void Application::update()
 {
+    if (pendingFullscreenChange) {
+        const bool targetFullscreen = pendingFullscreenValue;
+        pendingFullscreenChange = false;
+        setFullscreen(targetFullscreen);
+    }
+
     // Process deferred scene loads (set from ImGui, safe here before render commands)
     if (pendingResetToTeapot) {
         pendingResetToTeapot = false;
@@ -552,30 +562,63 @@ void Application::setFullscreen(bool val)
     if (this->fullscreen != val) {
         this->fullscreen = val;
         if (this->fullscreen) {
-            ::GetWindowRect(this->hWnd, &this->windowRect);
+            if (::GetWindowRect(this->hWnd, &this->windowRect) == 0) {
+                throwLastWin32Error("GetWindowRect");
+            }
+
             UINT windowStyle = WS_OVERLAPPEDWINDOW & ~(WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
                                                        WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-            ::SetWindowLongW(this->hWnd, GWL_STYLE, static_cast<LONG>(windowStyle));
+            ::SetLastError(0);
+            [[maybe_unused]] LONG prevStyle =
+                ::SetWindowLongW(this->hWnd, GWL_STYLE, static_cast<LONG>(windowStyle));
+            if (prevStyle == 0 && ::GetLastError() != 0) {
+                throwLastWin32Error("SetWindowLongW(enter fullscreen)");
+            }
+
             HMONITOR hMonitor = ::MonitorFromWindow(this->hWnd, MONITOR_DEFAULTTONEAREST);
             MONITORINFOEX monitorInfo = {};
             monitorInfo.cbSize = sizeof(MONITORINFOEX);
-            ::GetMonitorInfo(hMonitor, &monitorInfo);
-            ::SetWindowPos(
-                this->hWnd, HWND_TOP, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top,
-                monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
-                monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
-                SWP_FRAMECHANGED | SWP_NOACTIVATE
-            );
+            if (::GetMonitorInfo(hMonitor, &monitorInfo) == 0) {
+                throwLastWin32Error("GetMonitorInfoW");
+            }
+
+            if (::SetWindowPos(
+                    this->hWnd, HWND_TOP, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top,
+                    monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
+                    monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
+                    SWP_FRAMECHANGED | SWP_NOACTIVATE
+                ) == 0) {
+                throwLastWin32Error("SetWindowPos(enter fullscreen)");
+            }
             ::ShowWindow(this->hWnd, SW_MAXIMIZE);
         } else {
-            ::SetWindowLong(this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW);
-            ::SetWindowPos(
-                this->hWnd, HWND_NOTOPMOST, this->windowRect.left, this->windowRect.top,
-                this->windowRect.right - this->windowRect.left,
-                this->windowRect.bottom - this->windowRect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE
-            );
+            ::SetLastError(0);
+            [[maybe_unused]] LONG prevStyle =
+                ::SetWindowLongW(this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW);
+            if (prevStyle == 0 && ::GetLastError() != 0) {
+                throwLastWin32Error("SetWindowLongW(exit fullscreen)");
+            }
+
+            if (::SetWindowPos(
+                    this->hWnd, HWND_NOTOPMOST, this->windowRect.left, this->windowRect.top,
+                    this->windowRect.right - this->windowRect.left,
+                    this->windowRect.bottom - this->windowRect.top,
+                    SWP_FRAMECHANGED | SWP_NOACTIVATE
+                ) == 0) {
+                throwLastWin32Error("SetWindowPos(exit fullscreen)");
+            }
             ::ShowWindow(this->hWnd, SW_NORMAL);
         }
+
+        RECT clientRect = {};
+        if (::GetClientRect(this->hWnd, &clientRect) == 0) {
+            throwLastWin32Error("GetClientRect");
+        }
+
+        this->onResize(
+            static_cast<uint32_t>(std::max<LONG>(1, clientRect.right - clientRect.left)),
+            static_cast<uint32_t>(std::max<LONG>(1, clientRect.bottom - clientRect.top))
+        );
     }
 }
 

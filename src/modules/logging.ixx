@@ -1,7 +1,7 @@
 module;
 
 #if defined(__clang__)
-#define FMT_CONSTEVAL
+    #define FMT_CONSTEVAL
 #endif
 
 #include <spdlog/fmt/fmt.h>
@@ -47,8 +47,9 @@ namespace spdlog::sinks
             if (sink_->should_log(msg.level)) {
                 sink_->log(msg);
             }
-            if (spdlog::level::err == msg.level) {
-                std::raise(SIGINT);
+            if (msg.level >= spdlog::level::err) {
+                const std::string msgStr = msg.payload.data();
+                throw std::runtime_error(msgStr.c_str());
             }
         }
 

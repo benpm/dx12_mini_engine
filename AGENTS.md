@@ -23,6 +23,8 @@ cmake --build build --config Release
 ./build/Debug/main.exe resources/scenes/test.json
 ```
 
+**NOTE:** Sometimes the build will fail with a file lock issue ("user-mapped section open"). When this happens, stop execution immediately. The issue is likely due to the language server in the open editor. The user must shut it down before you can continue.
+
 ### Toolchain notes
 - **Compiler**: `clang++` (v22 or newer). Do NOT use Git's clang (v18 — too old for VS 18 STL).
 - **vcpkg**: `$VCPKG_ROOT` (x64-windows-static triplet).
@@ -55,7 +57,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | Module                 | Purpose                                                                      |
 | ---------------------- | ---------------------------------------------------------------------------- |
 | `math.ixx`             | Re-exports math types from `include/math_types.h`                            |
-| `common.ixx`           | `chkDX()`, `_deg` literals, pi constants. Re-exports `math`                  |
+| `common.ixx`           | `chkDX()` + Win32/HRESULT formatting helpers, `_deg` literals, pi constants. Re-exports `math` |
 | `window.ixx`           | Singleton HWND + D3D12Device2 creation, adapter selection, callback-based render loop |
 | `application.ixx`      | Main Application class — orchestrates subsystems, render loop, input, UI     |
 | `scene.ixx`            | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading  |
@@ -257,8 +259,14 @@ Must match `SceneCB` in both HLSL shaders exactly. Current fields: `model`, `vie
 alignas(16) SceneConstantBuffer scb = {};
 ```
 
+### Error reporting helpers
+Use `chkDX(...)` for HRESULT-returning calls and `throwLastWin32Error(...)` for Win32 APIs that signal failure via `GetLastError()`. `chkDX` now throws `std::runtime_error` with HRESULT hex + decoded message + source location to make crash logs actionable.
+
 ### No GPU ops inside renderImGui
 `renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`.
+
+### Fullscreen toggles are deferred
+Fullscreen transitions can generate synchronous `WM_SIZE` events that trigger `onResize()` and swap chain `ResizeBuffers()`. Queue UI fullscreen requests via `pendingFullscreenChange` / `pendingFullscreenValue` and apply them at the start of `update()`.
 
 ### PointLight entities survive clearScene()
 `clearScene()` removes entities via `delete_with<MeshRef>()` — only entities that have a `MeshRef` component are deleted. `PointLight` entities have no `MeshRef`, so they persist across scene resets. Light data is restored from JSON via `lightQuery.each(...)` in `applySceneData()`.

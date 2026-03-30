@@ -5,6 +5,8 @@
 - [ ] Add LuaJIT for dynamic scripting support
 - [ ] Add rebindable keybinds for various editor actions (see EditorAction::keyName in @src/gui.cpp). Allow these to be configured through a JSON file, use glaze lib to load. Show keybinds for editor actions in the tooltips.
 - [ ] Find icons for all menu items in the GUI by searching this page: https://mui.com/material-ui/material-icons, and downloading PNGs
+- [ ] Pressing escape should deselect the currently selected entity. If no entity is selected, show a dialog box that asks for confirmation for closing the window. If the confirmation is dismissed, do not close the window.
+- [ ] Capture input events when interacting with the UI, preventing key presses and mouse events from being handled if the UI is occluding. This is a built in feature for imgui, use context7 to find the docs.
 
 ---
 
