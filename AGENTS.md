@@ -73,6 +73,8 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `terrain.ixx`          | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh   |
 | `scene_file.ixx`       | Scene file serialization — load/save JSON scene files via glaze              |
 | `ssao.ixx`             | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes        |
+| `shadow.ixx`           | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO    |
+| `outline.ixx`          | `OutlineRenderer` class — stencil-based silhouette PSO + render               |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -89,7 +91,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
 ### Subsystem architecture
 
-Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`.
+Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`, `ShadowRenderer shadow`, `OutlineRenderer outline`, `SsaoRenderer ssao`, `ObjectPicker picker`, `BillboardRenderer billboards`.
 
 **Scene** (`scene.ixx` + `scene.cpp`) — owns all scene state:
 - ECS world (`flecs::world`), cached queries (`drawQuery`, `instanceQuery`, `instanceAnimQuery`, `animQuery`, `lightQuery`), materials, spawn system
@@ -120,6 +122,16 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - Methods: `createResources()`, `resize()`, `render()`, `transitionResource()` (public static)
 - UI params: `enabled`, `radius`, `bias`, `kernelSize` (SSAO menu)
 
+**ShadowRenderer** (`shadow.ixx` + `shadow.cpp`) — shadow map subsystem:
+- `shadowMap` (`R32_TYPELESS`/`D32_FLOAT`, 2048²), `dsvHeap`, `pso`
+- Public config: `enabled`, `bias`, `rasterDepthBias`, `rasterSlopeBias`, `rasterBiasClamp`, `lightDistance`, `orthoSize`, `nearPlane`, `farPlane`; `static constexpr mapSize = 2048`
+- Methods: `createResources()` (creates texture + DSV + SRV into sceneSrvHeap + PSO), `reloadPSO()`, `computeLightViewProj(vec3 dirLightDir)`, `render()`
+- Shadow SRV placed at `sceneSrvHeap[nBuffers]` (slot 3)
+
+**OutlineRenderer** (`outline.ixx` + `outline.cpp`) — stencil silhouette subsystem:
+- Owns `pso` (stencil NOT_EQUAL, no depth write, cull none)
+- Methods: `createResources()`, `reloadPSO()`, `render()` (draws outline for hovered/selected entities)
+
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 - SRV descriptor heap for ImGui
 - Methods: `init()`, `shutdown()`, `styleColorsDracula()`
@@ -129,16 +141,16 @@ Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`
 - `application.cpp` — constructor, destructor, `update()`, helpers
 - `application_render.cpp` — `render()` — shadow, cubemap, normal pre-pass, SSAO, scene, outline, ID, billboards, bloom, imgui, present
 - `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips
-- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createShadowPSO()`, `createNormalPSO()`, `createOutlinePSO()`, `createCubemapResources()`, `onResize()`
+- `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createNormalPSO()`, `createCubemapResources()`, `onResize()`
 - `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
 - **Root signature**: 6 root params — [0] SRV table (t0, structured buffer), [1] 1 root constant (`drawIndex`, b0), [2] SRV table (t1, shadow map), [3] SRV table (t2, cubemap), [4] 4 root constants (b1, outline params), [5] SRV table (t3, SSAO). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
-- **Scene PSO**: standard rasterization to HDR RT, stencil write. **Shadow PSO**: depth-only, front-face culling, depth bias. **Normal PSO**: vertex shader + `normal_ps.hlsl` → `R8G8B8A8_UNORM`. **Outline PSO**: extrude verts along normal, stencil test NOT_EQUAL.
+- **Scene PSO**: standard rasterization to HDR RT, stencil write. **Shadow PSO**: owned by `ShadowRenderer`, depth-only, front-face culling, depth bias. **Normal PSO**: vertex shader + `normal_ps.hlsl` → `R8G8B8A8_UNORM`. **Outline PSO**: owned by `OutlineRenderer`, extrude verts along normal, stencil test NOT_EQUAL.
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
-- Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`.
-- **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO + shadow PSO via `createScenePSO()` / `createShadowPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
+- Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`, `shadow.*`, `outline.*`.
+- **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO via `createScenePSO()`, shadow PSO via `shadow.reloadPSO()`, outline PSO via `outline.reloadPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
 - **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary. `scene.instanceAnimQuery.each<InstanceGroup, InstanceAnimation>()` spins each instance group in place by rebuilding transforms each frame from stored base positions/scales.
 - **GPU instancing**: `InstanceGroup` component stores N transforms and per-instance material overrides (albedo, roughness, metallic, emissiveStrength). Rendered via one `DrawIndexedInstanced(..., N, ...)` per group. Vertex/outline shaders use `SV_InstanceID` to index into `drawData[drawIndex + instanceID]`. `totalSlots` = regular entity count + sum of all instance group sizes; shadow/cubemap draw data stored at offsets `totalSlots` and `2*totalSlots`.
 
@@ -159,7 +171,7 @@ update()  →  render()
               └─ ImGui overlay    (directly to backbuffer)
 ```
 
-**GPU instancing**: Two draw modes coexist. Regular entities (`MeshRef` component) get one `DrawIndexedInstanced(..., 1, ...)` call each. `InstanceGroup` entities batch N instances of a single mesh into one `DrawIndexedInstanced(..., N, ...)` call. Both write consecutive `SceneConstantBuffer` entries in the structured buffer. Vertex shaders use `drawData[drawIndex + SV_InstanceID]` — backwards-compatible since `SV_InstanceID=0` for non-instanced draws. `drawIndexToEntity` has one entry per instance slot; picking any instance of a group selects the group entity. Instance groups are not `Pickable` and not animated. `DrawCmd` struct carries `instanceCount` and `baseDrawIndex` for unified draw loop logic across all passes.
+**GPU instancing**: Two draw modes coexist. Regular entities (`MeshRef` component) get one `DrawIndexedInstanced(..., 1, ...)` call each. `InstanceGroup` entities batch N instances of a single mesh into one `DrawIndexedInstanced(..., N, ...)` call. Both write consecutive `SceneConstantBuffer` entries in the structured buffer. Vertex shaders use `drawData[drawIndex + SV_InstanceID]` — backwards-compatible since `SV_InstanceID=0` for non-instanced draws. `drawIndexToEntity` has one entry per instance slot; picking any instance of a group selects the group entity. Instance groups are not `Pickable` and not animated. `DrawCmd` struct (exported from `scene.ixx`) carries `instanceCount` and `baseDrawIndex` for unified draw loop logic across all passes.
 
 **Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `totalSlots` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
 

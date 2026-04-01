@@ -21,8 +21,6 @@ module;
 #include <vector>
 #include "d3dx12_clean.h"
 #include "normal_ps_cso.h"
-#include "outline_ps_cso.h"
-#include "outline_vs_cso.h"
 #include "pixel_shader_cso.h"
 #include "profiling.h"
 #include "vertex_shader_cso.h"
@@ -146,46 +144,6 @@ void Application::createScenePSO()
     D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
                                                  &pipelineStateStream };
     chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
-}
-
-// ---------------------------------------------------------------------------
-// createShadowPSO — depth-only PSO for shadow pass
-// ---------------------------------------------------------------------------
-
-void Application::createShadowPSO()
-{
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
-
-    auto vsData = shaderCompiler.data(sceneVSIdx);
-    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(sceneVSIdx))
-                     : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = this->rootSignature.Get();
-    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-    psoDesc.VS = vs;
-    psoDesc.PS = {};  // No pixel shader — depth only
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;  // Reduce peter-panning
-    psoDesc.RasterizerState.DepthBias = shadowRasterDepthBias;
-    psoDesc.RasterizerState.SlopeScaledDepthBias = shadowRasterSlopeBias;
-    psoDesc.RasterizerState.DepthBiasClamp = shadowRasterBiasClamp;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 0;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    psoDesc.SampleDesc = { 1, 0 };
-
-    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->shadowPSO)));
 }
 
 // ---------------------------------------------------------------------------
@@ -422,48 +380,28 @@ bool Application::loadContent()
 
     // Shadow map resources
     {
-        // Shadow depth texture
-        D3D12_CLEAR_VALUE shadowClearVal = {};
-        shadowClearVal.Format = DXGI_FORMAT_D32_FLOAT;
-        shadowClearVal.DepthStencil = { 1.0f, 0 };
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC shadowDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R32_TYPELESS, shadowMapSize, shadowMapSize, 1, 1, 1, 0,
-            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        auto vsData = shaderCompiler.data(sceneVSIdx);
+        D3D12_SHADER_BYTECODE vs =
+            vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
+                   : D3D12_SHADER_BYTECODE{};
+        shadow.createResources(
+            device.Get(), rootSignature.Get(), vs, scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
+            static_cast<INT>(Scene::nBuffers)
         );
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &shadowDesc,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &shadowClearVal, IID_PPV_ARGS(&shadowMap)
-        ));
-
-        // Shadow DSV heap + view
-        D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
-        dsvDesc.NumDescriptors = 1;
-        dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        chkDX(device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&shadowDsvHeap)));
-
-        D3D12_DEPTH_STENCIL_VIEW_DESC shadowDsvViewDesc = {};
-        shadowDsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
-        shadowDsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(
-            shadowMap.Get(), &shadowDsvViewDesc, shadowDsvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-
-        // Shadow SRV in sceneSrvHeap at slot 3 (after 3 structured buffer SRVs)
-        D3D12_SHADER_RESOURCE_VIEW_DESC shadowSrvDesc = {};
-        shadowSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-        shadowSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        shadowSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        shadowSrvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE shadowSrvHandle(
-            scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
-        );
-        device->CreateShaderResourceView(shadowMap.Get(), &shadowSrvDesc, shadowSrvHandle);
     }
 
-    createShadowPSO();
-    createOutlinePSO();
+    // Outline PSO
+    {
+        auto vsData = shaderCompiler.data(outlineVSIdx);
+        auto psData = shaderCompiler.data(outlinePSIdx);
+        D3D12_SHADER_BYTECODE vs =
+            vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(outlineVSIdx) }
+                   : D3D12_SHADER_BYTECODE{};
+        D3D12_SHADER_BYTECODE ps =
+            psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
+                   : D3D12_SHADER_BYTECODE{};
+        outline.createResources(device.Get(), rootSignature.Get(), vs, ps);
+    }
     createCubemapResources();
     billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
 
@@ -524,53 +462,6 @@ bool Application::loadContent()
 #endif
 
     return true;
-}
-
-void Application::createOutlinePSO()
-{
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
-
-    auto vsData = shaderCompiler.data(outlineVSIdx);
-    auto psData = shaderCompiler.data(outlinePSIdx);
-    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(outlineVSIdx))
-                     : CD3DX12_SHADER_BYTECODE(g_outline_vs, sizeof(g_outline_vs));
-    auto ps = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(outlinePSIdx))
-                     : CD3DX12_SHADER_BYTECODE(g_outline_ps, sizeof(g_outline_ps));
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = this->rootSignature.Get();
-    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-    psoDesc.VS = vs;
-    psoDesc.PS = ps;
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-    D3D12_DEPTH_STENCIL_DESC dsDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    dsDesc.StencilEnable = TRUE;
-    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NOT_EQUAL;
-    dsDesc.BackFace = dsDesc.FrontFace;
-    psoDesc.DepthStencilState = dsDesc;
-
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-    psoDesc.SampleDesc = { 1, 0 };
-
-    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->outlinePSO)));
 }
 
 void Application::createNormalPSO()

@@ -77,7 +77,7 @@ void Application::render()
     mat4 lightViewProj{};
     vec4 dirLightDirVec{};  // toward light (negated from UI direction)
     vec4 dirLightColorVec{};
-    if (shadowEnabled) {
+    if (shadow.enabled) {
         // UI stores direction FROM light; negate to get direction TOWARD light for shader
         XMVECTOR fromLight =
             XMVector3Normalize(XMVectorSet(dirLightDir.x, dirLightDir.y, dirLightDir.z, 0.0f));
@@ -87,34 +87,10 @@ void Application::render()
                              dirLightColor.y * dirLightBrightness,
                              dirLightColor.z * dirLightBrightness, 1.0f };
 
-        // Place virtual light position far along the direction for LookAt
-        XMVECTOR lightP = XMVectorScale(toLight, shadowLightDistance);
-        XMVECTOR target = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
-        XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        float dotUp = fabsf(XMVectorGetByIndex(
-            XMVector3Dot(XMVector3Normalize(XMVectorSubtract(target, lightP)), up), 0
-        ));
-        if (dotUp > 0.99f) {
-            up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-        }
-        XMMATRIX lightView = XMMatrixLookAtLH(lightP, target, up);
-        XMMATRIX lightProj = XMMatrixOrthographicLH(
-            shadowOrthoSize, shadowOrthoSize, std::max(0.001f, shadowNearPlane),
-            std::max(shadowNearPlane + 0.001f, shadowFarPlane)
-        );
-        XMMATRIX lvp = XMMatrixMultiply(lightView, lightProj);
-        XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&lightViewProj), lvp);
+        lightViewProj = shadow.computeLightViewProj(dirLightDir);
     }
 
     // --- Fill structured buffer (scene + shadow draw data) ---
-    struct DrawCmd
-    {
-        uint32_t indexCount;
-        uint32_t indexOffset;
-        uint32_t vertexOffset;
-        uint32_t instanceCount;
-        uint32_t baseDrawIndex;
-    };
     std::vector<DrawCmd> drawCmds;
     drawIndexToEntity.clear();
     uint32_t drawIdx = 0;
@@ -140,8 +116,8 @@ void Application::render()
         scb.dirLightDir = dirLightDirVec;
         scb.dirLightColor = dirLightColorVec;
         scb.lightViewProj = lightViewProj;
-        scb.shadowBias = shadowBias;
-        scb.shadowMapTexelSize = 1.0f / static_cast<float>(shadowMapSize);
+        scb.shadowBias = shadow.bias;
+        scb.shadowMapTexelSize = 1.0f / static_cast<float>(ShadowRenderer::mapSize);
         scb.fogStartY = fogStartY;
         scb.fogDensity = fogDensity;
         scb.fogColor = vec4(fogColor, 0.0f);
@@ -212,60 +188,24 @@ void Application::render()
     uint32_t totalSlots = drawIdx;
 
     // Shadow draw data (same model transforms, light viewProj instead of camera viewProj)
-    if (shadowEnabled) {
+    if (shadow.enabled) {
         for (uint32_t i = 0; i < totalSlots; ++i) {
-            SceneConstantBuffer& shadow = mapped[totalSlots + i];
-            shadow.model = mapped[i].model;
-            shadow.viewProj = lightViewProj;
+            SceneConstantBuffer& shadowScb = mapped[totalSlots + i];
+            shadowScb.model = mapped[i].model;
+            shadowScb.viewProj = lightViewProj;
         }
     }
 
     this->lastFrameObjectCount = totalSlots;
 
     // --- Shadow pass ---
-    if (shadowEnabled) {
+    if (shadow.enabled) {
         PROFILE_ZONE_NAMED("Shadow Pass");
         PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Shadow");
-        this->transitionResource(
-            cmdList, shadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE
-        );
-        auto shadowDsv = shadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
-        this->clearDepth(cmdList, shadowDsv);
-
-        cmdList->SetPipelineState(this->shadowPSO.Get());
         cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-        D3D12_VIEWPORT shadowVP = { 0.0f, 0.0f, (float)shadowMapSize, (float)shadowMapSize,
-                                    0.0f, 1.0f };
-        D3D12_RECT shadowScissor = { 0, 0, (LONG)shadowMapSize, (LONG)shadowMapSize };
-        cmdList->RSSetViewports(1, &shadowVP);
-        cmdList->RSSetScissorRects(1, &shadowScissor);
-        cmdList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-
-        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, totalSlots + drawCmds[i].baseDrawIndex, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        this->transitionResource(
-            cmdList, shadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        shadow.render(
+            cmdList, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
+            curBackBufIdx, drawCmds, totalSlots
         );
     }
 
@@ -537,47 +477,12 @@ void Application::render()
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
             bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
         );
-
-        cmdList->SetPipelineState(outlinePSO.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-        cmdList->OMSetStencilRef(1);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* outlineHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, outlineHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE outlineSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+        outline.render(
+            cmdList, this->rootSignature.Get(), scene.megaVBV, scene.megaIBV,
+            scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, curBackBufIdx, hdrRtv, dsv,
+            this->viewport, this->scissorRect, drawCmds, drawIndexToEntity, hoveredEntity,
+            selectedEntity
         );
-        cmdList->SetGraphicsRootDescriptorTable(0, outlineSrvHandle);
-
-        auto drawOutline = [&](flecs::entity e, float width, float r, float g, float b) {
-            for (uint32_t i = 0; i < static_cast<uint32_t>(drawIndexToEntity.size()); ++i) {
-                if (drawIndexToEntity[i] == e) {
-                    float params[4] = { width, r, g, b };
-                    cmdList->SetGraphicsRoot32BitConstants(4, 4, params, 0);
-                    cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
-                    cmdList->DrawIndexedInstanced(
-                        drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
-                        static_cast<INT>(drawCmds[i].vertexOffset), 0
-                    );
-                    break;
-                }
-            }
-        };
-
-        if (hoveredEntity) {
-            drawOutline(hoveredEntity, 0.03f, 0.3f, 0.8f, 1.0f);
-        }
-        if (selectedEntity) {
-            drawOutline(selectedEntity, 0.06f, 1.0f, 0.75f, 0.1f);
-        }
     }
 
     // --- Object ID pass (for picking) ---

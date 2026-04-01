@@ -5,6 +5,7 @@ module;
 #endif
 
 #include <d3d12.h>
+#include <flecs.h>
 #include <spdlog/spdlog.h>
 #include <tiny_gltf.h>
 #include <tiny_obj_loader.h>
@@ -118,8 +119,33 @@ static std::vector<uint32_t> AccessorToIndices(const tinygltf::Model& model, int
 // Scene::createMegaBuffers
 // ---------------------------------------------------------------------------
 
+// Registers flecs observers that assert mutually exclusive component pairs.
+// Observers fire when the LAST required component is added, making the entity
+// match the forbidden combination. Called once before any entities are created.
+static void registerComponentConstraints(flecs::world& world)
+{
+    // MeshRef and InstanceGroup are two separate render paths — double-draw / buffer overflow.
+    world.observer<MeshRef, InstanceGroup>()
+        .event(flecs::OnAdd)
+        .each([](flecs::entity e, MeshRef&, InstanceGroup&) {
+            spdlog::critical("ECS violation: entity {} has both MeshRef and InstanceGroup", e.id());
+            assert(false && "MeshRef and InstanceGroup are mutually exclusive");
+        });
+
+    // Animated and InstanceAnimation both overwrite Transform — conflicting writes.
+    world.observer<Animated, InstanceAnimation>()
+        .event(flecs::OnAdd)
+        .each([](flecs::entity e, Animated&, InstanceAnimation&) {
+            spdlog::critical(
+                "ECS violation: entity {} has both Animated and InstanceAnimation", e.id()
+            );
+            assert(false && "Animated and InstanceAnimation are mutually exclusive");
+        });
+}
+
 void Scene::createMegaBuffers(ID3D12Device2* device)
 {
+    registerComponentConstraints(ecsWorld);
     constexpr uint32_t initialVertexCapacity = 1'000'000;
     constexpr uint32_t initialIndexCapacity = 4'000'000;
 

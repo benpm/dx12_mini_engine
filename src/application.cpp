@@ -417,10 +417,22 @@ void Application::update()
                             shaderCompiler.wasRecompiled(bloomCompIdx);
         if (sceneChanged) {
             createScenePSO();
-            createShadowPSO();
+            auto vsData = shaderCompiler.data(sceneVSIdx);
+            D3D12_SHADER_BYTECODE vs =
+                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
+                       : D3D12_SHADER_BYTECODE{};
+            shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
         }
         if (outlineChanged) {
-            createOutlinePSO();
+            auto vsData = shaderCompiler.data(outlineVSIdx);
+            auto psData = shaderCompiler.data(outlinePSIdx);
+            D3D12_SHADER_BYTECODE vs =
+                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(outlineVSIdx) }
+                       : D3D12_SHADER_BYTECODE{};
+            D3D12_SHADER_BYTECODE ps =
+                psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
+                       : D3D12_SHADER_BYTECODE{};
+            outline.reloadPSO(device.Get(), rootSignature.Get(), vs, ps);
         }
         if (bloomChanged) {
             auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {

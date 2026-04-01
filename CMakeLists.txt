@@ -186,6 +186,8 @@ add_executable(main
     src/scene_file.cpp
     src/application_scene.cpp
     src/ssao.cpp
+    src/shadow.cpp
+    src/outline.cpp
     resources.rc
 )
 target_sources(main
@@ -209,6 +211,8 @@ target_sources(main
     src/modules/terrain.ixx
     src/modules/scene_file.ixx
     src/modules/ssao.ixx
+    src/modules/shadow.ixx
+    src/modules/outline.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )

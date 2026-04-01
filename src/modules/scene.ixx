@@ -22,6 +22,18 @@ export using ::MaterialPreset;
 using Microsoft::WRL::ComPtr;
 
 // ---------------------------------------------------------------------------
+// Draw command (one per draw call, references mega-buffer regions)
+// ---------------------------------------------------------------------------
+export struct DrawCmd
+{
+    uint32_t indexCount;
+    uint32_t indexOffset;
+    uint32_t vertexOffset;
+    uint32_t instanceCount;
+    uint32_t baseDrawIndex;
+};
+
+// ---------------------------------------------------------------------------
 // GPU vertex layout (PBR)
 // ---------------------------------------------------------------------------
 export struct VertexPBR

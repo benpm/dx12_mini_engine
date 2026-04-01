@@ -121,23 +121,25 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
         if (ImGui::BeginMenu("Shadows")) {
             ImGui::PushItemWidth(220.0f);
-            ImGui::Checkbox("Enabled", &shadowEnabled);
-            ImGui::SliderFloat("Bias", &shadowBias, 0.0001f, 0.01f, "%.4f");
+            ImGui::Checkbox("Enabled", &shadow.enabled);
+            ImGui::SliderFloat("Bias", &shadow.bias, 0.0001f, 0.01f, "%.4f");
 
             shadowPsoDirty |=
-                ImGui::SliderInt("Raster Depth Bias", &shadowRasterDepthBias, 0, 5000);
-            shadowPsoDirty |=
-                ImGui::SliderFloat("Raster Slope Bias", &shadowRasterSlopeBias, 0.0f, 8.0f, "%.3f");
-            shadowPsoDirty |=
-                ImGui::SliderFloat("Raster Bias Clamp", &shadowRasterBiasClamp, 0.0f, 5.0f, "%.3f");
+                ImGui::SliderInt("Raster Depth Bias", &shadow.rasterDepthBias, 0, 5000);
+            shadowPsoDirty |= ImGui::SliderFloat(
+                "Raster Slope Bias", &shadow.rasterSlopeBias, 0.0f, 8.0f, "%.3f"
+            );
+            shadowPsoDirty |= ImGui::SliderFloat(
+                "Raster Bias Clamp", &shadow.rasterBiasClamp, 0.0f, 5.0f, "%.3f"
+            );
 
             ImGui::Separator();
-            ImGui::SliderFloat("Light Distance", &shadowLightDistance, 1.0f, 200.0f, "%.1f");
-            ImGui::SliderFloat("Ortho Size", &shadowOrthoSize, 5.0f, 200.0f, "%.1f");
-            ImGui::SliderFloat("Near", &shadowNearPlane, 0.001f, 10.0f, "%.3f");
-            ImGui::SliderFloat("Far", &shadowFarPlane, 1.0f, 500.0f, "%.1f");
-            if (shadowFarPlane <= shadowNearPlane + 0.001f) {
-                shadowFarPlane = shadowNearPlane + 0.001f;
+            ImGui::SliderFloat("Light Distance", &shadow.lightDistance, 1.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Ortho Size", &shadow.orthoSize, 5.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Near", &shadow.nearPlane, 0.001f, 10.0f, "%.3f");
+            ImGui::SliderFloat("Far", &shadow.farPlane, 1.0f, 500.0f, "%.1f");
+            if (shadow.farPlane <= shadow.nearPlane + 0.001f) {
+                shadow.farPlane = shadow.nearPlane + 0.001f;
             }
             ImGui::PopItemWidth();
             ImGui::EndMenu();
@@ -340,7 +342,11 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     }
 
     if (shadowPsoDirty) {
-        createShadowPSO();
+        auto vsData = shaderCompiler.data(sceneVSIdx);
+        D3D12_SHADER_BYTECODE vs =
+            vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
+                   : D3D12_SHADER_BYTECODE{};
+        shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
     }
 
     if (ImGui::Begin(
@@ -354,7 +360,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         ImGui::Text("Vertices: %u", this->lastFrameVertexCount);
         ImGui::Text("Spawn Paused: %s", spawningStopped ? "Yes" : "No");
         ImGui::Text("Camera Radius: %.2f", cam.radius);
-        ImGui::Text("Shadow: %s", shadowEnabled ? "On" : "Off");
+        ImGui::Text("Shadow: %s", shadow.enabled ? "On" : "Off");
         ImGui::Text("Cubemap: %s", cubemapEnabled ? "On" : "Off");
         ImGui::End();
     }
@@ -434,7 +440,8 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             }
 
             ImGui::Separator();
-            if (!selectedEntity.has<Animated>()) {
+            if (!selectedEntity.has<Animated>() && !selectedEntity.has<InstanceAnimation>() &&
+                !selectedEntity.has<InstanceGroup>()) {
                 if (ImGui::Button("Add Animated")) {
                     Animated anim;
                     if (selectedEntity.has<Transform>()) {

@@ -27,6 +27,8 @@ export import object_picking;
 export import terrain;
 export import scene_file;
 export import ssao;
+export import shadow;
+export import outline;
 
 export class Application
 {
@@ -73,6 +75,8 @@ export class Application
     ImGuiLayer imguiLayer;
     ObjectPicker picker;
     SsaoRenderer ssao;
+    ShadowRenderer shadow;
+    OutlineRenderer outline;
 
     // Maps draw index → flecs entity (rebuilt each frame)
     std::vector<flecs::entity> drawIndexToEntity;
@@ -88,28 +92,12 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> normalPSO;
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
     mat4 matModel;
     bool contentLoaded = false;
-
-    // Shadow mapping
-    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMap;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowDsvHeap;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO;
-    bool shadowEnabled = true;
-    float shadowBias = 0.0002f;
-    int shadowRasterDepthBias = 1000;
-    float shadowRasterSlopeBias = 1.0f;
-    float shadowRasterBiasClamp = 0.0f;
-    float shadowLightDistance = 25.0f;
-    float shadowOrthoSize = 30.0f;
-    float shadowNearPlane = 0.1f;
-    float shadowFarPlane = 60.0f;
-    static constexpr uint32_t shadowMapSize = 2048;
 
     // Cubemap reflections
     Microsoft::WRL::ComPtr<ID3D12Resource> cubemapTexture;
@@ -222,8 +210,6 @@ export class Application
     bool loadContent();
     void onResize(uint32_t width, uint32_t height);
     void createScenePSO();
-    void createShadowPSO();
-    void createOutlinePSO();
     void createNormalPSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };

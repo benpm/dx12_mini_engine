@@ -54,11 +54,11 @@ SceneFileData Application::extractSceneData() const
     d.fog.color = fogColor;
 
     // Shadows
-    d.shadow = { shadowEnabled,         shadowBias,
-                 shadowRasterDepthBias, shadowRasterSlopeBias,
-                 shadowRasterBiasClamp, shadowLightDistance,
-                 shadowOrthoSize,       shadowNearPlane,
-                 shadowFarPlane };
+    d.shadow = { shadow.enabled,         shadow.bias,
+                 shadow.rasterDepthBias, shadow.rasterSlopeBias,
+                 shadow.rasterBiasClamp, shadow.lightDistance,
+                 shadow.orthoSize,       shadow.nearPlane,
+                 shadow.farPlane };
 
     // Cubemap
     d.cubemap = { cubemapEnabled, cubemapResolution, cubemapNearPlane, cubemapFarPlane };
@@ -180,18 +180,18 @@ void Application::applySceneData(const SceneFileData& d)
 
     // Shadows
     bool shadowRasterChanged =
-        (shadowRasterDepthBias != d.shadow.rasterDepthBias ||
-         shadowRasterSlopeBias != d.shadow.rasterSlopeBias ||
-         shadowRasterBiasClamp != d.shadow.rasterBiasClamp);
-    shadowEnabled = d.shadow.enabled;
-    shadowBias = d.shadow.bias;
-    shadowRasterDepthBias = d.shadow.rasterDepthBias;
-    shadowRasterSlopeBias = d.shadow.rasterSlopeBias;
-    shadowRasterBiasClamp = d.shadow.rasterBiasClamp;
-    shadowLightDistance = d.shadow.lightDistance;
-    shadowOrthoSize = d.shadow.orthoSize;
-    shadowNearPlane = d.shadow.nearPlane;
-    shadowFarPlane = d.shadow.farPlane;
+        (shadow.rasterDepthBias != d.shadow.rasterDepthBias ||
+         shadow.rasterSlopeBias != d.shadow.rasterSlopeBias ||
+         shadow.rasterBiasClamp != d.shadow.rasterBiasClamp);
+    shadow.enabled = d.shadow.enabled;
+    shadow.bias = d.shadow.bias;
+    shadow.rasterDepthBias = d.shadow.rasterDepthBias;
+    shadow.rasterSlopeBias = d.shadow.rasterSlopeBias;
+    shadow.rasterBiasClamp = d.shadow.rasterBiasClamp;
+    shadow.lightDistance = d.shadow.lightDistance;
+    shadow.orthoSize = d.shadow.orthoSize;
+    shadow.nearPlane = d.shadow.nearPlane;
+    shadow.farPlane = d.shadow.farPlane;
 
     // Cubemap
     bool cubemapResChanged = (cubemapResolution != d.cubemap.resolution);
@@ -240,7 +240,11 @@ void Application::applySceneData(const SceneFileData& d)
     // Rebuild GPU resources if needed
     if (contentLoaded) {
         if (shadowRasterChanged) {
-            createShadowPSO();
+            auto vsData = shaderCompiler.data(sceneVSIdx);
+            D3D12_SHADER_BYTECODE vs =
+                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
+                       : D3D12_SHADER_BYTECODE{};
+            shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
         }
         if (cubemapResChanged) {
             createCubemapResources();
