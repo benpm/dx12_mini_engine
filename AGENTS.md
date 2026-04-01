@@ -234,6 +234,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 | tinygltf v2.9.5                  | FetchContent                    | GLB/glTF loading     |
 | PerlinNoise v3.0.0               | FetchContent                    | Terrain heightmap    |
 | glaze v5.2.1                     | FetchContent                    | JSON serialization   |
+| Tracy v0.13.1                    | FetchContent                    | CPU+GPU profiling (on-demand) |
 
 ---
 
@@ -244,6 +245,18 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 - DX12 debug layer enabled in Debug builds.
 
 ---
+
+## Profiling
+
+Tracy Profiler v0.11.1 is integrated for CPU and GPU instrumentation. `TRACY_ON_DEMAND` is set so there is no overhead when the viewer is not connected.
+
+- **Header**: `include/profiling.h` — include ONLY from `.cpp` files, never from `.ixx` modules
+- **GPU context**: `g_tracyD3d12Ctx` (file-static in `application.cpp`, `extern`'d in `application_render.cpp` and `application_setup.cpp`); created in `loadContent()`, destroyed in `~Application()` after `flush()`
+- **CPU zones**: `PROFILE_ZONE()` / `PROFILE_ZONE_NAMED(name)` — in `update()` and each render pass
+- **GPU zones**: `PROFILE_GPU_ZONE(ctx, cmdList.Get(), "name")` — Shadow, Normal Pre-pass+SSAO, Scene, Bloom
+- **Frame boundary**: `PROFILE_FRAME_MARK` after fence wait at end of `render()`
+- **Collect/NewFrame**: called at the top of `render()` (GPU is idle at that point due to prior fence wait)
+- **Viewer**: download Tracy v0.13.1 from GitHub releases; connect to the running engine on localhost
 
 ## Key Patterns / Pitfalls
 
@@ -264,6 +277,9 @@ Use `chkDX(...)` for HRESULT-returning calls and `throwLastWin32Error(...)` for 
 
 ### No GPU ops inside renderImGui
 `renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`.
+
+### Tracy D3D12 callstack depth gotcha
+With Tracy v0.13.1, `TRACY_CALLSTACK` is defined as `0` by default in `Tracy.hpp`, but `TracyD3D12NamedZone` still routes to the callstack overload when the macro exists. This can assert in `TracyCallstack.hpp` (`depth >= 1 && depth < 63`). Keep GPU profiling wrapper on `TracyD3D12NamedZoneS(..., depth=1, ...)` (see `include/profiling.h`) unless callstack configuration changes.
 
 ### Fullscreen toggles are deferred
 Fullscreen transitions can generate synchronous `WM_SIZE` events that trigger `onResize()` and swap chain `ResizeBuffers()`. Queue UI fullscreen requests via `pendingFullscreenChange` / `pendingFullscreenValue` and apply them at the start of `update()`.

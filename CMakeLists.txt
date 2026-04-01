@@ -118,6 +118,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glaze)
 
+# Fetch Tracy profiler (on-demand: zero overhead when viewer not connected)
+set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+set(TRACY_NO_SYSTEM_TRACING ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    tracy
+    GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+    GIT_TAG v0.13.1
+)
+FetchContent_MakeAvailable(tracy)
+set_target_properties(TracyClient PROPERTIES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(TracyClient PRIVATE -Wno-everything)
+endif()
+
 # -------------------------------
 # Find DXC shader compiler
 # -------------------------------
@@ -299,6 +316,7 @@ add_custom_command(TARGET main POST_BUILD
 )
 
 target_link_libraries(main PRIVATE
+    TracyClient
     d3d12.lib dxgi.lib dxguid.lib uuid.lib
     d3dcompiler.lib
     kernel32.lib user32.lib

@@ -17,14 +17,24 @@ module;
 #include <cmath>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "profiling.h"
 
 module application;
+
+#ifdef TRACY_ENABLE
+extern TracyD3D12Ctx g_tracyD3d12Ctx;
+#else
+extern void* g_tracyD3d12Ctx;
+#endif
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
 void Application::render()
 {
+    PROFILE_ZONE();
+    PROFILE_GPU_COLLECT(g_tracyD3d12Ctx);
+
     // Read back picked entity from previous frame
     picker.readPickResult();
 
@@ -165,6 +175,8 @@ void Application::render()
 
     // --- Shadow pass ---
     if (shadowEnabled) {
+        PROFILE_ZONE_NAMED("Shadow Pass");
+        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Shadow");
         this->transitionResource(
             cmdList, shadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_DEPTH_WRITE
@@ -210,6 +222,7 @@ void Application::render()
 
     // --- Cubemap pass: render environment for reflective objects ---
     if (cubemapEnabled && anyReflective) {
+        PROFILE_ZONE_NAMED("Cubemap Pass");
         // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
         XMVECTOR eyePos = XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
         XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
@@ -345,6 +358,8 @@ void Application::render()
 
     // --- Normal pre-pass: render world normals for SSAO ---
     if (ssao.enabled) {
+        PROFILE_ZONE_NAMED("Normal Pre-pass + SSAO");
+        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Normal Pre-pass + SSAO");
         ssao.transitionResource(
             cmdList, ssao.normalRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
@@ -403,6 +418,8 @@ void Application::render()
 
     // --- Scene pass: render to HDR render target ---
     {
+        PROFILE_ZONE_NAMED("Scene Pass");
+        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Scene");
         FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
             bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
@@ -466,6 +483,7 @@ void Application::render()
 
     // --- Outline pass: stencil-based silhouette for hovered/selected ---
     if (hoveredEntity || selectedEntity) {
+        PROFILE_ZONE_NAMED("Outline Pass");
         auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
             bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
@@ -515,6 +533,7 @@ void Application::render()
 
     // --- Object ID pass (for picking) ---
     {
+        PROFILE_ZONE_NAMED("ID Pass");
         auto idRtv = picker.getRTV();
         auto idDsv = picker.getDSV();
         // Clear ID RT to invalidID
@@ -556,6 +575,7 @@ void Application::render()
 
     // --- Light billboards pass (batched instancing) ---
     if (showLightBillboards) {
+        PROFILE_ZONE_NAMED("Billboards Pass");
         auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
         CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
             bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
@@ -584,12 +604,17 @@ void Application::render()
         skyParams.aspectRatio = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
         skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
     }
-    bloom.render(
-        cmdList, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
-        tonemapMode, skyParams
-    );
+    {
+        PROFILE_ZONE_NAMED("Bloom Pass");
+        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Bloom");
+        bloom.render(
+            cmdList, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
+            bloomIntensity, tonemapMode, skyParams
+        );
+    }
 
     if (!this->runtimeConfig.skipImGui) {
+        PROFILE_ZONE_NAMED("ImGui Pass");
         this->renderImGui(cmdList);
     }
 
@@ -598,12 +623,16 @@ void Application::render()
     );
 
     this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
+    // Signal Tracy's GPU fence AFTER submitting the command list so it comes after
+    // all GPU zones in the queue, ensuring Collect() reads valid timestamp data.
+    PROFILE_GPU_NEW_FRAME(g_tracyD3d12Ctx);
 
     UINT syncInterval = (this->vsync && !this->runtimeConfig.skipImGui) ? 1 : 0;
     UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     chkDX(this->swapChain->Present(syncInterval, presentFlags));
     this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
     this->cmdQueue.waitForFenceVal(this->frameFenceValues[this->curBackBufIdx]);
+    PROFILE_FRAME_MARK;
 
     if (this->runtimeConfig.screenshotFrame > 0) {
         this->frameCount++;

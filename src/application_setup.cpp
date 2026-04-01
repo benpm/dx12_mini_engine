@@ -24,9 +24,16 @@ module;
 #include "outline_ps_cso.h"
 #include "outline_vs_cso.h"
 #include "pixel_shader_cso.h"
+#include "profiling.h"
 #include "vertex_shader_cso.h"
 
 module application;
+
+#ifdef TRACY_ENABLE
+extern TracyD3D12Ctx g_tracyD3d12Ctx;
+#else
+extern void* g_tracyD3d12Ctx;
+#endif
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -503,6 +510,18 @@ bool Application::loadContent()
         scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
     );
     createNormalPSO();
+
+#ifdef TRACY_ENABLE
+    // Only create GPU context if the queue supports timestamp queries.
+    // WARP and some adapters fail GetTimestampFrequency, causing Tracy's constructor
+    // to return early with null internal pointers — those crash on first viewer connect.
+    UINT64 tsFreq = 0;
+    if (SUCCEEDED(cmdQueue.queue->GetTimestampFrequency(&tsFreq)) && tsFreq > 0) {
+        g_tracyD3d12Ctx = TracyD3D12Context(device.Get(), cmdQueue.queue.Get());
+    } else {
+        spdlog::warn("Tracy GPU profiling disabled: queue does not support timestamp queries");
+    }
+#endif
 
     return true;
 }

@@ -23,9 +23,16 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "profiling.h"
 #include "resource.h"
 
 module application;
+
+#ifdef TRACY_ENABLE
+TracyD3D12Ctx g_tracyD3d12Ctx = nullptr;
+#else
+void* g_tracyD3d12Ctx = nullptr;
+#endif
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -177,6 +184,12 @@ Application::~Application()
     win->callbackCtx = nullptr;
 
     this->flush();
+#ifdef TRACY_ENABLE
+    if (g_tracyD3d12Ctx) {
+        TracyD3D12Destroy(g_tracyD3d12Ctx);
+        g_tracyD3d12Ctx = nullptr;
+    }
+#endif
     this->imguiLayer.shutdown();
 }
 
@@ -319,6 +332,7 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 
 void Application::update()
 {
+    PROFILE_ZONE();
     if (pendingFullscreenChange) {
         const bool targetFullscreen = pendingFullscreenValue;
         pendingFullscreenChange = false;
