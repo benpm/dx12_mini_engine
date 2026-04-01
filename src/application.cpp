@@ -503,6 +503,95 @@ void Application::update()
         }
     }
 
+    // Create material test grids (once, on first frame with meshes loaded)
+    if (scene.ecsWorld.count<InstanceGroup>() == 0 && !scene.spawnableMeshRefs.empty()) {
+        constexpr int G = 5;
+        constexpr float spacing = 2.4f;
+        constexpr float objScale = 0.45f;
+        constexpr float rotSpeed = 0.3f;
+        // Grid centers spread along X axis
+        const float gridCentersX[3] = { -10.0f, 0.0f, 10.0f };
+
+        int numGrids = std::min(3, static_cast<int>(scene.spawnableMeshRefs.size()));
+        // Always create all 3 grids even with 1 mesh (reuse mesh 0)
+        numGrids = 3;
+
+        // Emissive material for grid 3: orange glow
+        int emissiveMatIdx = static_cast<int>(scene.materials.size());
+        {
+            Material emMat;
+            emMat.name = "GridEmissive";
+            emMat.albedo = { 0.6f, 0.2f, 0.05f, 1.0f };
+            emMat.roughness = 0.5f;
+            emMat.metallic = 0.0f;
+            emMat.emissiveStrength = 0.0f;  // overridden per-instance
+            emMat.emissive = { 1.0f, 0.45f, 0.1f, 0.0f };
+            scene.materials.push_back(emMat);
+        }
+
+        struct GridDef
+        {
+            int meshIdx;
+            vec4 albedo;
+            int matIdx;
+            bool varyEmissive;  // false = roughness×metallic, true = roughness×emissive
+        };
+        int diffMatIdx = scene.presetIdx[static_cast<int>(MaterialPreset::Diffuse)];
+        if (diffMatIdx < 0) {
+            diffMatIdx = 0;
+        }
+
+        GridDef defs[3] = {
+            { 0, { 0.9f, 0.85f, 0.8f, 1.0f }, diffMatIdx, false },
+            { std::min(1, static_cast<int>(scene.spawnableMeshRefs.size()) - 1),
+              { 0.4f, 0.6f, 1.0f, 1.0f },
+              diffMatIdx,
+              false },
+            { std::min(2, static_cast<int>(scene.spawnableMeshRefs.size()) - 1),
+              { 0.6f, 0.2f, 0.05f, 1.0f },
+              emissiveMatIdx,
+              true },
+        };
+
+        for (int g = 0; g < numGrids; ++g) {
+            const GridDef& def = defs[g];
+            InstanceGroup group;
+            group.mesh = scene.spawnableMeshRefs[def.meshIdx];
+            group.mesh.materialIndex = def.matIdx;
+
+            InstanceAnimation anim;
+            anim.rotationSpeed = rotSpeed;
+
+            for (int gx = 0; gx < G; ++gx) {
+                for (int gz = 0; gz < G; ++gz) {
+                    float px = gridCentersX[g] + (gx - G / 2) * spacing;
+                    float pz = (gz - G / 2) * spacing;
+                    float roughness = static_cast<float>(gx) / (G - 1);
+                    float varParam = static_cast<float>(gz) / (G - 1);  // metallic or emissive
+
+                    group.albedoOverrides.push_back(def.albedo);
+                    group.roughnessOverrides.push_back(roughness);
+                    if (def.varyEmissive) {
+                        group.metallicOverrides.push_back(0.0f);
+                        group.emissiveStrengthOverrides.push_back(varParam * 2.0f);
+                    } else {
+                        group.metallicOverrides.push_back(varParam);
+                    }
+
+                    anim.positions.push_back({ px, 0.0f, pz });
+                    anim.scales.push_back(objScale);
+                    group.transforms.push_back(
+                        scale(objScale, objScale, objScale) * translate(px, 0.0f, pz)
+                    );
+                }
+            }
+
+            Transform tf;
+            tf.world = mat4{};
+            scene.ecsWorld.entity().set(tf).set(std::move(group)).set(std::move(anim));
+        }
+    }
+
     const float w = static_cast<float>(this->clientWidth);
 
     this->mouseDelta = { this->inputMap.GetFloatDelta(Button::AxisDeltaX),
@@ -563,6 +652,17 @@ void Application::update()
             );
             tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
                        translate(pos.x, pos.y, pos.z);
+        });
+
+        // Animate instanced groups: spin each instance around its own Y axis
+        scene.instanceAnimQuery.each([&](InstanceGroup& group, InstanceAnimation& ia) {
+            ia.currentAngle += ia.rotationSpeed * dt;
+            mat4 rot = rotateAxis(vec3(0.f, 1.f, 0.f), ia.currentAngle);
+            for (size_t i = 0; i < group.transforms.size(); ++i) {
+                float s = ia.scales[i];
+                vec3 p = ia.positions[i];
+                group.transforms[i] = scale(s, s, s) * rot * translate(p.x, p.y, p.z);
+            }
         });
     }
 }

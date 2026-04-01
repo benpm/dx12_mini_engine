@@ -16,6 +16,7 @@ export using ::SpawningData;
 export using ::DisplayData;
 export using ::TerrainParams;
 export using ::EntityData;
+export using ::InstanceGroupData;
 export using ::RuntimeData;
 export using ::SceneFileData;
 

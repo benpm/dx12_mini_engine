@@ -118,6 +118,29 @@ SceneFileData Application::extractSceneData() const
         d.entities.push_back(ed);
     });
 
+    // Instance groups
+    scene.instanceQuery.each([&](flecs::entity /*e*/, const Transform& /*tf*/,
+                                 const InstanceGroup& group) {
+        InstanceGroupData igd;
+        for (size_t i = 0; i < scene.spawnableMeshRefs.size(); ++i) {
+            if (scene.spawnableMeshRefs[i].vertexOffset == group.mesh.vertexOffset &&
+                scene.spawnableMeshRefs[i].indexOffset == group.mesh.indexOffset) {
+                igd.meshName = scene.spawnableMeshNames[i];
+                break;
+            }
+        }
+        if (group.mesh.materialIndex >= 0 &&
+            group.mesh.materialIndex < static_cast<int>(scene.materials.size())) {
+            igd.materialName = scene.materials[group.mesh.materialIndex].name;
+        }
+        for (const auto& t : group.transforms) {
+            igd.positions.push_back({ t._41, t._42, t._43 });
+            igd.scales.push_back(std::sqrt(t._11 * t._11 + t._12 * t._12 + t._13 * t._13));
+        }
+        igd.albedoOverrides = group.albedoOverrides;
+        d.instanceGroups.push_back(igd);
+    });
+
     return d;
 }
 
@@ -204,6 +227,13 @@ void Application::applySceneData(const SceneFileData& d)
     // Background
     bgColor = d.bgColor;
 
+    // Terrain position
+    if (contentLoaded) {
+        scene.ecsWorld.query_builder<Transform>().with<TerrainEntity>().build().each(
+            [&](Transform& tf) { tf.world = translate(0.0f, d.terrain.positionY, 0.0f); }
+        );
+    }
+
     // Runtime
     runtimeConfig = d.runtime;
 
@@ -277,5 +307,41 @@ void Application::applySceneData(const SceneFileData& d)
             }
         }
         spdlog::info("Spawned {} entities from scene file", d.entities.size());
+    }
+
+    // Spawn instance groups from scene file
+    if (!d.instanceGroups.empty() && contentLoaded) {
+        for (const auto& igd : d.instanceGroups) {
+            int meshIdx = -1;
+            for (size_t i = 0; i < scene.spawnableMeshNames.size(); ++i) {
+                if (scene.spawnableMeshNames[i] == igd.meshName) {
+                    meshIdx = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (meshIdx < 0) {
+                spdlog::warn("Instance group references unknown mesh '{}', skipping", igd.meshName);
+                continue;
+            }
+
+            InstanceGroup group;
+            group.mesh = scene.spawnableMeshRefs[meshIdx];
+            for (int i = 0; i < static_cast<int>(scene.materials.size()); ++i) {
+                if (scene.materials[i].name == igd.materialName) {
+                    group.mesh.materialIndex = i;
+                    break;
+                }
+            }
+            for (size_t i = 0; i < igd.positions.size(); ++i) {
+                float s = (i < igd.scales.size()) ? igd.scales[i] : 1.0f;
+                group.transforms.push_back(scale(s, s, s) * translate(igd.positions[i]));
+            }
+            group.albedoOverrides = igd.albedoOverrides;
+
+            Transform tf;
+            tf.world = mat4{};
+            scene.ecsWorld.entity().set(tf).set(std::move(group));
+        }
+        spdlog::info("Spawned {} instance groups from scene file", d.instanceGroups.size());
     }
 }

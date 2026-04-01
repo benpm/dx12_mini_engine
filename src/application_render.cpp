@@ -112,6 +112,8 @@ void Application::render()
         uint32_t indexCount;
         uint32_t indexOffset;
         uint32_t vertexOffset;
+        uint32_t instanceCount;
+        uint32_t baseDrawIndex;
     };
     std::vector<DrawCmd> drawCmds;
     drawIndexToEntity.clear();
@@ -120,12 +122,8 @@ void Application::render()
     bool anyReflective = false;
     vec3 reflectivePos{};
 
-    scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
-        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
-        const Material& mat = scene.materials[mesh.materialIndex];
-
-        SceneConstantBuffer& scb = mapped[drawIdx];
-        scb.model = tf.world * this->matModel;
+    // Helper: fill per-frame fields shared by all draws
+    auto fillPerFrame = [&](SceneConstantBuffer& scb, const Material& mat, const vec4& albedo) {
         scb.viewProj = viewProj;
         scb.cameraPos = cameraPos;
         scb.ambientColor = ambientColor;
@@ -133,7 +131,7 @@ void Application::render()
             scb.lightPos[li] = animLightPos[li];
             scb.lightColor[li] = animLightColor[li];
         }
-        scb.albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
+        scb.albedo = albedo;
         scb.roughness = mat.roughness;
         scb.metallic = mat.metallic;
         scb.emissiveStrength = mat.emissiveStrength;
@@ -147,31 +145,82 @@ void Application::render()
         scb.fogStartY = fogStartY;
         scb.fogDensity = fogDensity;
         scb.fogColor = vec4(fogColor, 0.0f);
+    };
+
+    // Regular entities (one draw call each)
+    scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
+        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
+        const Material& mat = scene.materials[mesh.materialIndex];
+
+        SceneConstantBuffer& scb = mapped[drawIdx];
+        scb.model = tf.world * this->matModel;
+        vec4 albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
+        fillPerFrame(scb, mat, albedo);
 
         if (mat.reflective && !anyReflective) {
             anyReflective = true;
-            // Extract translation from world matrix (row 3 in row-major XMFLOAT4X4)
-            const auto& m = scb.model;
-            reflectivePos = vec3(m._41, m._42, m._43);
+            reflectivePos = vec3(scb.model._41, scb.model._42, scb.model._43);
         }
 
-        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset });
+        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset, 1, drawIdx });
         drawIndexToEntity.push_back(e);
         drawIdx++;
     });
 
-    uint32_t entityCount = drawIdx;
+    // Instanced groups (one draw call per group, N structured buffer slots)
+    scene.instanceQuery.each([&](flecs::entity e, const Transform& /*groupTf*/,
+                                 const InstanceGroup& group) {
+        uint32_t N = static_cast<uint32_t>(group.transforms.size());
+        if (N == 0) {
+            return;
+        }
+        assert(drawIdx + N <= Scene::maxDrawsPerFrame / 3);
+        const Material& mat = scene.materials[group.mesh.materialIndex];
+        uint32_t baseIdx = drawIdx;
+
+        for (uint32_t i = 0; i < N; ++i) {
+            SceneConstantBuffer& scb = mapped[drawIdx];
+            scb.model = group.transforms[i] * this->matModel;
+            vec4 albedo = (i < group.albedoOverrides.size() && group.albedoOverrides[i].w > 0.0f)
+                              ? group.albedoOverrides[i]
+                              : mat.albedo;
+            fillPerFrame(scb, mat, albedo);
+            if (i < group.roughnessOverrides.size()) {
+                scb.roughness = group.roughnessOverrides[i];
+            }
+            if (i < group.metallicOverrides.size()) {
+                scb.metallic = group.metallicOverrides[i];
+            }
+            if (i < group.emissiveStrengthOverrides.size()) {
+                scb.emissiveStrength = group.emissiveStrengthOverrides[i];
+            }
+
+            if (mat.reflective && !anyReflective) {
+                anyReflective = true;
+                reflectivePos = vec3(scb.model._41, scb.model._42, scb.model._43);
+            }
+
+            drawIndexToEntity.push_back(e);
+            drawIdx++;
+        }
+
+        drawCmds.push_back(
+            { group.mesh.indexCount, group.mesh.indexOffset, group.mesh.vertexOffset, N, baseIdx }
+        );
+    });
+
+    uint32_t totalSlots = drawIdx;
 
     // Shadow draw data (same model transforms, light viewProj instead of camera viewProj)
     if (shadowEnabled) {
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            SceneConstantBuffer& shadow = mapped[entityCount + i];
+        for (uint32_t i = 0; i < totalSlots; ++i) {
+            SceneConstantBuffer& shadow = mapped[totalSlots + i];
             shadow.model = mapped[i].model;
             shadow.viewProj = lightViewProj;
         }
     }
 
-    this->lastFrameObjectCount = entityCount;
+    this->lastFrameObjectCount = totalSlots;
 
     // --- Shadow pass ---
     if (shadowEnabled) {
@@ -206,10 +255,10 @@ void Application::render()
         );
         cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
 
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, entityCount + i, 0);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, totalSlots + drawCmds[i].baseDrawIndex, 0);
             cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }
@@ -245,9 +294,9 @@ void Application::render()
 
         // Write cubemap draw data: non-reflective entities only, 6 copies with different viewProj
         // Placed at offset 2*entityCount in the structured buffer
-        uint32_t cubemapBaseIdx = 2 * entityCount;
+        uint32_t cubemapBaseIdx = 2 * totalSlots;
         std::vector<uint32_t> nonReflectiveIndices;
-        for (uint32_t i = 0; i < entityCount; ++i) {
+        for (uint32_t i = 0; i < totalSlots; ++i) {
             if (mapped[i].reflective < 0.5f) {
                 nonReflectiveIndices.push_back(i);
             }
@@ -388,10 +437,10 @@ void Application::render()
         );
         cmdList->SetGraphicsRootDescriptorTable(0, prepassSrv);
 
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
             cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }
@@ -469,11 +518,11 @@ void Application::render()
 
         cmdList->OMSetStencilRef(1);
         uint32_t currentVertexCount = 0;
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            currentVertexCount += drawCmds[i].indexCount;
-            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
+            currentVertexCount += drawCmds[i].indexCount * drawCmds[i].instanceCount;
+            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
             cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }
@@ -559,10 +608,10 @@ void Application::render()
         );
         cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
 
-        for (uint32_t i = 0; i < entityCount; ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
+            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
             cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
+                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
                 static_cast<INT>(drawCmds[i].vertexOffset), 0
             );
         }

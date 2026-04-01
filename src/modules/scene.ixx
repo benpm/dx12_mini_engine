@@ -85,6 +85,12 @@ export class Scene
         ecsWorld.query<const Transform, const MeshRef>()
     };
     flecs::query<Transform, Animated> animQuery{ ecsWorld.query<Transform, Animated>() };
+    flecs::query<const Transform, const InstanceGroup> instanceQuery{
+        ecsWorld.query<const Transform, const InstanceGroup>()
+    };
+    flecs::query<InstanceGroup, InstanceAnimation> instanceAnimQuery{
+        ecsWorld.query<InstanceGroup, InstanceAnimation>()
+    };
     flecs::query<PointLight> lightQuery{ ecsWorld.query<PointLight>() };
 
     ComPtr<ID3D12Resource> megaVB;

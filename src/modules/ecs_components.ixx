@@ -10,4 +10,7 @@ export using ::Transform;
 export using ::Animated;
 export using ::Pickable;
 export using ::MeshRef;
+export using ::InstanceGroup;
+export using ::InstanceAnimation;
+export using ::TerrainEntity;
 export using ::PointLight;

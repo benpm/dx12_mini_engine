@@ -1,26 +1,26 @@
 {
     "camera": {
-        "fov": 0.959931,
+        "fov": 1.0,
         "nearPlane": 0.1,
-        "farPlane": 100.0,
-        "yaw": -0.5,
-        "pitch": 0.5,
-        "radius": 8.0
+        "farPlane": 200.0,
+        "yaw": 1.5708,
+        "pitch": 0.42,
+        "radius": 30.0
     },
     "bloom": {
         "threshold": 1.7,
-        "intensity": 0.1,
+        "intensity": 0.12,
         "tonemapMode": 2
     },
     "dirLight": {
-        "dir": { "x": 0.5, "y": -0.8, "z": 0.3 },
-        "brightness": 3.0,
+        "dir": { "x": 0.4, "y": -0.7, "z": 0.6 },
+        "brightness": 3.5,
         "color": { "x": 1.0, "y": 0.95, "z": 0.85 }
     },
     "fog": {
-        "startY": -4.0,
-        "density": 0.4,
-        "color": { "x": 0.1, "y": 0.35, "z": 0.45 }
+        "startY": -30.0,
+        "density": 0.2,
+        "color": { "x": 0.05, "y": 0.05, "z": 0.08 }
     },
     "shadow": {
         "enabled": true,
@@ -28,25 +28,25 @@
         "rasterDepthBias": 1000,
         "rasterSlopeBias": 1.0,
         "rasterBiasClamp": 0.0,
-        "lightDistance": 25.0,
-        "orthoSize": 30.0,
+        "lightDistance": 40.0,
+        "orthoSize": 60.0,
         "nearPlane": 0.1,
-        "farPlane": 60.0
+        "farPlane": 100.0
     },
     "cubemap": {
-        "enabled": true,
+        "enabled": false,
         "resolution": 128,
         "nearPlane": 0.1,
         "farPlane": 100.0
     },
     "pointLights": {
-        "brightness": 0.1,
-        "ambient": 0.01,
+        "brightness": 0.0,
+        "ambient": 0.03,
         "lights": [{}, {}, {}, {}, {}, {}, {}, {}]
     },
     "spawning": {
-        "stopped": false,
-        "autoStop": true,
+        "stopped": true,
+        "autoStop": false,
         "stopFrameMs": 10.0,
         "batchSize": 50
     },
@@ -54,18 +54,29 @@
         "vsync": true,
         "animateEntities": true,
         "lightAnimSpeed": 1.0,
-        "showBillboards": true
+        "showBillboards": false
     },
-    "terrain": {},
-    "bgColor": {},
+    "terrain": {
+        "gridSize": 256,
+        "worldSize": 100.0,
+        "heightScale": 12.0,
+        "octaves": 6,
+        "frequency": 0.02,
+        "seed": 42,
+        "materialAlbedo": { "x": 0.05, "y": 0.15, "z": 0.25, "w": 1.0 },
+        "materialRoughness": 0.3,
+        "positionY": -30.0
+    },
+    "bgColor": { "x": 0.04, "y": 0.04, "z": 0.06 },
     "materials": [],
     "entities": [],
+    "instanceGroups": [],
     "runtime": {
         "useWarp": true,
         "hideWindow": true,
         "screenshotFrame": 10,
         "exitAfterScreenshot": true,
-        "spawnPerFrame": 6,
+        "spawnPerFrame": 0,
         "skipImGui": true
     }
 }

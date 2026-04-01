@@ -45,9 +45,9 @@ cbuffer OutlineParams : register(b1)
     float outlineB;
 };
 
-float4 main(VertexIn IN) : SV_Position
+float4 main(VertexIn IN, uint instanceID : SV_InstanceID) : SV_Position
 {
-    SceneCB cb = drawData[drawIndex];
+    SceneCB cb = drawData[drawIndex + instanceID];
     float4 worldPos = mul(cb.Model, float4(IN.Position, 1.0f));
     float3 worldNormal = normalize(mul((float3x3)cb.Model, IN.Normal));
     worldPos.xyz += worldNormal * outlineWidth;

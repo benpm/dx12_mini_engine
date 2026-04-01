@@ -297,6 +297,7 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     megaVBUsed = 0;
     megaIBUsed = 0;
     ecsWorld.delete_with<MeshRef>();
+    ecsWorld.delete_with<InstanceGroup>();
     spawnableMeshRefs.clear();
     spawnableMeshNames.clear();
     spawnTimer = 0.0f;

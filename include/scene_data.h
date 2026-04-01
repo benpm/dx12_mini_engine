@@ -89,6 +89,15 @@ struct EntityData
     std::optional<Animated> animated;
 };
 
+struct InstanceGroupData
+{
+    std::string meshName;
+    std::string materialName;
+    std::vector<vec3> positions;
+    std::vector<float> scales;
+    std::vector<vec4> albedoOverrides;
+};
+
 struct RuntimeData
 {
     bool useWarp = false;
@@ -116,5 +125,6 @@ struct SceneFileData
     vec3 bgColor;
     std::vector<Material> materials;
     std::vector<EntityData> entities;
+    std::vector<InstanceGroupData> instanceGroups;
     RuntimeData runtime;
 };

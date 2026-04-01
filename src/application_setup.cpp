@@ -333,7 +333,7 @@ bool Application::loadContent()
 
         Transform tf;
         tf.world = translate(0.0f, tp.positionY, 0.0f);
-        scene.ecsWorld.entity().set(tf).set(terrainMesh).add<Pickable>();
+        scene.ecsWorld.entity().set(tf).set(terrainMesh).add<Pickable>().add<TerrainEntity>();
         spdlog::info(
             "Terrain: {}x{} grid, {} verts, {} tris", tp.gridSize, tp.gridSize, terrainVerts.size(),
             terrainIndices.size() / 3

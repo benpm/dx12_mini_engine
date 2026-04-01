@@ -3,6 +3,7 @@
 #include "math_types.h"
 
 #include <cstdint>
+#include <vector>
 
 // World-space transform
 struct Transform
@@ -46,4 +47,29 @@ struct MeshRef
     int materialIndex{ 0 };
     // Per-entity albedo override; w==0 means "use material albedo"
     vec4 albedoOverride{ 0.0f, 0.0f, 0.0f, 0.0f };
+};
+
+// GPU-instanced group: many instances of a single mesh drawn in one call
+struct InstanceGroup
+{
+    MeshRef mesh;
+    std::vector<mat4> transforms;
+    std::vector<vec4> albedoOverrides;
+    std::vector<float> roughnessOverrides;         // empty = use material value
+    std::vector<float> metallicOverrides;          // empty = use material value
+    std::vector<float> emissiveStrengthOverrides;  // empty = use material value
+};
+
+// Tag: marks the procedurally-generated terrain entity
+struct TerrainEntity
+{
+};
+
+// Per-frame Y-axis rotation for an InstanceGroup entity
+struct InstanceAnimation
+{
+    float rotationSpeed;  // rad/s
+    float currentAngle = 0.0f;
+    std::vector<vec3> positions;  // per-instance base position (no rotation)
+    std::vector<float> scales;    // per-instance uniform scale
 };

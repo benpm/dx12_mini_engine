@@ -44,9 +44,9 @@ struct VertexOut
     float4 Position : SV_Position;
 };
 
-VertexOut main(VertexIn IN)
+VertexOut main(VertexIn IN, uint instanceID : SV_InstanceID)
 {
-    SceneCB cb = drawData[drawIndex];
+    SceneCB cb = drawData[drawIndex + instanceID];
     VertexOut OUT;
     float4 worldPos = mul(cb.Model, float4(IN.Position, 1.0f));
     OUT.WorldPos = worldPos.xyz;
@@ -54,6 +54,6 @@ VertexOut main(VertexIn IN)
     // Normal to world space (assumes uniform scale; use inverse-transpose for non-uniform)
     OUT.Normal = normalize(mul((float3x3)cb.Model, IN.Normal));
     OUT.UV = IN.UV;
-    OUT.DrawIndex = drawIndex;
+    OUT.DrawIndex = drawIndex + instanceID;
     return OUT;
 }

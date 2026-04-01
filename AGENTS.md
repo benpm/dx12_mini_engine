@@ -66,7 +66,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `command_queue.ixx`    | ID3D12CommandQueue + fence sync + command allocator pooling                  |
 | `camera.ixx`           | Re-exports Camera + OrbitCamera from `include/camera_types.h`                |
 | `input.ixx`            | Button/Key enums, gainput integration (uses `module :private;` for global)   |
-| `ecs_components.ixx`   | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, PointLight) |
+| `ecs_components.ixx`   | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime   |
 | `billboard.ixx`        | `BillboardRenderer` class — point light sprite rendering                     |
 | `object_picking.ixx`   | `ObjectPicker` class — ID render pass, readback for entity picking           |
@@ -80,7 +80,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 - **`export import` only for types in public API** — use plain `import` for internal dependencies
 - **`module :private;`** for tiny implementations — avoids separate `.cpp` for <20 lines
 - **`include/math_types.h`** defines vec2/vec3/vec4/mat4 and math functions — included by both modules and plain TUs (e.g. `glaze_impl.cpp`)
-- **`include/ecs_types.h`** defines Transform, Animated, Pickable, MeshRef, PointLight — included by `ecs_components.ixx`, `scene_data.h`
+- **`include/ecs_types.h`** defines Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight — included by `ecs_components.ixx`, `scene_data.h`
 - **`include/material_types.h`** defines Material, MaterialPreset — included by `scene.ixx` and `scene_data.h`
 - **`include/camera_types.h`** defines Camera (abstract base) + OrbitCamera — included by `camera.ixx` and `scene_data.h`; `OrbitCamera` used directly in `SceneFileData` (glz::meta excludes `aspectRatio`)
 - **`include/terrain_types.h`** defines TerrainParams (geometry + material/position fields) — included by `terrain.ixx` and `scene_data.h`; replaces former `TerrainData` duplicate
@@ -92,7 +92,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 Application owns three subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`.
 
 **Scene** (`scene.ixx` + `scene.cpp`) — owns all scene state:
-- ECS world (`flecs::world`), cached queries (`drawQuery`, `animQuery`, `lightQuery`), materials, spawn system
+- ECS world (`flecs::world`), cached queries (`drawQuery`, `instanceQuery`, `instanceAnimQuery`, `animQuery`, `lightQuery`), materials, spawn system
 - Mega vertex/index buffers (1M verts, 4M indices, default heap)
 - Triple-buffered structured draw-data buffers (`SceneConstantBuffer`)
 - Methods: `createMegaBuffers()`, `createDrawDataBuffers()`, `appendToMegaBuffers()`, `clearScene()`, `loadTeapot()`, `loadGltf()`
@@ -139,7 +139,8 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 - **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 - Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`.
 - **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO + shadow PSO via `createScenePSO()` / `createShadowPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both).
-- **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary.
+- **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary. `scene.instanceAnimQuery.each<InstanceGroup, InstanceAnimation>()` spins each instance group in place by rebuilding transforms each frame from stored base positions/scales.
+- **GPU instancing**: `InstanceGroup` component stores N transforms and per-instance material overrides (albedo, roughness, metallic, emissiveStrength). Rendered via one `DrawIndexedInstanced(..., N, ...)` per group. Vertex/outline shaders use `SV_InstanceID` to index into `drawData[drawIndex + instanceID]`. `totalSlots` = regular entity count + sum of all instance group sizes; shadow/cubemap draw data stored at offsets `totalSlots` and `2*totalSlots`.
 
 ### Rendering pipeline
 
@@ -158,9 +159,11 @@ update()  →  render()
               └─ ImGui overlay    (directly to backbuffer)
 ```
 
-**Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `entityCount` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
+**GPU instancing**: Two draw modes coexist. Regular entities (`MeshRef` component) get one `DrawIndexedInstanced(..., 1, ...)` call each. `InstanceGroup` entities batch N instances of a single mesh into one `DrawIndexedInstanced(..., N, ...)` call. Both write consecutive `SceneConstantBuffer` entries in the structured buffer. Vertex shaders use `drawData[drawIndex + SV_InstanceID]` — backwards-compatible since `SV_InstanceID=0` for non-instanced draws. `drawIndexToEntity` has one entry per instance slot; picking any instance of a group selects the group entity. Instance groups are not `Pickable` and not animated. `DrawCmd` struct carries `instanceCount` and `baseDrawIndex` for unified draw loop logic across all passes.
 
-**Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*entityCount`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes. If there are no non-reflective entities, the cubemap pass is skipped and emits a warning.
+**Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow draw data stored at structured buffer offset `totalSlots` (same model transforms, light viewProj). Shadow PSO uses front-face culling + depth bias to reduce peter-panning/acne.
+
+**Cubemap reflections**: Dynamic environment cubemap (`R11G11B10_FLOAT`, configurable resolution, default 128). Rendered from the first reflective entity's position. Only non-reflective entities are drawn into the cubemap (no recursion). Materials with `reflective=true` sample the cubemap via `reflect(-V, N)` in the pixel shader, weighted by Fresnel and inverse roughness. Cubemap draw data stored at structured buffer offset `2*totalSlots`. Resources: `cubemapTexture` (6 array slices), `cubemapDepth`, `cubemapRtvHeap` (6 RTVs), `cubemapDsvHeap` (6 DSVs), SRV at `sceneSrvHeap[nBuffers+1]`. `createCubemapResources()` recreates when resolution changes. If there are no non-reflective entities, the cubemap pass is skipped and emits a warning.
 
 **SSAO**: Screen-Space Ambient Occlusion computed in two passes. Normal pre-pass renders world-space normals to `R8G8B8A8_UNORM` normalRT; main depth buffer transitions DEPTH_WRITE → PIXEL_SHADER_RESOURCE for SSAO read, then back. SSAO shader reconstructs view-space position from depth + invProj, transforms normals to view space, builds TBN from tiled 4×4 random noise, samples 32-point hemisphere kernel, range-checks occlusion. Blur pass applies 3×3 box filter. Output (`ssaoBlurRT`, `R8_UNORM`) SRV at `sceneSrvHeap[nBuffers+2]` (root param [5], t3 in pixel shader). Scene PSO uses `normalPSO` (vertex_shader.hlsl + normal_ps.hlsl → normalRT). `SsaoRenderer::enabled` skips all passes when false.
 
@@ -192,7 +195,7 @@ Cook-Torrance BRDF:
 - **Model files**: stored in `resources/models/` (teapot.obj/mtl + GLB primitives).
 
 ### Scene file system
-JSON scene files (via glaze) store all configurable scene state: camera, bloom, lighting, fog, shadows, cubemap, terrain params, materials, entities, and display settings. Entities reference meshes by name (resolved against `spawnableMeshNames` on load).
+JSON scene files (via glaze) store all configurable scene state: camera, bloom, lighting, fog, shadows, cubemap, terrain params, materials, entities, instance groups, and display settings. Entities and instance groups reference meshes by name (resolved against `spawnableMeshNames` on load). `InstanceGroupData` stores per-instance positions, scales, and albedo overrides.
 
 - **CLI**: first positional argument is a scene file path (replaces old `--test` flag)
 - **Scene files**: stored in `resources/scenes/` (`SCENES_DIR` CMake define)
@@ -285,7 +288,10 @@ With Tracy v0.13.1, `TRACY_CALLSTACK` is defined as `0` by default in `Tracy.hpp
 Fullscreen transitions can generate synchronous `WM_SIZE` events that trigger `onResize()` and swap chain `ResizeBuffers()`. Queue UI fullscreen requests via `pendingFullscreenChange` / `pendingFullscreenValue` and apply them at the start of `update()`.
 
 ### PointLight entities survive clearScene()
-`clearScene()` removes entities via `delete_with<MeshRef>()` — only entities that have a `MeshRef` component are deleted. `PointLight` entities have no `MeshRef`, so they persist across scene resets. Light data is restored from JSON via `lightQuery.each(...)` in `applySceneData()`.
+`clearScene()` removes entities via `delete_with<MeshRef>()` and `delete_with<InstanceGroup>()` — only entities with those components are deleted. `PointLight` entities have no `MeshRef`, so they persist across scene resets. Light data is restored from JSON via `lightQuery.each(...)` in `applySceneData()`.
+
+### TerrainEntity tag and positionY
+The terrain entity is tagged with `TerrainEntity` at creation (in `loadContent()`). `applySceneData()` queries for `TerrainEntity` entities to update their `Transform.world = translate(0, positionY, 0)` from the scene file. This must be guarded by `contentLoaded` since terrain is created in the Application constructor (before the caller can invoke `applySceneData`).
 
 ### tinygltf in a separate TU
 `TINYGLTF_IMPLEMENTATION` and `STB_IMAGE_IMPLEMENTATION` must be in `src/gltf_impl.cpp` (not in `application.cpp`) to avoid `stb_image` / `Windows.h` macro conflicts in the module implementation file.

@@ -117,6 +117,23 @@ template <> struct glz::meta<Material>
     );
 };
 
+template <> struct glz::meta<InstanceGroupData>
+{
+    using T = InstanceGroupData;
+    static constexpr auto value = glz::object(
+        "meshName",
+        &T::meshName,
+        "materialName",
+        &T::materialName,
+        "positions",
+        &T::positions,
+        "scales",
+        &T::scales,
+        "albedoOverrides",
+        &T::albedoOverrides
+    );
+};
+
 bool readSceneJson(const std::string& path, SceneFileData& out, std::string& err)
 {
     std::string buf;
