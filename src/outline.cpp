@@ -83,6 +83,8 @@ void OutlineRenderer::render(
     ID3D12DescriptorHeap* sceneSrvHeap,
     UINT srvDescSize,
     uint32_t curBackBufIdx,
+    D3D12_GPU_VIRTUAL_ADDRESS perFrameAddr,
+    D3D12_GPU_VIRTUAL_ADDRESS perPassAddr,
     D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv,
     D3D12_CPU_DESCRIPTOR_HANDLE dsv,
     const D3D12_VIEWPORT& viewport,
@@ -106,18 +108,22 @@ void OutlineRenderer::render(
 
     ID3D12DescriptorHeap* heaps[] = { sceneSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
+
+    cmdList->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+    cmdList->SetGraphicsRootConstantBufferView(1, perPassAddr);
+
     CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(
         sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
         srvDescSize
     );
-    cmdList->SetGraphicsRootDescriptorTable(0, srvHandle);
+    cmdList->SetGraphicsRootDescriptorTable(4, srvHandle);
 
     auto drawOutline = [&](flecs::entity e, float width, float r, float g, float b) {
         for (uint32_t i = 0; i < static_cast<uint32_t>(drawIndexToEntity.size()); ++i) {
             if (drawIndexToEntity[i] == e) {
                 float params[4] = { width, r, g, b };
-                cmdList->SetGraphicsRoot32BitConstants(4, 4, params, 0);
-                cmdList->SetGraphicsRoot32BitConstant(1, i, 0);
+                cmdList->SetGraphicsRoot32BitConstants(3, 4, params, 0);
+                cmdList->SetGraphicsRoot32BitConstant(2, i, 0);
                 cmdList->DrawIndexedInstanced(
                     drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
                     static_cast<INT>(drawCmds[i].vertexOffset), 0

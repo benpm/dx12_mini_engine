@@ -195,15 +195,40 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
 {
     for (uint32_t i = 0; i < nBuffers; ++i) {
         const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc =
-            CD3DX12_RESOURCE_DESC::Buffer(maxDrawsPerFrame * sizeof(SceneConstantBuffer));
+        
+        // PerObjectBuffer
+        const CD3DX12_RESOURCE_DESC descObj =
+            CD3DX12_RESOURCE_DESC::Buffer(maxDrawsPerFrame * sizeof(PerObjectData));
         chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&drawDataBuffer[i])
+            &heapProps, D3D12_HEAP_FLAG_NONE, &descObj, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&perObjectBuffer[i])
         ));
-        void* mapped = nullptr;
-        chkDX(drawDataBuffer[i]->Map(0, nullptr, &mapped));
-        drawDataMapped[i] = static_cast<SceneConstantBuffer*>(mapped);
+        void* mappedObj = nullptr;
+        chkDX(perObjectBuffer[i]->Map(0, nullptr, &mappedObj));
+        perObjectMapped[i] = static_cast<PerObjectData*>(mappedObj);
+
+        // PerFrameBuffer (Constant Buffer requires 256 byte alignment)
+        const CD3DX12_RESOURCE_DESC descFrame =
+            CD3DX12_RESOURCE_DESC::Buffer((sizeof(PerFrameCB) + 255) & ~255);
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &descFrame, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&perFrameBuffer[i])
+        ));
+        void* mappedFrame = nullptr;
+        chkDX(perFrameBuffer[i]->Map(0, nullptr, &mappedFrame));
+        perFrameMapped[i] = static_cast<PerFrameCB*>(mappedFrame);
+
+        // PerPassBuffer (Array of CBs to handle different passes like main, shadow, 6x cubemap)
+        // Let's allocate enough for 1 main + 1 shadow + 6 cubemap + 1 normal + 1 id + extras = 16 passes per frame
+        const CD3DX12_RESOURCE_DESC descPass =
+            CD3DX12_RESOURCE_DESC::Buffer(((sizeof(PerPassCB) + 255) & ~255) * 16);
+        chkDX(device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &descPass, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&perPassBuffer[i])
+        ));
+        void* mappedPass = nullptr;
+        chkDX(perPassBuffer[i]->Map(0, nullptr, &mappedPass));
+        perPassMapped[i] = static_cast<PerPassCB*>(mappedPass);
     }
 
     {
@@ -223,14 +248,14 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = maxDrawsPerFrame;
-        srvDesc.Buffer.StructureByteStride = sizeof(SceneConstantBuffer);
+        srvDesc.Buffer.StructureByteStride = sizeof(PerObjectData);
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
         CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
             sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i),
             sceneSrvDescSize
         );
-        device->CreateShaderResourceView(drawDataBuffer[i].Get(), &srvDesc, handle);
+        device->CreateShaderResourceView(perObjectBuffer[i].Get(), &srvDesc, handle);
     }
 
     spdlog::info("Created draw-data structured buffers ({} max draws)", maxDrawsPerFrame);
@@ -645,4 +670,84 @@ bool Scene::loadGltf(
         "Loaded GLB: {} entity(ies), {} material(s)", ecsWorld.count<MeshRef>(), materials.size()
     );
     return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// Scene::populateDrawCommands
+// ---------------------------------------------------------------------------
+void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
+{
+    drawCmds.clear();
+    drawIndexToEntity.clear();
+    uint32_t drawIdx = 0;
+    anyReflective = false;
+    reflectivePos = vec3{};
+
+    PerObjectData* objectMapped = perObjectMapped[curBackBufIdx];
+
+    auto fillPerObject = [&](PerObjectData& pod, const Material& mat, const vec4& albedo) {
+        pod.albedo = albedo;
+        pod.roughness = mat.roughness;
+        pod.metallic = mat.metallic;
+        pod.emissiveStrength = mat.emissiveStrength;
+        pod.reflective = mat.reflective ? 1.0f : 0.0f;
+        pod.emissive = mat.emissive;
+    };
+
+    // Regular entities
+    drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
+        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
+        const Material& mat = materials[mesh.materialIndex];
+
+        PerObjectData& pod = objectMapped[drawIdx];
+        pod.model = tf.world * matModel;
+        vec4 albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
+        fillPerObject(pod, mat, albedo);
+
+        if (mat.reflective && !anyReflective) {
+            anyReflective = true;
+            reflectivePos = vec3(pod.model._41, pod.model._42, pod.model._43);
+        }
+
+        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset, 1, drawIdx });
+        drawIndexToEntity.push_back(e);
+        drawIdx++;
+    });
+
+    // Instanced groups
+    instanceQuery.each([&](flecs::entity e, const Transform& /*groupTf*/, const InstanceGroup& group) {
+        uint32_t N = static_cast<uint32_t>(group.transforms.size());
+        if (N == 0) return;
+        
+        assert(drawIdx + N <= Scene::maxDrawsPerFrame / 3);
+        const Material& mat = materials[group.mesh.materialIndex];
+        uint32_t baseIdx = drawIdx;
+
+        for (uint32_t i = 0; i < N; ++i) {
+            PerObjectData& pod = objectMapped[drawIdx];
+            pod.model = group.transforms[i] * matModel;
+            vec4 albedo = (i < group.albedoOverrides.size() && group.albedoOverrides[i].w > 0.0f)
+                              ? group.albedoOverrides[i]
+                              : mat.albedo;
+            fillPerObject(pod, mat, albedo);
+            if (i < group.roughnessOverrides.size()) pod.roughness = group.roughnessOverrides[i];
+            if (i < group.metallicOverrides.size()) pod.metallic = group.metallicOverrides[i];
+            if (i < group.emissiveStrengthOverrides.size()) pod.emissiveStrength = group.emissiveStrengthOverrides[i];
+
+            if (mat.reflective && !anyReflective) {
+                anyReflective = true;
+                reflectivePos = vec3(pod.model._41, pod.model._42, pod.model._43);
+            }
+
+            drawIndexToEntity.push_back(e);
+            drawIdx++;
+        }
+
+        drawCmds.push_back(
+            { group.mesh.indexCount, group.mesh.indexOffset, group.mesh.vertexOffset, N, baseIdx }
+        );
+    });
+
+    totalSlots = drawIdx;
 }

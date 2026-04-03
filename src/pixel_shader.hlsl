@@ -10,21 +10,11 @@ struct PixelIn
     float4 Position : SV_Position;
 };
 
-struct SceneCB
+cbuffer PerFrame : register(b0)
 {
-    matrix Model;
-    matrix ViewProj;
-    float4 CameraPos;
     float4 AmbientColor;
     float4 LightPos[8];
     float4 LightColor[8];
-    float4 Albedo;
-    float Roughness;
-    float Metallic;
-    float EmissiveStrength;
-    float Reflective;
-    float4 Emissive;
-    // Directional light (shadow-casting)
     float4 DirLightDir;
     float4 DirLightColor;
     matrix LightViewProj;
@@ -35,7 +25,24 @@ struct SceneCB
     float4 FogColor;
 };
 
-StructuredBuffer<SceneCB> drawData : register(t0);
+cbuffer PerPass : register(b1)
+{
+    matrix ViewProj;
+    float4 CameraPos;
+};
+
+struct PerObjectData
+{
+    matrix Model;
+    float4 Albedo;
+    float Roughness;
+    float Metallic;
+    float EmissiveStrength;
+    float Reflective;
+    float4 Emissive;
+};
+
+StructuredBuffer<PerObjectData> drawData : register(t0);
 Texture2D<float> shadowMapTex : register(t1);
 TextureCube<float3> envMap : register(t2);
 Texture2D<float> ssaoTex : register(t3);
@@ -93,15 +100,15 @@ float calcShadow(float3 worldPos, matrix lightVP, float bias, float texelSize)
 
 float4 main(PixelIn IN) : SV_Target
 {
-    SceneCB cb = drawData[IN.DrawIndex];
+    PerObjectData objData = drawData[IN.DrawIndex];
 
-    float3 albedo = cb.Albedo.rgb;
-    float roughness = clamp(cb.Roughness, 0.04f, 1.0f);
-    float metallic = saturate(cb.Metallic);
-    float3 emissive = cb.Emissive.rgb * cb.EmissiveStrength;
+    float3 albedo = objData.Albedo.rgb;
+    float roughness = clamp(objData.Roughness, 0.04f, 1.0f);
+    float metallic = saturate(objData.Metallic);
+    float3 emissive = objData.Emissive.rgb * objData.EmissiveStrength;
 
     float3 N = normalize(IN.Normal);
-    float3 V = normalize(cb.CameraPos.xyz - IN.WorldPos);
+    float3 V = normalize(CameraPos.xyz - IN.WorldPos);
     float NdV = max(dot(N, V), 0.0001f);
 
     // Reflectance at normal incidence (dialectric: 0.04, metal: albedo)
@@ -110,12 +117,12 @@ float4 main(PixelIn IN) : SV_Target
     // --- Punctual lights (up to 8) ---
     float3 Lo = 0.0f;
     for (int i = 0; i < 8; ++i) {
-        float3 toLight = cb.LightPos[i].xyz - IN.WorldPos;
+        float3 toLight = LightPos[i].xyz - IN.WorldPos;
         float dist = length(toLight);
         float3 L = toLight / max(dist, 0.0001f);
         float3 H = normalize(V + L);
         float attenuation = 1.0f / max(dist * dist * 0.01f, 0.0001f);
-        float3 radiance = cb.LightColor[i].rgb * attenuation;
+        float3 radiance = LightColor[i].rgb * attenuation;
 
         float NdL = max(dot(N, L), 0.0f);
 
@@ -133,10 +140,10 @@ float4 main(PixelIn IN) : SV_Target
 
     // --- Directional light with shadow ---
     {
-        float3 L = normalize(cb.DirLightDir.xyz);
+        float3 L = normalize(DirLightDir.xyz);
         float3 H = normalize(V + L);
         float NdL = max(dot(N, L), 0.0f);
-        float3 radiance = cb.DirLightColor.rgb;
+        float3 radiance = DirLightColor.rgb;
 
         float D = DistributionGGX(N, H, roughness);
         float G = GeometrySmith(NdV, NdL, roughness);
@@ -145,18 +152,18 @@ float4 main(PixelIn IN) : SV_Target
         float3 kD = (1.0f - F) * (1.0f - metallic);
 
         float shadow =
-            calcShadow(IN.WorldPos, cb.LightViewProj, cb.ShadowBias, cb.ShadowMapTexelSize);
+            calcShadow(IN.WorldPos, LightViewProj, ShadowBias, ShadowMapTexelSize);
         Lo += (kD * albedo / PI + specular) * radiance * NdL * shadow;
     }
 
     // Simple ambient term with SSAO
     float ao = ssaoTex.Load(int3((int2)IN.Position.xy, 0));
-    float3 ambient = cb.AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f) * ao;
+    float3 ambient = AmbientColor.rgb * albedo * (1.0f - metallic * 0.9f) * ao;
 
     float3 color = ambient + Lo + emissive;
 
     // Cubemap environment reflections
-    if (cb.Reflective > 0.5f) {
+    if (objData.Reflective > 0.5f) {
         float3 R = reflect(-V, N);
         float3 envColor = envMap.SampleLevel(envSampler, R, roughness * 4.0f).rgb;
         float3 F = FresnelSchlick(NdV, F0);
@@ -165,17 +172,17 @@ float4 main(PixelIn IN) : SV_Target
     }
 
     // Ocean fog: thick underwater, lighter near surface, darker with depth
-    if (cb.FogDensity > 0.0f) {
-        float depth = max(cb.FogStartY - IN.WorldPos.y, 0.0f);
-        float fogFactor = 1.0f - exp(-depth * cb.FogDensity * 3.0f);
-        float dist = length(IN.WorldPos - cb.CameraPos.xyz);
-        float distFog = 1.0f - exp(-dist * cb.FogDensity * 0.01f);
+    if (FogDensity > 0.0f) {
+        float depth = max(FogStartY - IN.WorldPos.y, 0.0f);
+        float fogFactor = 1.0f - exp(-depth * FogDensity * 3.0f);
+        float dist = length(IN.WorldPos - CameraPos.xyz);
+        float distFog = 1.0f - exp(-dist * FogDensity * 0.01f);
         fogFactor = saturate(max(fogFactor, distFog));
         // Darken fog color with depth: surface = fogColor, deep = near-black
-        float darkening = exp(-depth * cb.FogDensity * 0.5f);
-        float3 deepColor = cb.FogColor.rgb * darkening;
+        float darkening = exp(-depth * FogDensity * 0.5f);
+        float3 deepColor = FogColor.rgb * darkening;
         color = lerp(color, deepColor, fogFactor);
     }
 
-    return float4(color, cb.Albedo.a);
+    return float4(color, objData.Albedo.a);
 }

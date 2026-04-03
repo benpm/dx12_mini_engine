@@ -616,8 +616,8 @@ void Application::update()
     {
         hoveredEntity = flecs::entity{};
         uint32_t pickIdx = picker.pickedIndex;
-        if (pickIdx != ObjectPicker::invalidID && pickIdx < drawIndexToEntity.size()) {
-            hoveredEntity = drawIndexToEntity[pickIdx];
+        if (pickIdx != ObjectPicker::invalidID && pickIdx < scene.drawIndexToEntity.size()) {
+            hoveredEntity = scene.drawIndexToEntity[pickIdx];
         }
 
         bool leftDown = this->inputMap.GetBool(Button::LeftClick);

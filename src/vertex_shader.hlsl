@@ -5,20 +5,11 @@ struct VertexIn
     float2 UV : TEXCOORD0;
 };
 
-struct SceneCB
+cbuffer PerFrame : register(b0)
 {
-    matrix Model;
-    matrix ViewProj;
-    float4 CameraPos;
     float4 AmbientColor;
     float4 LightPos[8];
     float4 LightColor[8];
-    float4 Albedo;
-    float Roughness;
-    float Metallic;
-    float EmissiveStrength;
-    float Reflective;
-    float4 Emissive;
     float4 DirLightDir;
     float4 DirLightColor;
     matrix LightViewProj;
@@ -29,11 +20,29 @@ struct SceneCB
     float4 FogColor;
 };
 
-StructuredBuffer<SceneCB> drawData : register(t0);
-cbuffer DrawIndex : register(b0)
+cbuffer PerPass : register(b1)
+{
+    matrix ViewProj;
+    float4 CameraPos;
+};
+
+cbuffer DrawIndex : register(b2)
 {
     uint drawIndex;
 };
+
+struct PerObjectData
+{
+    matrix Model;
+    float4 Albedo;
+    float Roughness;
+    float Metallic;
+    float EmissiveStrength;
+    float Reflective;
+    float4 Emissive;
+};
+
+StructuredBuffer<PerObjectData> drawData : register(t0);
 
 struct VertexOut
 {
@@ -46,13 +55,13 @@ struct VertexOut
 
 VertexOut main(VertexIn IN, uint instanceID : SV_InstanceID)
 {
-    SceneCB cb = drawData[drawIndex + instanceID];
+    PerObjectData objData = drawData[drawIndex + instanceID];
     VertexOut OUT;
-    float4 worldPos = mul(cb.Model, float4(IN.Position, 1.0f));
+    float4 worldPos = mul(objData.Model, float4(IN.Position, 1.0f));
     OUT.WorldPos = worldPos.xyz;
-    OUT.Position = mul(cb.ViewProj, worldPos);
+    OUT.Position = mul(ViewProj, worldPos);
     // Normal to world space (assumes uniform scale; use inverse-transpose for non-uniform)
-    OUT.Normal = normalize(mul((float3x3)cb.Model, IN.Normal));
+    OUT.Normal = normalize(mul((float3x3)objData.Model, IN.Normal));
     OUT.UV = IN.UV;
     OUT.DrawIndex = drawIndex + instanceID;
     return OUT;

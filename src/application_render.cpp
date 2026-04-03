@@ -53,11 +53,11 @@ void Application::render()
     );
 
     // Compute animated light positions for this frame
-    vec4 animLightPos[SceneConstantBuffer::maxLights] = {};
-    vec4 animLightColor[SceneConstantBuffer::maxLights] = {};
+    vec4 animLightPos[PerFrameCB::maxLights] = {};
+    vec4 animLightColor[PerFrameCB::maxLights] = {};
     int lightIdx = 0;
     scene.lightQuery.each([&](const PointLight& pl) {
-        if (lightIdx >= SceneConstantBuffer::maxLights) {
+        if (lightIdx >= PerFrameCB::maxLights) {
             return;
         }
         animLightPos[lightIdx] = { pl.center.x + pl.amp.x * std::sin(pl.freq.x * lightTime),
@@ -70,7 +70,7 @@ void Application::render()
         lightIdx++;
     });
     billboards.updateInstances(
-        animLightPos, animLightColor, static_cast<uint32_t>(SceneConstantBuffer::maxLights)
+        animLightPos, animLightColor, static_cast<uint32_t>(PerFrameCB::maxLights)
     );
 
     // Directional light shadow map viewProj
@@ -91,112 +91,41 @@ void Application::render()
     }
 
     // --- Fill structured buffer (scene + shadow draw data) ---
-    std::vector<DrawCmd> drawCmds;
-    drawIndexToEntity.clear();
-    uint32_t drawIdx = 0;
-    SceneConstantBuffer* mapped = scene.drawDataMapped[curBackBufIdx];
-    bool anyReflective = false;
-    vec3 reflectivePos{};
+    scene.populateDrawCommands(curBackBufIdx, this->matModel);
+    this->lastFrameObjectCount = scene.totalSlots;
 
-    // Helper: fill per-frame fields shared by all draws
-    auto fillPerFrame = [&](SceneConstantBuffer& scb, const Material& mat, const vec4& albedo) {
-        scb.viewProj = viewProj;
-        scb.cameraPos = cameraPos;
-        scb.ambientColor = ambientColor;
-        for (int li = 0; li < SceneConstantBuffer::maxLights; ++li) {
-            scb.lightPos[li] = animLightPos[li];
-            scb.lightColor[li] = animLightColor[li];
-        }
-        scb.albedo = albedo;
-        scb.roughness = mat.roughness;
-        scb.metallic = mat.metallic;
-        scb.emissiveStrength = mat.emissiveStrength;
-        scb.reflective = mat.reflective ? 1.0f : 0.0f;
-        scb.emissive = mat.emissive;
-        scb.dirLightDir = dirLightDirVec;
-        scb.dirLightColor = dirLightColorVec;
-        scb.lightViewProj = lightViewProj;
-        scb.shadowBias = shadow.bias;
-        scb.shadowMapTexelSize = 1.0f / static_cast<float>(ShadowRenderer::mapSize);
-        scb.fogStartY = fogStartY;
-        scb.fogDensity = fogDensity;
-        scb.fogColor = vec4(fogColor, 0.0f);
+    PerFrameCB* frameMapped = scene.perFrameMapped[curBackBufIdx];
+    PerPassCB* passMappedBase = scene.perPassMapped[curBackBufIdx];
+    auto getPassMapped = [&](uint32_t passIdx) {
+        uint8_t* base = reinterpret_cast<uint8_t*>(passMappedBase);
+        return reinterpret_cast<PerPassCB*>(base + passIdx * ((sizeof(PerPassCB) + 255) & ~255));
+    };
+    auto getPassCBAddress = [&](uint32_t passIdx) {
+        return scene.perPassBuffer[curBackBufIdx]->GetGPUVirtualAddress() +
+               passIdx * ((sizeof(PerPassCB) + 255) & ~255);
     };
 
-    // Regular entities (one draw call each)
-    scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
-        assert(drawIdx < Scene::maxDrawsPerFrame / 3);
-        const Material& mat = scene.materials[mesh.materialIndex];
+    PerObjectData* objectMapped = scene.perObjectMapped[curBackBufIdx];
 
-        SceneConstantBuffer& scb = mapped[drawIdx];
-        scb.model = tf.world * this->matModel;
-        vec4 albedo = mesh.albedoOverride.w > 0.0f ? mesh.albedoOverride : mat.albedo;
-        fillPerFrame(scb, mat, albedo);
-
-        if (mat.reflective && !anyReflective) {
-            anyReflective = true;
-            reflectivePos = vec3(scb.model._41, scb.model._42, scb.model._43);
-        }
-
-        drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset, 1, drawIdx });
-        drawIndexToEntity.push_back(e);
-        drawIdx++;
-    });
-
-    // Instanced groups (one draw call per group, N structured buffer slots)
-    scene.instanceQuery.each([&](flecs::entity e, const Transform& /*groupTf*/,
-                                 const InstanceGroup& group) {
-        uint32_t N = static_cast<uint32_t>(group.transforms.size());
-        if (N == 0) {
-            return;
-        }
-        assert(drawIdx + N <= Scene::maxDrawsPerFrame / 3);
-        const Material& mat = scene.materials[group.mesh.materialIndex];
-        uint32_t baseIdx = drawIdx;
-
-        for (uint32_t i = 0; i < N; ++i) {
-            SceneConstantBuffer& scb = mapped[drawIdx];
-            scb.model = group.transforms[i] * this->matModel;
-            vec4 albedo = (i < group.albedoOverrides.size() && group.albedoOverrides[i].w > 0.0f)
-                              ? group.albedoOverrides[i]
-                              : mat.albedo;
-            fillPerFrame(scb, mat, albedo);
-            if (i < group.roughnessOverrides.size()) {
-                scb.roughness = group.roughnessOverrides[i];
-            }
-            if (i < group.metallicOverrides.size()) {
-                scb.metallic = group.metallicOverrides[i];
-            }
-            if (i < group.emissiveStrengthOverrides.size()) {
-                scb.emissiveStrength = group.emissiveStrengthOverrides[i];
-            }
-
-            if (mat.reflective && !anyReflective) {
-                anyReflective = true;
-                reflectivePos = vec3(scb.model._41, scb.model._42, scb.model._43);
-            }
-
-            drawIndexToEntity.push_back(e);
-            drawIdx++;
-        }
-
-        drawCmds.push_back(
-            { group.mesh.indexCount, group.mesh.indexOffset, group.mesh.vertexOffset, N, baseIdx }
-        );
-    });
-
-    uint32_t totalSlots = drawIdx;
-
-    // Shadow draw data (same model transforms, light viewProj instead of camera viewProj)
-    if (shadow.enabled) {
-        for (uint32_t i = 0; i < totalSlots; ++i) {
-            SceneConstantBuffer& shadowScb = mapped[totalSlots + i];
-            shadowScb.model = mapped[i].model;
-            shadowScb.viewProj = lightViewProj;
-        }
+    // Fill PerFrameCB once
+    frameMapped->ambientColor = ambientColor;
+    for (int li = 0; li < PerFrameCB::maxLights; ++li) {
+        frameMapped->lightPos[li] = animLightPos[li];
+        frameMapped->lightColor[li] = animLightColor[li];
     }
+    frameMapped->dirLightDir = dirLightDirVec;
+    frameMapped->dirLightColor = dirLightColorVec;
+    frameMapped->lightViewProj = lightViewProj;
+    frameMapped->shadowBias = shadow.bias;
+    frameMapped->shadowMapTexelSize = 1.0f / static_cast<float>(ShadowRenderer::mapSize);
+    frameMapped->fogStartY = fogStartY;
+    frameMapped->fogDensity = fogDensity;
+    frameMapped->fogColor = vec4(fogColor, 0.0f);
 
-    this->lastFrameObjectCount = totalSlots;
+    // Main pass PerPassCB (index 0)
+    PerPassCB* mainPass = getPassMapped(0);
+    mainPass->viewProj = viewProj;
+    mainPass->cameraPos = cameraPos;
 
     // --- Render Graph Setup ---
     renderGraph.reset();
@@ -220,6 +149,11 @@ void Application::render()
 
     // --- Shadow pass ---
     if (shadow.enabled) {
+        // Shadow pass PerPassCB (index 1)
+        PerPassCB* shadowPass = getPassMapped(1);
+        shadowPass->viewProj = lightViewProj;
+        shadowPass->cameraPos = vec4(0, 0, 0, 1);  // Not used in shadow pass
+
         renderGraph.addPass(
             "Shadow Pass",
             [&](rg::RenderGraphBuilder& builder) {
@@ -227,20 +161,26 @@ void Application::render()
                     hShadowMap, shadow.dsvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&, shadowPassAddr = getPassCBAddress(1)](ID3D12GraphicsCommandList2* cmd,
+                                                     rg::RenderGraphBuilder& builder) {
                 PROFILE_ZONE_NAMED("Shadow Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Shadow");
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+
+                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                cmd->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+                cmd->SetGraphicsRootConstantBufferView(1, shadowPassAddr);
+
                 shadow.render(
                     cmd, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
-                    scene.sceneSrvDescSize, curBackBufIdx, drawCmds, totalSlots
+                    scene.sceneSrvDescSize, curBackBufIdx, scene.drawCmds, 0  // 0 offset now
                 );
             }
         );
     }
 
     // --- Cubemap pass ---
-    if (cubemapEnabled && anyReflective) {
+    if (cubemapEnabled && scene.anyReflective) {
         renderGraph.addPass(
             "Cubemap Pass",
             [&](rg::RenderGraphBuilder& builder) {
@@ -249,14 +189,13 @@ void Application::render()
                 );
                 builder.readTexture(hShadowMap);
             },
-            [&, totalSlots, reflectivePos](ID3D12GraphicsCommandList2* cmd,
-                                          rg::RenderGraphBuilder& builder) {
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
                 PROFILE_ZONE_NAMED("Cubemap Pass");
 
-                uint32_t cubemapBaseIdx = 2 * totalSlots;
+                uint32_t cubemapBaseIdx = scene.totalSlots;  // Place cubemap object data after main ones
                 std::vector<uint32_t> nonReflectiveIndices;
-                for (uint32_t i = 0; i < totalSlots; ++i) {
-                    if (mapped[i].reflective < 0.5f) {
+                for (uint32_t i = 0; i < scene.totalSlots; ++i) {
+                    if (objectMapped[i].reflective < 0.5f) {
                         nonReflectiveIndices.push_back(i);
                     }
                 }
@@ -267,7 +206,7 @@ void Application::render()
 
                 // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
                 XMVECTOR eyePos =
-                    XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
+                    XMVectorSet(scene.reflectivePos.x, scene.reflectivePos.y, scene.reflectivePos.z, 1.0f);
                 XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
                     XM_PIDIV2, 1.0f, std::max(0.001f, cubemapNearPlane),
                     std::max(cubemapNearPlane + 0.001f, cubemapFarPlane)
@@ -286,17 +225,22 @@ void Application::render()
                     { XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0) },  // -Z
                 };
 
+                // Cubemap faces use PerPassCB indices 2-7
                 for (uint32_t face = 0; face < 6; ++face) {
                     XMMATRIX faceView = XMMatrixLookAtLH(
                         eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
                     );
                     mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
-                    uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+
+                    PerPassCB* facePass = getPassMapped(2 + face);
+                    facePass->viewProj = faceVP;
+                    facePass->cameraPos = vec4(scene.reflectivePos.x, scene.reflectivePos.y, scene.reflectivePos.z, 1);
+
+                    uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
                         uint32_t srcIdx = nonReflectiveIndices[j];
-                        SceneConstantBuffer& dst = mapped[faceOffset + j];
-                        dst = mapped[srcIdx];
-                        dst.viewProj = faceVP;
+                        PerObjectData& dst = objectMapped[faceObjectOffset + j];
+                        dst = objectMapped[srcIdx];
                         dst.reflective = 0.0f;
                     }
                 }
@@ -318,21 +262,27 @@ void Application::render()
 
                 ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
                 cmd->SetDescriptorHeaps(1, sceneHeaps);
-                CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+
+                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                cmd->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+
+                CD3DX12_GPU_DESCRIPTOR_HANDLE objectTable(
                     scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                     static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
                 );
-                cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+                cmd->SetGraphicsRootDescriptorTable(4, objectTable);
+
                 CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
                     scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                     static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
                 );
-                cmd->SetGraphicsRootDescriptorTable(2, shadowSrv);
+                cmd->SetGraphicsRootDescriptorTable(5, shadowSrv);
+
                 CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
                     scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                     static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
                 );
-                cmd->SetGraphicsRootDescriptorTable(3, cubeSrv);
+                cmd->SetGraphicsRootDescriptorTable(6, cubeSrv);
 
                 for (uint32_t face = 0; face < 6; ++face) {
                     CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
@@ -350,14 +300,16 @@ void Application::render()
                     cmd->RSSetScissorRects(1, &cubeScissor);
                     cmd->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
 
-                    uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+                    cmd->SetGraphicsRootConstantBufferView(1, getPassCBAddress(2 + face));
+
+                    uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
-                        uint32_t drawDataIdx = faceOffset + j;
+                        uint32_t drawDataIdx = faceObjectOffset + j;
                         uint32_t srcIdx = nonReflectiveIndices[j];
-                        cmd->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
+                        cmd->SetGraphicsRoot32BitConstant(2, drawDataIdx, 0);
                         cmd->DrawIndexedInstanced(
-                            drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
-                            static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
+                            scene.drawCmds[srcIdx].indexCount, 1, scene.drawCmds[srcIdx].indexOffset,
+                            static_cast<INT>(scene.drawCmds[srcIdx].vertexOffset), 0
                         );
                     }
                 }
@@ -367,6 +319,11 @@ void Application::render()
 
     // --- Normal Pre-pass ---
     if (ssao.enabled) {
+        // Normal pass PerPassCB (index 8)
+        PerPassCB* normalPass = getPassMapped(8);
+        normalPass->viewProj = viewProj;
+        normalPass->cameraPos = cameraPos;
+
         renderGraph.addPass(
             "Normal Pre-pass",
             [&](rg::RenderGraphBuilder& builder) {
@@ -375,7 +332,8 @@ void Application::render()
                     hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&, normalPassAddr = getPassCBAddress(8)](ID3D12GraphicsCommandList2* cmd,
+                                                     rg::RenderGraphBuilder& builder) {
                 PROFILE_ZONE_NAMED("Normal Pre-pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Normal Pre-pass");
                 auto normalRtv = ssao.normalRtvCpu();
@@ -395,14 +353,19 @@ void Application::render()
 
                 ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
                 cmd->SetDescriptorHeaps(1, heaps);
-                CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+
+                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                cmd->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+                cmd->SetGraphicsRootConstantBufferView(1, normalPassAddr);
+
+                CD3DX12_GPU_DESCRIPTOR_HANDLE objectTable(
                     scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                     static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
                 );
-                cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+                cmd->SetGraphicsRootDescriptorTable(4, objectTable);
 
-                for (const auto& dc : drawCmds) {
-                    cmd->SetGraphicsRoot32BitConstant(1, dc.baseDrawIndex, 0);
+                for (const auto& dc : scene.drawCmds) {
+                    cmd->SetGraphicsRoot32BitConstant(2, dc.baseDrawIndex, 0);
                     cmd->DrawIndexedInstanced(
                         dc.indexCount, dc.instanceCount, dc.indexOffset,
                         static_cast<INT>(dc.vertexOffset), 0
@@ -458,37 +421,42 @@ void Application::render()
 
             ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
             cmd->SetDescriptorHeaps(1, heaps);
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+
+            auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+            cmd->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+            cmd->SetGraphicsRootConstantBufferView(1, getPassCBAddress(0));
+
+            CD3DX12_GPU_DESCRIPTOR_HANDLE objectTable(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
             );
-            cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+            cmd->SetGraphicsRootDescriptorTable(4, objectTable);
 
             CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
             );
-            cmd->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
+            cmd->SetGraphicsRootDescriptorTable(5, shadowSrvHandle);
 
             CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
             );
-            cmd->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
+            cmd->SetGraphicsRootDescriptorTable(6, cubemapSrvHandle);
 
             CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(Scene::nBuffers + 2), scene.sceneSrvDescSize
             );
-            cmd->SetGraphicsRootDescriptorTable(5, ssaoSrvHandle);
+            cmd->SetGraphicsRootDescriptorTable(7, ssaoSrvHandle);
 
             cmd->OMSetStencilRef(1);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-                currentVertexCount += drawCmds[i].indexCount * drawCmds[i].instanceCount;
-                cmd->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
+            for (uint32_t i = 0; i < static_cast<uint32_t>(scene.drawCmds.size()); ++i) {
+                currentVertexCount += scene.drawCmds[i].indexCount * scene.drawCmds[i].instanceCount;
+                cmd->SetGraphicsRoot32BitConstant(2, scene.drawCmds[i].baseDrawIndex, 0);
                 cmd->DrawIndexedInstanced(
-                    drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
-                    static_cast<INT>(drawCmds[i].vertexOffset), 0
+                    scene.drawCmds[i].indexCount, scene.drawCmds[i].instanceCount, scene.drawCmds[i].indexOffset,
+                    static_cast<INT>(scene.drawCmds[i].vertexOffset), 0
                 );
             }
         }
@@ -508,10 +476,16 @@ void Application::render()
                 PROFILE_ZONE_NAMED("Outline Pass");
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+
+                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                auto perPassAddr = getPassCBAddress(0);
+
                 outline.render(
                     cmd, this->rootSignature.Get(), scene.megaVBV, scene.megaIBV,
-                    scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, curBackBufIdx, hdrRtv, dsv,
-                    this->viewport, this->scissorRect, drawCmds, drawIndexToEntity, hoveredEntity,
+                    scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, curBackBufIdx,
+                    perFrameAddr, perPassAddr,
+                    hdrRtv, dsv,
+                    this->viewport, this->scissorRect, scene.drawCmds, scene.drawIndexToEntity, hoveredEntity,
                     selectedEntity
                 );
             }
@@ -522,9 +496,13 @@ void Application::render()
     renderGraph.addPass(
         "ID Pass",
         [&](rg::RenderGraphBuilder& builder) {
-            // ID picker has its own resources, but we want to make sure we're in a good state
+            // ID pass PerPassCB (index 9)
+            PerPassCB* idPass = getPassMapped(9);
+            idPass->viewProj = viewProj;
+            idPass->cameraPos = cameraPos;
         },
-        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+        [&, idPassAddr = getPassCBAddress(9)](ID3D12GraphicsCommandList2* cmd,
+                                             rg::RenderGraphBuilder& builder) {
             PROFILE_ZONE_NAMED("ID Pass");
             auto idRtv = picker.getRTV();
             auto idDsv = picker.getDSV();
@@ -543,14 +521,19 @@ void Application::render()
 
             ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
             cmd->SetDescriptorHeaps(1, heaps);
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+
+            auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+            cmd->SetGraphicsRootConstantBufferView(0, perFrameAddr);
+            cmd->SetGraphicsRootConstantBufferView(1, idPassAddr);
+
+            CD3DX12_GPU_DESCRIPTOR_HANDLE objectTable(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
             );
-            cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+            cmd->SetGraphicsRootDescriptorTable(4, objectTable);
 
-            for (const auto& dc : drawCmds) {
-                cmd->SetGraphicsRoot32BitConstant(1, dc.baseDrawIndex, 0);
+            for (const auto& dc : scene.drawCmds) {
+                cmd->SetGraphicsRoot32BitConstant(2, dc.baseDrawIndex, 0);
                 cmd->DrawIndexedInstanced(
                     dc.indexCount, dc.instanceCount, dc.indexOffset,
                     static_cast<INT>(dc.vertexOffset), 0

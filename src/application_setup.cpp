@@ -334,13 +334,15 @@ bool Application::loadContent()
     CD3DX12_DESCRIPTOR_RANGE1 ssaoSrvRange;
     ssaoSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3: SSAO
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[6];
-    rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
-    rootParams[1].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
-    rootParams[2].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParams[3].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParams[4].InitAsConstants(4, 1, 0, D3D12_SHADER_VISIBILITY_ALL);  // b1: outline params
-    rootParams[5].InitAsDescriptorTable(1, &ssaoSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    CD3DX12_ROOT_PARAMETER1 rootParams[8];
+    rootParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL); // b0: PerFrameCB
+    rootParams[1].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL); // b1: PerPassCB
+    rootParams[2].InitAsConstants(1, 2, 0, D3D12_SHADER_VISIBILITY_ALL); // b2: drawIndex
+    rootParams[3].InitAsConstants(4, 3, 0, D3D12_SHADER_VISIBILITY_ALL); // b3: outline params
+    rootParams[4].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL); // t0: PerObjectData
+    rootParams[5].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t1: shadow map
+    rootParams[6].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t2: cubemap
+    rootParams[7].InitAsDescriptorTable(1, &ssaoSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t3: SSAO
 
     // Static samplers: s0 = shadow comparison, s1 = cubemap linear
     D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
@@ -426,8 +428,8 @@ bool Application::loadContent()
         std::uniform_real_distribution<float> freqDist(0.2f, 0.8f);
         std::uniform_real_distribution<float> ampDist(3.0f, 8.0f);
         const float orbitR = 8.0f;
-        for (int i = 0; i < SceneConstantBuffer::maxLights; ++i) {
-            float angle = (float)i * (6.2831853f / (float)SceneConstantBuffer::maxLights);
+        for (int i = 0; i < PerFrameCB::maxLights; ++i) {
+            float angle = (float)i * (6.2831853f / (float)PerFrameCB::maxLights);
             PointLight pl;
             pl.center = { orbitR * std::cos(angle), 3.0f + cDist(lightRng) * 2.0f,
                           orbitR * std::sin(angle) };

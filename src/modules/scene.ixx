@@ -46,32 +46,37 @@ export struct VertexPBR
 // ---------------------------------------------------------------------------
 // Per-draw data (stored in a StructuredBuffer, indexed by drawIndex)
 // ---------------------------------------------------------------------------
-export struct SceneConstantBuffer
+export struct PerFrameCB
 {
     static constexpr int maxLights = 8;
+    vec4 ambientColor;
+    vec4 lightPos[maxLights];
+    vec4 lightColor[maxLights];
+    vec4 dirLightDir;
+    vec4 dirLightColor;
+    mat4 lightViewProj;
+    float shadowBias;
+    float shadowMapTexelSize;
+    float fogStartY;
+    float fogDensity;
+    vec4 fogColor;
+};
 
-    mat4 model;
+export struct PerPassCB
+{
     mat4 viewProj;
     vec4 cameraPos;
-    vec4 ambientColor;
-    vec4 lightPos[maxLights];    // xyz = world position
-    vec4 lightColor[maxLights];  // rgb = pre-multiplied color
-    // PBR material
+};
+
+export struct PerObjectData
+{
+    mat4 model;
     vec4 albedo;
     float roughness;
     float metallic;
     float emissiveStrength;
     float reflective;
     vec4 emissive;
-    // Directional light (shadow-casting)
-    vec4 dirLightDir;    // xyz = direction (toward light), w = unused
-    vec4 dirLightColor;  // rgb = color * brightness
-    mat4 lightViewProj;
-    float shadowBias;
-    float shadowMapTexelSize;  // 1.0 / shadowMapResolution
-    float fogStartY;           // Y level where fog begins
-    float fogDensity;          // fog thickness per unit below fogStartY
-    vec4 fogColor;             // rgb = fog color, a = unused
 };
 
 // ---------------------------------------------------------------------------
@@ -114,10 +119,23 @@ export class Scene
     uint32_t megaIBCapacity = 0;
     uint32_t megaIBUsed = 0;
 
-    ComPtr<ID3D12Resource> drawDataBuffer[nBuffers];
-    SceneConstantBuffer* drawDataMapped[nBuffers]{};
+    ComPtr<ID3D12Resource> perObjectBuffer[nBuffers];
+    PerObjectData* perObjectMapped[nBuffers]{};
+    ComPtr<ID3D12Resource> perFrameBuffer[nBuffers];
+    PerFrameCB* perFrameMapped[nBuffers]{};
+    ComPtr<ID3D12Resource> perPassBuffer[nBuffers];
+    PerPassCB* perPassMapped[nBuffers]{};
+
     ComPtr<ID3D12DescriptorHeap> sceneSrvHeap;
     UINT sceneSrvDescSize = 0;
+
+    std::vector<DrawCmd> drawCmds;
+    std::vector<flecs::entity> drawIndexToEntity;
+    uint32_t totalSlots = 0;
+    bool anyReflective = false;
+    vec3 reflectivePos{};
+
+    void populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel);
 
     void createMegaBuffers(ID3D12Device2* device);
     void createDrawDataBuffers(ID3D12Device2* device);

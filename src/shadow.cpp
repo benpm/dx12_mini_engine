@@ -183,10 +183,10 @@ void ShadowRenderer::render(
         sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
         srvDescSize
     );
-    cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+    cmdList->SetGraphicsRootDescriptorTable(4, srvGpuHandle);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-        cmdList->SetGraphicsRoot32BitConstant(1, totalSlots + drawCmds[i].baseDrawIndex, 0);
+        cmdList->SetGraphicsRoot32BitConstant(2, totalSlots + drawCmds[i].baseDrawIndex, 0);
         cmdList->DrawIndexedInstanced(
             drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
             static_cast<INT>(drawCmds[i].vertexOffset), 0

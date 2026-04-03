@@ -1,6 +1,6 @@
 // Outline pixel shader — flat color from outline params
 
-cbuffer OutlineParams : register(b1)
+cbuffer OutlineParams : register(b3)
 {
     float outlineWidth;
     float outlineR;

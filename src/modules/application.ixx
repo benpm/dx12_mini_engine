@@ -80,10 +80,6 @@ export class Application
     SsaoRenderer ssao;
     ShadowRenderer shadow;
     OutlineRenderer outline;
-
-    // Maps draw index → flecs entity (rebuilt each frame)
-    std::vector<flecs::entity> drawIndexToEntity;
-
     // Entity picking/selection
     flecs::entity hoveredEntity;
     flecs::entity selectedEntity;
