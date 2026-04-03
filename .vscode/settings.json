@@ -85,5 +85,5 @@
         "build/_deps": true
     },
     "clangd.serverCompletionRanking": true,
-    "todo-tree.tree.showBadges": false,
+    "todo-tree.tree.showBadges": false
 }

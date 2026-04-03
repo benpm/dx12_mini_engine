@@ -29,6 +29,7 @@ export import scene_file;
 export import ssao;
 export import shadow;
 export import outline;
+export import render_graph;
 
 export class Application
 {
@@ -67,6 +68,8 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
     UINT rtvDescSize;
     UINT curBackBufIdx;
+
+    rg::RenderGraph renderGraph;
 
     // Subsystems
     Scene scene;

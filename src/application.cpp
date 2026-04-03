@@ -91,7 +91,8 @@ static vec4 hslToLinear(float hue, float sat, float light)
 // Application constructor / destructor
 // ---------------------------------------------------------------------------
 
-Application::Application() : inputMap(inputManager, "input_map")
+Application::Application()
+    : inputMap(inputManager, "input_map"), renderGraph(Window::get()->device.Get())
 {
     spdlog::info("Application constructor start");
 

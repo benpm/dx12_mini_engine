@@ -198,383 +198,465 @@ void Application::render()
 
     this->lastFrameObjectCount = totalSlots;
 
+    // --- Render Graph Setup ---
+    renderGraph.reset();
+    auto hBackBuffer =
+        renderGraph.importTexture("BackBuffer", backBuffer.Get(), D3D12_RESOURCE_STATE_PRESENT);
+    auto hDepthBuffer = renderGraph.importTexture(
+        "MainDepth", depthBuffer.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE
+    );
+    auto hShadowMap = renderGraph.importTexture(
+        "ShadowMap", shadow.shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+    auto hNormalRT = renderGraph.importTexture(
+        "NormalRT", ssao.normalRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+    auto hHdrRT = renderGraph.importTexture(
+        "HdrRT", bloom.hdrRenderTarget.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+    auto hCubemap = renderGraph.importTexture(
+        "Cubemap", cubemapTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+
     // --- Shadow pass ---
     if (shadow.enabled) {
-        PROFILE_ZONE_NAMED("Shadow Pass");
-        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Shadow");
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        shadow.render(
-            cmdList, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
-            curBackBufIdx, drawCmds, totalSlots
+        renderGraph.addPass(
+            "Shadow Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeDepthStencil(
+                    hShadowMap, shadow.dsvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("Shadow Pass");
+                PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Shadow");
+                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                shadow.render(
+                    cmd, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
+                    scene.sceneSrvDescSize, curBackBufIdx, drawCmds, totalSlots
+                );
+            }
         );
     }
 
-    // --- Cubemap pass: render environment for reflective objects ---
+    // --- Cubemap pass ---
     if (cubemapEnabled && anyReflective) {
-        PROFILE_ZONE_NAMED("Cubemap Pass");
-        // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
-        XMVECTOR eyePos = XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
-        XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
-            XM_PIDIV2, 1.0f, std::max(0.001f, cubemapNearPlane),
-            std::max(cubemapNearPlane + 0.001f, cubemapFarPlane)
-        );
-        struct CubeFace
-        {
-            XMVECTOR dir;
-            XMVECTOR up;
-        };
-        CubeFace cubeFaces[6] = {
-            { XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },   // +X
-            { XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },  // -X
-            { XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0) },  // +Y
-            { XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0) },  // -Y
-            { XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0) },   // +Z
-            { XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0) },  // -Z
-        };
-
-        // Write cubemap draw data: non-reflective entities only, 6 copies with different viewProj
-        // Placed at offset 2*entityCount in the structured buffer
-        uint32_t cubemapBaseIdx = 2 * totalSlots;
-        std::vector<uint32_t> nonReflectiveIndices;
-        for (uint32_t i = 0; i < totalSlots; ++i) {
-            if (mapped[i].reflective < 0.5f) {
-                nonReflectiveIndices.push_back(i);
-            }
-        }
-        uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
-
-        static bool warnedMissingCubemapSources = false;
-        if (nonReflCount == 0) {
-            if (!warnedMissingCubemapSources) {
-                spdlog::warn(
-                    "Cubemap pass skipped: no non-reflective entities available to render."
+        renderGraph.addPass(
+            "Cubemap Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hCubemap, cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
-                warnedMissingCubemapSources = true;
-            }
-        } else {
-            warnedMissingCubemapSources = false;
-        }
+                builder.readTexture(hShadowMap);
+            },
+            [&, totalSlots, reflectivePos](ID3D12GraphicsCommandList2* cmd,
+                                          rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("Cubemap Pass");
 
-        if (nonReflCount > 0) {
-            this->transitionResource(
-                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                D3D12_RESOURCE_STATE_RENDER_TARGET
-            );
+                uint32_t cubemapBaseIdx = 2 * totalSlots;
+                std::vector<uint32_t> nonReflectiveIndices;
+                for (uint32_t i = 0; i < totalSlots; ++i) {
+                    if (mapped[i].reflective < 0.5f) {
+                        nonReflectiveIndices.push_back(i);
+                    }
+                }
+                uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
+                if (nonReflCount == 0) {
+                    return;
+                }
 
-            for (uint32_t face = 0; face < 6; ++face) {
-                XMMATRIX faceView = XMMatrixLookAtLH(
-                    eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
+                // Build 6 cubemap face view-projection matrices (LH, 90° FOV)
+                XMVECTOR eyePos =
+                    XMVectorSet(reflectivePos.x, reflectivePos.y, reflectivePos.z, 1.0f);
+                XMMATRIX cubeProj = XMMatrixPerspectiveFovLH(
+                    XM_PIDIV2, 1.0f, std::max(0.001f, cubemapNearPlane),
+                    std::max(cubemapNearPlane + 0.001f, cubemapFarPlane)
                 );
-                mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
-                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-                for (uint32_t j = 0; j < nonReflCount; ++j) {
-                    uint32_t srcIdx = nonReflectiveIndices[j];
-                    SceneConstantBuffer& dst = mapped[faceOffset + j];
-                    dst = mapped[srcIdx];
-                    dst.viewProj = faceVP;
-                    dst.reflective = 0.0f;
+                struct CubeFace
+                {
+                    XMVECTOR dir;
+                    XMVECTOR up;
+                };
+                CubeFace cubeFaces[6] = {
+                    { XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },   // +X
+                    { XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0) },  // -X
+                    { XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0) },  // +Y
+                    { XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0) },  // -Y
+                    { XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0) },   // +Z
+                    { XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0) },  // -Z
+                };
+
+                for (uint32_t face = 0; face < 6; ++face) {
+                    XMMATRIX faceView = XMMatrixLookAtLH(
+                        eyePos, XMVectorAdd(eyePos, cubeFaces[face].dir), cubeFaces[face].up
+                    );
+                    mat4 faceVP(XMMatrixMultiply(faceView, cubeProj));
+                    uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+                    for (uint32_t j = 0; j < nonReflCount; ++j) {
+                        uint32_t srcIdx = nonReflectiveIndices[j];
+                        SceneConstantBuffer& dst = mapped[faceOffset + j];
+                        dst = mapped[srcIdx];
+                        dst.viewProj = faceVP;
+                        dst.reflective = 0.0f;
+                    }
+                }
+
+                D3D12_VIEWPORT cubeVP = {
+                    0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1
+                };
+                D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
+                UINT rtvSize =
+                    device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+                UINT dsvSize =
+                    device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+                cmd->SetPipelineState(this->pipelineState.Get());
+                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->IASetVertexBuffers(0, 1, &scene.megaVBV);
+                cmd->IASetIndexBuffer(&scene.megaIBV);
+
+                ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
+                cmd->SetDescriptorHeaps(1, sceneHeaps);
+                CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+                CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(2, shadowSrv);
+                CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(3, cubeSrv);
+
+                for (uint32_t face = 0; face < 6; ++face) {
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
+                        cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                        rtvSize
+                    );
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
+                        cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
+                        dsvSize
+                    );
+                    FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
+                    this->clearRTV(cmd, faceRtv, clearColor);
+                    this->clearDepth(cmd, faceDsv);
+                    cmd->RSSetViewports(1, &cubeVP);
+                    cmd->RSSetScissorRects(1, &cubeScissor);
+                    cmd->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
+
+                    uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
+                    for (uint32_t j = 0; j < nonReflCount; ++j) {
+                        uint32_t drawDataIdx = faceOffset + j;
+                        uint32_t srcIdx = nonReflectiveIndices[j];
+                        cmd->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
+                        cmd->DrawIndexedInstanced(
+                            drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
+                            static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
+                        );
+                    }
                 }
             }
+        );
+    }
 
-            // Render 6 cubemap faces
-            D3D12_VIEWPORT cubeVP = {
-                0, 0, (float)cubemapResolution, (float)cubemapResolution, 0, 1
-            };
-            D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
-            UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-            UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    // --- Normal Pre-pass ---
+    if (ssao.enabled) {
+        renderGraph.addPass(
+            "Normal Pre-pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(hNormalRT, ssao.normalRtvCpu());
+                builder.writeDepthStencil(
+                    hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("Normal Pre-pass");
+                PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Normal Pre-pass");
+                auto normalRtv = ssao.normalRtvCpu();
+                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+                cmd->ClearRenderTargetView(normalRtv, clearNormal, 0, nullptr);
+                this->clearDepth(cmd, dsv);
 
-            cmdList->SetPipelineState(this->pipelineState.Get());
-            cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-            cmdList->IASetIndexBuffer(&scene.megaIBV);
+                cmd->SetPipelineState(this->normalPSO.Get());
+                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->RSSetViewports(1, &this->viewport);
+                cmd->RSSetScissorRects(1, &this->scissorRect);
+                cmd->OMSetRenderTargets(1, &normalRtv, true, &dsv);
+                cmd->IASetVertexBuffers(0, 1, &scene.megaVBV);
+                cmd->IASetIndexBuffer(&scene.megaIBV);
 
-            ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-            cmdList->SetDescriptorHeaps(1, sceneHeaps);
+                ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
+                cmd->SetDescriptorHeaps(1, heaps);
+                CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+
+                for (const auto& dc : drawCmds) {
+                    cmd->SetGraphicsRoot32BitConstant(1, dc.baseDrawIndex, 0);
+                    cmd->DrawIndexedInstanced(
+                        dc.indexCount, dc.instanceCount, dc.indexOffset,
+                        static_cast<INT>(dc.vertexOffset), 0
+                    );
+                }
+            }
+        );
+
+        renderGraph.addPass(
+            "SSAO Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.readTexture(hNormalRT);
+                builder.readTexture(hDepthBuffer);
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("SSAO Pass");
+                PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: SSAO");
+                ssao.render(cmd, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
+            }
+        );
+    }
+
+    // --- Scene Pass ---
+    uint32_t currentVertexCount = 0;
+    renderGraph.addPass(
+        "Scene Pass",
+        [&](rg::RenderGraphBuilder& builder) {
+            builder.writeRenderTarget(
+                hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+            );
+            builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+            builder.readTexture(hShadowMap);
+            builder.readTexture(hCubemap);
+            // SSAO blur RT is handled internally by SSAO for now, but we read it in shader
+        },
+        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            PROFILE_ZONE_NAMED("Scene Pass");
+            PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Scene");
+            FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
+            auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+            cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
+            auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+            this->clearDepth(cmd, dsv);
+
+            cmd->SetPipelineState(this->pipelineState.Get());
+            cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+            cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmd->RSSetViewports(1, &this->viewport);
+            cmd->RSSetScissorRects(1, &this->scissorRect);
+            cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+            cmd->IASetVertexBuffers(0, 1, &scene.megaVBV);
+            cmd->IASetIndexBuffer(&scene.megaIBV);
+
+            ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
+            cmd->SetDescriptorHeaps(1, heaps);
             CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
             );
-            cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-            // Bind shadow map for cubemap pass too
-            CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
+            cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+
+            CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
             );
-            cmdList->SetGraphicsRootDescriptorTable(2, shadowSrv);
-            // Bind cubemap SRV (will be black/uninitialized but reflective=0 prevents sampling)
-            CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
+            cmd->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
+
+            CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
                 scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
                 static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
             );
-            cmdList->SetGraphicsRootDescriptorTable(3, cubeSrv);
+            cmd->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
 
-            for (uint32_t face = 0; face < 6; ++face) {
-                CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
-                    cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                    rtvSize
-                );
-                CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
-                    cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(face),
-                    dsvSize
-                );
-                FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
-                this->clearRTV(cmdList, faceRtv, clearColor);
-                this->clearDepth(cmdList, faceDsv);
-                cmdList->RSSetViewports(1, &cubeVP);
-                cmdList->RSSetScissorRects(1, &cubeScissor);
-                cmdList->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
+            CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
+                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                static_cast<INT>(Scene::nBuffers + 2), scene.sceneSrvDescSize
+            );
+            cmd->SetGraphicsRootDescriptorTable(5, ssaoSrvHandle);
 
-                uint32_t faceOffset = cubemapBaseIdx + face * nonReflCount;
-                for (uint32_t j = 0; j < nonReflCount; ++j) {
-                    uint32_t drawDataIdx = faceOffset + j;
-                    uint32_t srcIdx = nonReflectiveIndices[j];
-                    cmdList->SetGraphicsRoot32BitConstant(1, drawDataIdx, 0);
-                    cmdList->DrawIndexedInstanced(
-                        drawCmds[srcIdx].indexCount, 1, drawCmds[srcIdx].indexOffset,
-                        static_cast<INT>(drawCmds[srcIdx].vertexOffset), 0
-                    );
-                }
+            cmd->OMSetStencilRef(1);
+            for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
+                currentVertexCount += drawCmds[i].indexCount * drawCmds[i].instanceCount;
+                cmd->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
+                cmd->DrawIndexedInstanced(
+                    drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
+                    static_cast<INT>(drawCmds[i].vertexOffset), 0
+                );
             }
-
-            this->transitionResource(
-                cmdList, cubemapTexture, D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-            );
         }
-    }
+    );
 
-    // --- Normal pre-pass: render world normals for SSAO ---
-    if (ssao.enabled) {
-        PROFILE_ZONE_NAMED("Normal Pre-pass + SSAO");
-        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Normal Pre-pass + SSAO");
-        ssao.transitionResource(
-            cmdList, ssao.normalRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_RENDER_TARGET
-        );
-        auto normalRtv = ssao.normalRtvCpu();
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-        cmdList->ClearRenderTargetView(normalRtv, clearNormal, 0, nullptr);
-        this->clearDepth(cmdList, dsv);
-
-        cmdList->SetPipelineState(this->normalPSO.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &normalRtv, true, &dsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* prepassHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, prepassHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE prepassSrv(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, prepassSrv);
-
-        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        ssao.transitionResource(
-            cmdList, ssao.normalRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-        );
-
-        // Transition depth to shader-readable state for SSAO
-        this->transitionResource(
-            cmdList, depthBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-        );
-
-        ssao.render(cmdList, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
-
-        // Restore depth for scene pass
-        this->transitionResource(
-            cmdList, depthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE
-        );
-    }
-
-    // --- Scene pass: render to HDR render target ---
-    {
-        PROFILE_ZONE_NAMED("Scene Pass");
-        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Scene");
-        FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
-            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-        this->clearRTV(cmdList, hdrRtv, clearColor);
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        this->clearDepth(cmdList, dsv);
-
-        cmdList->SetPipelineState(this->pipelineState.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
-
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
-
-        // Bind shadow map SRV (descriptor index 3 in sceneSrvHeap)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(2, shadowSrvHandle);
-
-        // Bind cubemap SRV (descriptor index nBuffers+1 in sceneSrvHeap)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(3, cubemapSrvHandle);
-
-        // Bind SSAO output SRV (descriptor index nBuffers+2 in sceneSrvHeap)
-        CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers + 2), scene.sceneSrvDescSize
-        );
-        cmdList->SetGraphicsRootDescriptorTable(5, ssaoSrvHandle);
-
-        cmdList->OMSetStencilRef(1);
-        uint32_t currentVertexCount = 0;
-        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-            currentVertexCount += drawCmds[i].indexCount * drawCmds[i].instanceCount;
-            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
-            );
-        }
-
-        this->lastFrameVertexCount = currentVertexCount;
-    }
-
-    // --- Outline pass: stencil-based silhouette for hovered/selected ---
+    // --- Outline Pass ---
     if (hoveredEntity || selectedEntity) {
-        PROFILE_ZONE_NAMED("Outline Pass");
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
-            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-        outline.render(
-            cmdList, this->rootSignature.Get(), scene.megaVBV, scene.megaIBV,
-            scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, curBackBufIdx, hdrRtv, dsv,
-            this->viewport, this->scissorRect, drawCmds, drawIndexToEntity, hoveredEntity,
-            selectedEntity
+        renderGraph.addPass(
+            "Outline Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("Outline Pass");
+                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                outline.render(
+                    cmd, this->rootSignature.Get(), scene.megaVBV, scene.megaIBV,
+                    scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, curBackBufIdx, hdrRtv, dsv,
+                    this->viewport, this->scissorRect, drawCmds, drawIndexToEntity, hoveredEntity,
+                    selectedEntity
+                );
+            }
         );
     }
 
-    // --- Object ID pass (for picking) ---
-    {
-        PROFILE_ZONE_NAMED("ID Pass");
-        auto idRtv = picker.getRTV();
-        auto idDsv = picker.getDSV();
-        // Clear ID RT to invalidID
-        FLOAT clearColor[] = { static_cast<float>(ObjectPicker::invalidID), 0.0f, 0.0f, 0.0f };
-        cmdList->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
-        cmdList->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    // --- ID Pass ---
+    renderGraph.addPass(
+        "ID Pass",
+        [&](rg::RenderGraphBuilder& builder) {
+            // ID picker has its own resources, but we want to make sure we're in a good state
+        },
+        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            PROFILE_ZONE_NAMED("ID Pass");
+            auto idRtv = picker.getRTV();
+            auto idDsv = picker.getDSV();
+            FLOAT clearColor[] = { static_cast<float>(ObjectPicker::invalidID), 0.0f, 0.0f, 0.0f };
+            cmd->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
+            cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-        cmdList->SetPipelineState(picker.pso.Get());
-        cmdList->SetGraphicsRootSignature(this->rootSignature.Get());
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &idRtv, true, &idDsv);
+            cmd->SetPipelineState(picker.pso.Get());
+            cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+            cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmd->RSSetViewports(1, &this->viewport);
+            cmd->RSSetScissorRects(1, &this->scissorRect);
+            cmd->OMSetRenderTargets(1, &idRtv, true, &idDsv);
+            cmd->IASetVertexBuffers(0, 1, &scene.megaVBV);
+            cmd->IASetIndexBuffer(&scene.megaIBV);
 
-        cmdList->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmdList->IASetIndexBuffer(&scene.megaIBV);
+            ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
+            cmd->SetDescriptorHeaps(1, heaps);
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+            );
+            cmd->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
 
-        ID3D12DescriptorHeap* sceneHeaps[] = { scene.sceneSrvHeap.Get() };
-        cmdList->SetDescriptorHeaps(1, sceneHeaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
+            for (const auto& dc : drawCmds) {
+                cmd->SetGraphicsRoot32BitConstant(1, dc.baseDrawIndex, 0);
+                cmd->DrawIndexedInstanced(
+                    dc.indexCount, dc.instanceCount, dc.indexOffset,
+                    static_cast<INT>(dc.vertexOffset), 0
+                );
+            }
+            picker.copyPickedPixel(cmd, static_cast<uint32_t>(mousePos.x),
+                                   static_cast<uint32_t>(mousePos.y));
+        }
+    );
+
+    // --- Billboards Pass ---
+    if (showLightBillboards) {
+        renderGraph.addPass(
+            "Billboards Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("Billboards Pass");
+                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                cmd->RSSetViewports(1, &this->viewport);
+                cmd->RSSetScissorRects(1, &this->scissorRect);
+                cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+                billboards.render(cmd, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
+            }
         );
-        cmdList->SetGraphicsRootDescriptorTable(0, srvGpuHandle);
+    }
 
-        for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-            cmdList->SetGraphicsRoot32BitConstant(1, drawCmds[i].baseDrawIndex, 0);
-            cmdList->DrawIndexedInstanced(
-                drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
-                static_cast<INT>(drawCmds[i].vertexOffset), 0
+    // --- Bloom + Composite Pass ---
+    renderGraph.addPass(
+        "Bloom Pass",
+        [&](rg::RenderGraphBuilder& builder) {
+            builder.readTexture(hHdrRT);
+            builder.writeRenderTarget(
+                hBackBuffer, CD3DX12_CPU_DESCRIPTOR_HANDLE(
+                                 rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+                                 static_cast<INT>(curBackBufIdx), rtvDescSize
+                             )
+            );
+        },
+        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            PROFILE_ZONE_NAMED("Bloom Pass");
+            PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Bloom");
+
+            BloomRenderer::SkyParams skyParams;
+            vec3 camPos3(camX, camY, camZ);
+            vec3 target3(0.0f, 0.0f, 0.0f);
+            skyParams.camForward =
+                normalize(vec3(target3.x - camPos3.x, target3.y - camPos3.y, target3.z - camPos3.z));
+            vec3 worldUp(0.0f, 1.0f, 0.0f);
+            skyParams.camRight = normalize(cross(worldUp, skyParams.camForward));
+            skyParams.camUp = cross(skyParams.camForward, skyParams.camRight);
+            skyParams.sunDir = normalize(-dirLightDir);
+            skyParams.aspectRatio =
+                static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
+            skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
+
+            CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
+                rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
+                rtvDescSize
+            );
+            bloom.render(
+                cmd, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
+                bloomIntensity, tonemapMode, skyParams
             );
         }
-
-        // Copy pixel under mouse cursor to readback buffer
-        uint32_t mx = static_cast<uint32_t>(mousePos.x);
-        uint32_t my = static_cast<uint32_t>(mousePos.y);
-        picker.copyPickedPixel(cmdList, mx, my);
-    }
-
-    // --- Light billboards pass (batched instancing) ---
-    if (showLightBillboards) {
-        PROFILE_ZONE_NAMED("Billboards Pass");
-        auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hdrRtv(
-            bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-        cmdList->RSSetViewports(1, &this->viewport);
-        cmdList->RSSetScissorRects(1, &this->scissorRect);
-        cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-        billboards.render(cmdList, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
-    }
-
-    // --- Bloom + composite ---
-    CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
-        rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx), rtvDescSize
     );
-    // Compute sky params for composite pass
-    BloomRenderer::SkyParams skyParams;
-    {
-        vec3 camPos3(camX, camY, camZ);
-        vec3 target3(0.0f, 0.0f, 0.0f);
-        skyParams.camForward =
-            normalize(vec3(target3.x - camPos3.x, target3.y - camPos3.y, target3.z - camPos3.z));
-        vec3 worldUp(0.0f, 1.0f, 0.0f);
-        skyParams.camRight = normalize(cross(worldUp, skyParams.camForward));
-        skyParams.camUp = cross(skyParams.camForward, skyParams.camRight);
-        skyParams.sunDir = normalize(-dirLightDir);
-        skyParams.aspectRatio = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
-        skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
-    }
-    {
-        PROFILE_ZONE_NAMED("Bloom Pass");
-        PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmdList.Get(), "GPU: Bloom");
-        bloom.render(
-            cmdList, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
-            bloomIntensity, tonemapMode, skyParams
-        );
-    }
 
+    // --- ImGui Pass ---
     if (!this->runtimeConfig.skipImGui) {
-        PROFILE_ZONE_NAMED("ImGui Pass");
-        this->renderImGui(cmdList);
+        renderGraph.addPass(
+            "ImGui Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hBackBuffer, CD3DX12_CPU_DESCRIPTOR_HANDLE(
+                                     rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+                                     static_cast<INT>(curBackBufIdx), rtvDescSize
+                                 )
+                );
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                PROFILE_ZONE_NAMED("ImGui Pass");
+                this->renderImGui(cmd);
+            }
+        );
     }
 
-    this->transitionResource(
-        cmdList, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT
+    // --- Present Pass (Transition back to PRESENT) ---
+    renderGraph.addPass(
+        "Present Pass",
+        [&](rg::RenderGraphBuilder& builder) {
+            builder.readTexture(hBackBuffer, D3D12_RESOURCE_STATE_PRESENT);
+        },
+        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            // Just for transition
+        }
     );
+
+    // Execute the graph
+    renderGraph.execute(cmdList.Get());
+
+    this->lastFrameVertexCount = currentVertexCount;
 
     this->frameFenceValues[this->curBackBufIdx] = this->cmdQueue.execCmdList(cmdList);
     // Signal Tracy's GPU fence AFTER submitting the command list so it comes after

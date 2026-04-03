@@ -75,6 +75,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `ssao.ixx`             | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes        |
 | `shadow.ixx`           | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO    |
 | `outline.ixx`          | `OutlineRenderer` class — stencil-based silhouette PSO + render               |
+| `render_graph.ixx`     | `rg::RenderGraph` class — pass orchestration and automated resource barriers  |
 | `logging.ixx`          | spdlog setup with custom error sink                                          |
 
 ### Module conventions
@@ -91,7 +92,12 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
 ### Subsystem architecture
 
-Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`, `ShadowRenderer shadow`, `OutlineRenderer outline`, `SsaoRenderer ssao`, `ObjectPicker picker`, `BillboardRenderer billboards`.
+Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`, `ShadowRenderer shadow`, `OutlineRenderer outline`, `SsaoRenderer ssao`, `ObjectPicker picker`, `BillboardRenderer billboards`, `rg::RenderGraph renderGraph`.
+
+**RenderGraph** (`render_graph.ixx` + `render_graph.cpp`) — orchestrates rendering passes:
+- Handles automated resource state transitions (barriers) based on pass inputs/outputs.
+- Methods: `importTexture()`, `addPass()`, `execute()`.
+- Use `RenderGraphBuilder` in pass setup to declare `readTexture()`, `writeRenderTarget()`, and `writeDepthStencil()`.
 
 **Scene** (`scene.ixx` + `scene.cpp`) — owns all scene state:
 - ECS world (`flecs::world`), cached queries (`drawQuery`, `instanceQuery`, `instanceAnimQuery`, `animQuery`, `lightQuery`), materials, spawn system
@@ -156,20 +162,25 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 
 ### Rendering pipeline
 
+The rendering pipeline is now orchestrated via the **Render Graph**. `Application::render()` builds the graph each frame and executes it.
+
 ```
 update()  →  render()
-              ├─ Shadow pass      (depth-only to 2048² shadow map, directional light ortho VP)
-              ├─ Cubemap pass     (6-face env map from first reflective entity, non-reflective only)
-              ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT, writes main depth)
-              ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT, 3×3 blur → ssaoBlurRT)
-              ├─ Scene pass       (HDR RT, depth, samples shadow+cubemap+SSAO; stencil write)
-              ├─ Outline pass     (stencil NOT_EQUAL, extrude normals → silhouette)
-              ├─ ID pass          (R32_UINT RT, own depth, same draw calls → entity index per pixel)
-              ├─ Readback copy    (single pixel at mouse pos → CPU readback buffer)
-              ├─ Bloom prefilter  → downsample chain → upsample chain
-              ├─ Composite        (HDR + bloom → swap chain backbuffer)
-              └─ ImGui overlay    (directly to backbuffer)
+              └─ RenderGraph::execute()
+                  ├─ Shadow pass      (depth-only to 2048² shadow map)
+                  ├─ Cubemap pass     (6-face env map, non-reflective only)
+                  ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT)
+                  ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT)
+                  ├─ Scene pass       (HDR RT, samples shadow+cubemap+SSAO)
+                  ├─ Outline pass     (silhouette for hovered/selected)
+                  ├─ ID pass          (R32_UINT RT, entity index per pixel)
+                  ├─ Billboards pass  (light sprite rendering)
+                  ├─ Bloom pass       (Prefilter → Downsample → Upsample → Composite)
+                  ├─ ImGui pass       (UI overlay)
+                  └─ Present pass     (Transition backbuffer to PRESENT state)
 ```
+
+**Resource State Tracking**: The Render Graph automatically generates `ResourceBarrier` calls between passes. For example, it ensures the depth buffer is in `DEPTH_WRITE` for the normal pre-pass, then transitions it to `PIXEL_SHADER_RESOURCE` for SSAO, and back to `DEPTH_WRITE` for the scene pass.
 
 **GPU instancing**: Two draw modes coexist. Regular entities (`MeshRef` component) get one `DrawIndexedInstanced(..., 1, ...)` call each. `InstanceGroup` entities batch N instances of a single mesh into one `DrawIndexedInstanced(..., N, ...)` call. Both write consecutive `SceneConstantBuffer` entries in the structured buffer. Vertex shaders use `drawData[drawIndex + SV_InstanceID]` — backwards-compatible since `SV_InstanceID=0` for non-instanced draws. `drawIndexToEntity` has one entry per instance slot; picking any instance of a group selects the group entity. Instance groups are not `Pickable` and not animated. `DrawCmd` struct (exported from `scene.ixx`) carries `instanceCount` and `baseDrawIndex` for unified draw loop logic across all passes.
 

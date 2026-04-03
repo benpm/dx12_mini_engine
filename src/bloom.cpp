@@ -357,9 +357,6 @@ void BloomRenderer::render(
         cmdList, bloomMips[0], D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
-    transitionResource(
-        cmdList, backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET
-    );
     cmdList->SetPipelineState(compositePSO.Get());
     cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));
     cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(1));

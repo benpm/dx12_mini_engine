@@ -162,11 +162,6 @@ void ShadowRenderer::render(
     uint32_t totalSlots
 )
 {
-    transitionRes(
-        cmdList, shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE
-    );
-
     auto shadowDsv = dsvHeap->GetCPUDescriptorHandleForHeapStart();
     cmdList->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
@@ -197,9 +192,4 @@ void ShadowRenderer::render(
             static_cast<INT>(drawCmds[i].vertexOffset), 0
         );
     }
-
-    transitionRes(
-        cmdList, shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    );
 }

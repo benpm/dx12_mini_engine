@@ -188,6 +188,7 @@ add_executable(main
     src/ssao.cpp
     src/shadow.cpp
     src/outline.cpp
+    src/render_graph.cpp
     resources.rc
 )
 target_sources(main
@@ -213,6 +214,7 @@ target_sources(main
     src/modules/ssao.ixx
     src/modules/shadow.ixx
     src/modules/outline.ixx
+    src/modules/render_graph.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
