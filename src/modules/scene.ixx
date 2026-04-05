@@ -135,6 +135,13 @@ export class Scene
     bool anyReflective = false;
     vec3 reflectivePos{};
 
+    struct PendingUploadBatch
+    {
+        uint64_t fenceValue = 0;
+        std::vector<ComPtr<ID3D12Resource>> resources;
+    };
+    std::vector<PendingUploadBatch> pendingUploads;
+
     void populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel);
 
     void createMegaBuffers(ID3D12Device2* device);
@@ -147,11 +154,13 @@ export class Scene
         std::vector<ComPtr<ID3D12Resource>>& temps
     );
     void clearScene(CommandQueue& cmdQueue);
+    void retireCompletedUploads(const CommandQueue& cmdQueue);
+    void trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resource>>&& temps);
     bool loadGltf(
         const std::string& path,
         ID3D12Device2* device,
         CommandQueue& cmdQueue,
         bool append = false
     );
-    void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue);
+    void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool includeCompanion = true);
 };

@@ -77,18 +77,7 @@ void OutlineRenderer::reloadPSO(
 
 void OutlineRenderer::render(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    ID3D12RootSignature* rootSig,
-    const D3D12_VERTEX_BUFFER_VIEW& vbv,
-    const D3D12_INDEX_BUFFER_VIEW& ibv,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT srvDescSize,
-    uint32_t curBackBufIdx,
-    D3D12_GPU_VIRTUAL_ADDRESS perFrameAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS perPassAddr,
-    D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv,
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv,
-    const D3D12_VIEWPORT& viewport,
-    const D3D12_RECT& scissorRect,
+    const OutlineRenderContext& ctx,
     const std::vector<DrawCmd>& drawCmds,
     const std::vector<flecs::entity>& drawIndexToEntity,
     flecs::entity hoveredEntity,
@@ -96,25 +85,25 @@ void OutlineRenderer::render(
 )
 {
     cmdList->SetPipelineState(pso.Get());
-    cmdList->SetGraphicsRootSignature(rootSig);
+    cmdList->SetGraphicsRootSignature(ctx.rootSig);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdList->RSSetViewports(1, &viewport);
-    cmdList->RSSetScissorRects(1, &scissorRect);
-    cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+    cmdList->RSSetViewports(1, ctx.viewport);
+    cmdList->RSSetScissorRects(1, ctx.scissorRect);
+    cmdList->OMSetRenderTargets(1, &ctx.hdrRtv, true, &ctx.dsv);
     cmdList->OMSetStencilRef(1);
 
-    cmdList->IASetVertexBuffers(0, 1, &vbv);
-    cmdList->IASetIndexBuffer(&ibv);
+    cmdList->IASetVertexBuffers(0, 1, ctx.vbv);
+    cmdList->IASetIndexBuffer(ctx.ibv);
 
-    ID3D12DescriptorHeap* heaps[] = { sceneSrvHeap };
+    ID3D12DescriptorHeap* heaps[] = { ctx.sceneSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
 
-    cmdList->SetGraphicsRootConstantBufferView(0, perFrameAddr);
-    cmdList->SetGraphicsRootConstantBufferView(1, perPassAddr);
+    cmdList->SetGraphicsRootConstantBufferView(0, ctx.perFrameAddr);
+    cmdList->SetGraphicsRootConstantBufferView(1, ctx.perPassAddr);
 
     CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(
-        sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
-        srvDescSize
+        ctx.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(ctx.curBackBufIdx),
+        ctx.srvDescSize
     );
     cmdList->SetGraphicsRootDescriptorTable(4, srvHandle);
 

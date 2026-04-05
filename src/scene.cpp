@@ -22,6 +22,13 @@ module scene;
 
 using Microsoft::WRL::ComPtr;
 
+static constexpr UINT64 kCBAlign = 256;
+
+static constexpr UINT64 alignCBSize(UINT64 size)
+{
+    return (size + (kCBAlign - 1)) & ~(kCBAlign - 1);
+}
+
 // ---------------------------------------------------------------------------
 // Static helpers
 // ---------------------------------------------------------------------------
@@ -193,9 +200,11 @@ void Scene::createMegaBuffers(ID3D12Device2* device)
 
 void Scene::createDrawDataBuffers(ID3D12Device2* device)
 {
+    constexpr uint32_t maxPerPassCBs = 16;
+
     for (uint32_t i = 0; i < nBuffers; ++i) {
         const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        
+
         // PerObjectBuffer
         const CD3DX12_RESOURCE_DESC descObj =
             CD3DX12_RESOURCE_DESC::Buffer(maxDrawsPerFrame * sizeof(PerObjectData));
@@ -209,19 +218,19 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
 
         // PerFrameBuffer (Constant Buffer requires 256 byte alignment)
         const CD3DX12_RESOURCE_DESC descFrame =
-            CD3DX12_RESOURCE_DESC::Buffer((sizeof(PerFrameCB) + 255) & ~255);
+            CD3DX12_RESOURCE_DESC::Buffer(alignCBSize(sizeof(PerFrameCB)));
         chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &descFrame, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&perFrameBuffer[i])
+            &heapProps, D3D12_HEAP_FLAG_NONE, &descFrame, D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr, IID_PPV_ARGS(&perFrameBuffer[i])
         ));
         void* mappedFrame = nullptr;
         chkDX(perFrameBuffer[i]->Map(0, nullptr, &mappedFrame));
         perFrameMapped[i] = static_cast<PerFrameCB*>(mappedFrame);
 
         // PerPassBuffer (Array of CBs to handle different passes like main, shadow, 6x cubemap)
-        // Let's allocate enough for 1 main + 1 shadow + 6 cubemap + 1 normal + 1 id + extras = 16 passes per frame
+        // Enough for main + shadow + 6 cubemap + normal + id + extras.
         const CD3DX12_RESOURCE_DESC descPass =
-            CD3DX12_RESOURCE_DESC::Buffer(((sizeof(PerPassCB) + 255) & ~255) * 16);
+            CD3DX12_RESOURCE_DESC::Buffer(alignCBSize(sizeof(PerPassCB)) * maxPerPassCBs);
         chkDX(device->CreateCommittedResource(
             &heapProps, D3D12_HEAP_FLAG_NONE, &descPass, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
             IID_PPV_ARGS(&perPassBuffer[i])
@@ -340,6 +349,7 @@ MeshRef Scene::appendToMegaBuffers(
 void Scene::clearScene(CommandQueue& cmdQueue)
 {
     cmdQueue.flush();
+    pendingUploads.clear();
     materials.clear();
     selectedMaterialIdx = 0;
     for (auto& pi : presetIdx) {
@@ -354,11 +364,35 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     spawnTimer = 0.0f;
 }
 
+void Scene::retireCompletedUploads(const CommandQueue& cmdQueue)
+{
+    const uint64_t completed = cmdQueue.completedFenceValue();
+    pendingUploads.erase(
+        std::remove_if(
+            pendingUploads.begin(), pendingUploads.end(),
+            [&](const PendingUploadBatch& batch) { return batch.fenceValue <= completed; }
+        ),
+        pendingUploads.end()
+    );
+}
+
+void Scene::trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resource>>&& temps)
+{
+    if (temps.empty()) {
+        return;
+    }
+
+    PendingUploadBatch batch;
+    batch.fenceValue = fenceValue;
+    batch.resources = std::move(temps);
+    pendingUploads.push_back(std::move(batch));
+}
+
 // ---------------------------------------------------------------------------
 // Scene::loadTeapot
 // ---------------------------------------------------------------------------
 
-void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
+void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool includeCompanion)
 {
     auto cmdList = cmdQueue.getCmdList();
     std::vector<ComPtr<ID3D12Resource>> temps;
@@ -468,15 +502,17 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue)
     tf.world = mat4{};
     ecsWorld.entity().set(tf).set(mirrorRef).add<Pickable>();
 
-    // Companion teapot: diffuse (non-reflective, provides cubemap content)
-    MeshRef matteRef = meshRef;
-    matteRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Diffuse)];
-    Transform tfMatte;
-    tfMatte.world = translate(3.5f, -0.6f, 0.0f) * scale(0.8f, 0.8f, 0.8f);
-    ecsWorld.entity().set(tfMatte).set(matteRef).add<Pickable>();
+    if (includeCompanion) {
+        // Companion teapot: diffuse (non-reflective, provides cubemap content)
+        MeshRef matteRef = meshRef;
+        matteRef.materialIndex = presetIdx[static_cast<int>(MaterialPreset::Diffuse)];
+        Transform tfMatte;
+        tfMatte.world = translate(3.5f, -0.6f, 0.0f) * scale(0.8f, 0.8f, 0.8f);
+        ecsWorld.entity().set(tfMatte).set(matteRef).add<Pickable>();
+    }
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
-    cmdQueue.waitForFenceVal(fv);
+    trackUploadBatch(fv, std::move(temps));
 }
 
 // ---------------------------------------------------------------------------
@@ -664,14 +700,13 @@ bool Scene::loadGltf(
     }
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
-    cmdQueue.waitForFenceVal(fv);
+    trackUploadBatch(fv, std::move(uploadTemps));
 
     spdlog::info(
         "Loaded GLB: {} entity(ies), {} material(s)", ecsWorld.count<MeshRef>(), materials.size()
     );
     return true;
 }
-
 
 // ---------------------------------------------------------------------------
 // Scene::populateDrawCommands
@@ -716,10 +751,13 @@ void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
     });
 
     // Instanced groups
-    instanceQuery.each([&](flecs::entity e, const Transform& /*groupTf*/, const InstanceGroup& group) {
+    instanceQuery.each([&](flecs::entity e, const Transform& /*groupTf*/,
+                           const InstanceGroup& group) {
         uint32_t N = static_cast<uint32_t>(group.transforms.size());
-        if (N == 0) return;
-        
+        if (N == 0) {
+            return;
+        }
+
         assert(drawIdx + N <= Scene::maxDrawsPerFrame / 3);
         const Material& mat = materials[group.mesh.materialIndex];
         uint32_t baseIdx = drawIdx;
@@ -731,9 +769,15 @@ void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
                               ? group.albedoOverrides[i]
                               : mat.albedo;
             fillPerObject(pod, mat, albedo);
-            if (i < group.roughnessOverrides.size()) pod.roughness = group.roughnessOverrides[i];
-            if (i < group.metallicOverrides.size()) pod.metallic = group.metallicOverrides[i];
-            if (i < group.emissiveStrengthOverrides.size()) pod.emissiveStrength = group.emissiveStrengthOverrides[i];
+            if (i < group.roughnessOverrides.size()) {
+                pod.roughness = group.roughnessOverrides[i];
+            }
+            if (i < group.metallicOverrides.size()) {
+                pod.metallic = group.metallicOverrides[i];
+            }
+            if (i < group.emissiveStrengthOverrides.size()) {
+                pod.emissiveStrength = group.emissiveStrengthOverrides[i];
+            }
 
             if (mat.reflective && !anyReflective) {
                 anyReflective = true;

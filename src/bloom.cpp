@@ -1,12 +1,12 @@
 module;
 
 #include <d3d12.h>
+#include "bloom_composite_ps_cso.h"
+#include "bloom_downsample_ps_cso.h"
+#include "bloom_prefilter_ps_cso.h"
+#include "bloom_upsample_ps_cso.h"
 #include "d3dx12_clean.h"
 #include "fullscreen_vs_cso.h"
-#include "bloom_prefilter_ps_cso.h"
-#include "bloom_downsample_ps_cso.h"
-#include "bloom_upsample_ps_cso.h"
-#include "bloom_composite_ps_cso.h"
 
 module bloom;
 

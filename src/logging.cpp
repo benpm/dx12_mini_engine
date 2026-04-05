@@ -4,12 +4,12 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <cstdio>
-#include <windows.h>
-#include <spdlog/spdlog.h>
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <windows.h>
+#include <cstdio>
 
 module logging;
 

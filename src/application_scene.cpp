@@ -237,6 +237,13 @@ void Application::applySceneData(const SceneFileData& d)
     // Runtime
     runtimeConfig = d.runtime;
 
+    if (contentLoaded && runtimeConfig.singleTeapotMode) {
+        scene.clearScene(cmdQueue);
+        scene.loadTeapot(device.Get(), cmdQueue, false);
+        spawningStopped = true;
+        autoStopSpawning = false;
+    }
+
     // Rebuild GPU resources if needed
     if (contentLoaded) {
         if (shadowRasterChanged) {

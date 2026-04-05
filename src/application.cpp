@@ -334,6 +334,8 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 void Application::update()
 {
     PROFILE_ZONE();
+    scene.retireCompletedUploads(cmdQueue);
+
     if (pendingFullscreenChange) {
         const bool targetFullscreen = pendingFullscreenValue;
         pendingFullscreenChange = false;
@@ -449,7 +451,7 @@ void Application::update()
     }
 
     // Spawn entities
-    if (!scene.spawnableMeshRefs.empty()) {
+    if (!runtimeConfig.singleTeapotMode && !scene.spawnableMeshRefs.empty()) {
         std::uniform_real_distribution<float> scaleDist(0.05f, 0.35f);
         std::uniform_real_distribution<float> angleDist(0.0f, 6.2832f);
         std::uniform_real_distribution<float> axisDist(-1.0f, 1.0f);
@@ -517,7 +519,8 @@ void Application::update()
     }
 
     // Create material test grids (once, on first frame with meshes loaded)
-    if (scene.ecsWorld.count<InstanceGroup>() == 0 && !scene.spawnableMeshRefs.empty()) {
+    if (!runtimeConfig.singleTeapotMode && scene.ecsWorld.count<InstanceGroup>() == 0 &&
+        !scene.spawnableMeshRefs.empty()) {
         constexpr int G = 5;
         constexpr float spacing = 2.4f;
         constexpr float objScale = 0.45f;

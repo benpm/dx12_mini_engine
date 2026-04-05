@@ -1,10 +1,10 @@
 module;
 
-#include <Windows.h>
 #include <d3d12.h>
+#include <Windows.h>
 #include <wrl.h>
-#include "d3dx12_clean.h"
 #include <cstdint>
+#include "d3dx12_clean.h"
 
 export module object_picking;
 
@@ -15,6 +15,8 @@ using Microsoft::WRL::ComPtr;
 export class ObjectPicker
 {
    public:
+    static constexpr uint32_t readbackRingSize = 3;
+
     void createResources(
         ComPtr<ID3D12Device2> device,
         uint32_t width,
@@ -23,8 +25,11 @@ export class ObjectPicker
     );
     void resize(ComPtr<ID3D12Device2> device, uint32_t width, uint32_t height);
 
-    // Read back the result from the previous frame's copy
-    void readPickResult();
+    // Read back the result from a previously submitted copy once its fence is complete.
+    void readPickResult(uint64_t completedFenceValue);
+
+    // Attach the submission fence value for the pending readback copy.
+    void setPendingReadbackFence(uint64_t fenceValue);
 
     // Copy the pixel at (x, y) from the ID RT to the readback buffer
     void copyPickedPixel(ComPtr<ID3D12GraphicsCommandList2> cmdList, uint32_t x, uint32_t y);
@@ -38,12 +43,19 @@ export class ObjectPicker
     uint32_t pickedIndex = invalidID;
 
    private:
+    struct ReadbackSlot
+    {
+        ComPtr<ID3D12Resource> buffer;
+        bool pendingRead = false;
+        uint64_t fenceValue = 0;
+    };
+
     ComPtr<ID3D12Resource> idRT;
     ComPtr<ID3D12Resource> depthBuffer;
     ComPtr<ID3D12DescriptorHeap> rtvHeap;
     ComPtr<ID3D12DescriptorHeap> dsvHeap;
-    ComPtr<ID3D12Resource> readbackBuffer;
+    ReadbackSlot readbackSlots[readbackRingSize];
+    uint32_t writeSlot = 0;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
-    bool pendingRead = false;
 };

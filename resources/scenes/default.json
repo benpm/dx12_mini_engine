@@ -1,0 +1,24 @@
+{
+    "title": "Default",
+    "description": "Single reflective teapot",
+    "camera": {
+        "fov": 0.95,
+        "nearPlane": 0.1,
+        "farPlane": 200.0,
+        "yaw": 1.2,
+        "pitch": 0.35,
+        "radius": 12.0
+    },
+    "spawning": {
+        "stopped": true,
+        "autoStop": false,
+        "stopFrameMs": 10.0,
+        "batchSize": 50
+    },
+    "display": {
+        "showBillboards": false
+    },
+    "runtime": {
+        "singleTeapotMode": true
+    }
+}

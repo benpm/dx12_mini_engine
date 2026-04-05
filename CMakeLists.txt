@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 project(dx12_experiments LANGUAGES CXX C)
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+include(CTest)
 
 # Use static CRT for MSVC and Clang-cl (so no VCRUNTIME dlls are required)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -338,3 +339,40 @@ target_link_libraries(main PRIVATE
     glaze::glaze
     Microsoft::DirectX-Headers
 )
+
+if(BUILD_TESTING)
+    FetchContent_Declare(
+        doctest
+        GIT_REPOSITORY https://github.com/doctest/doctest
+        GIT_TAG v2.4.11
+    )
+    FetchContent_MakeAvailable(doctest)
+    include("${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake")
+
+    add_executable(unit_tests
+        tests/math_types_tests.cpp
+    )
+    target_compile_features(unit_tests PRIVATE cxx_std_23)
+    target_include_directories(unit_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(unit_tests PRIVATE doctest::doctest)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+        target_compile_options(unit_tests PRIVATE
+            -Wall -Wno-c++98-compat -fcolor-diagnostics
+            $<$<CONFIG:Debug>:-O0 -g>
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+        )
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(unit_tests PRIVATE
+            /W3
+            $<$<CONFIG:Debug>:/Od /Zi>
+            $<$<CONFIG:Release>:/O2>
+            $<$<CONFIG:RelWithDebInfo>:/O2 /Zi>
+        )
+    else()
+        target_compile_options(unit_tests PRIVATE -Wall)
+    endif()
+
+    doctest_discover_tests(unit_tests)
+endif()

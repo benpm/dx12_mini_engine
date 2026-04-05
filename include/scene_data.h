@@ -106,6 +106,7 @@ struct RuntimeData
     bool exitAfterScreenshot = false;
     int spawnPerFrame = 0;
     bool skipImGui = false;
+    bool singleTeapotMode = false;
 };
 
 struct SceneFileData

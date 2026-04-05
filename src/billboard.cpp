@@ -4,18 +4,18 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <Windows.h>
 #include <d3d12.h>
+#include <directxtk12/ResourceUploadBatch.h>
+#include <directxtk12/WICTextureLoader.h>
+#include <Windows.h>
 #include <wrl.h>
-#include "d3dx12_clean.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <directxtk12/ResourceUploadBatch.h>
-#include <directxtk12/WICTextureLoader.h>
+#include "d3dx12_clean.h"
 
-#include "billboard_vs_cso.h"
 #include "billboard_ps_cso.h"
+#include "billboard_vs_cso.h"
 
 module billboard;
 

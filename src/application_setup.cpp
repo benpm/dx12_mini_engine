@@ -192,7 +192,8 @@ void Application::createCubemapResources()
         desc.NumDescriptors = 6;
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&cubemapRtvHeap)));
-        UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        cubemapRtvDescSize =
+            device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
         for (uint32_t i = 0; i < 6; ++i) {
             D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
             rtvDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
@@ -201,7 +202,8 @@ void Application::createCubemapResources()
             rtvDesc.Texture2DArray.ArraySize = 1;
             rtvDesc.Texture2DArray.MipSlice = 0;
             CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
-                cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i), rtvSize
+                cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i),
+                cubemapRtvDescSize
             );
             device->CreateRenderTargetView(cubemapTexture.Get(), &rtvDesc, handle);
         }
@@ -213,7 +215,8 @@ void Application::createCubemapResources()
         desc.NumDescriptors = 6;
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&cubemapDsvHeap)));
-        UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+        cubemapDsvDescSize =
+            device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
         for (uint32_t i = 0; i < 6; ++i) {
             D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
             dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
@@ -222,7 +225,8 @@ void Application::createCubemapResources()
             dsvDesc.Texture2DArray.ArraySize = 1;
             dsvDesc.Texture2DArray.MipSlice = 0;
             CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
-                cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i), dsvSize
+                cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(i),
+                cubemapDsvDescSize
             );
             device->CreateDepthStencilView(cubemapDepth.Get(), &dsvDesc, handle);
         }
@@ -238,7 +242,7 @@ void Application::createCubemapResources()
         srvDesc.TextureCube.MostDetailedMip = 0;
         CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
             scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(Scene::nBuffers + 1), scene.sceneSrvDescSize
+            static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
         );
         device->CreateShaderResourceView(cubemapTexture.Get(), &srvDesc, handle);
     }
@@ -287,7 +291,7 @@ bool Application::loadContent()
         MeshRef terrainMesh =
             scene.appendToMegaBuffers(cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps);
         uint64_t fv = cmdQueue.execCmdList(cmdList);
-        cmdQueue.waitForFenceVal(fv);
+        scene.trackUploadBatch(fv, std::move(temps));
 
         Transform tf;
         tf.world = translate(0.0f, tp.positionY, 0.0f);
@@ -335,14 +339,30 @@ bool Application::loadContent()
     ssaoSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3: SSAO
 
     CD3DX12_ROOT_PARAMETER1 rootParams[8];
-    rootParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL); // b0: PerFrameCB
-    rootParams[1].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL); // b1: PerPassCB
-    rootParams[2].InitAsConstants(1, 2, 0, D3D12_SHADER_VISIBILITY_ALL); // b2: drawIndex
-    rootParams[3].InitAsConstants(4, 3, 0, D3D12_SHADER_VISIBILITY_ALL); // b3: outline params
-    rootParams[4].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL); // t0: PerObjectData
-    rootParams[5].InitAsDescriptorTable(1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t1: shadow map
-    rootParams[6].InitAsDescriptorTable(1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t2: cubemap
-    rootParams[7].InitAsDescriptorTable(1, &ssaoSrvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t3: SSAO
+    rootParams[app_slots::rootPerFrameCB].InitAsConstantBufferView(
+        0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
+    );  // b0: PerFrameCB
+    rootParams[app_slots::rootPerPassCB].InitAsConstantBufferView(
+        1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
+    );  // b1: PerPassCB
+    rootParams[app_slots::rootDrawIndex].InitAsConstants(
+        1, 2, 0, D3D12_SHADER_VISIBILITY_ALL
+    );  // b2: drawIndex
+    rootParams[app_slots::rootOutlineParams].InitAsConstants(
+        4, 3, 0, D3D12_SHADER_VISIBILITY_ALL
+    );  // b3: outline params
+    rootParams[app_slots::rootPerObjectSrv].InitAsDescriptorTable(
+        1, &srvRange, D3D12_SHADER_VISIBILITY_ALL
+    );  // t0: PerObjectData
+    rootParams[app_slots::rootShadowSrv].InitAsDescriptorTable(
+        1, &shadowSrvRange, D3D12_SHADER_VISIBILITY_PIXEL
+    );  // t1: shadow map
+    rootParams[app_slots::rootCubemapSrv].InitAsDescriptorTable(
+        1, &cubemapSrvRange, D3D12_SHADER_VISIBILITY_PIXEL
+    );  // t2: cubemap
+    rootParams[app_slots::rootSsaoSrv].InitAsDescriptorTable(
+        1, &ssaoSrvRange, D3D12_SHADER_VISIBILITY_PIXEL
+    );  // t3: SSAO
 
     // Static samplers: s0 = shadow comparison, s1 = cubemap linear
     D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
@@ -388,7 +408,7 @@ bool Application::loadContent()
                    : D3D12_SHADER_BYTECODE{};
         shadow.createResources(
             device.Get(), rootSignature.Get(), vs, scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
-            static_cast<INT>(Scene::nBuffers)
+            static_cast<INT>(app_slots::srvSlotShadow)
         );
     }
 
@@ -447,7 +467,7 @@ bool Application::loadContent()
     bloom.createResources(device.Get(), clientWidth, clientHeight);
     ssao.createResources(
         device.Get(), clientWidth, clientHeight, depthBuffer.Get(), scene.sceneSrvHeap.Get(),
-        scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
+        scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotSsao)
     );
     createNormalPSO();
 

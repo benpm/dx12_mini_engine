@@ -15,6 +15,10 @@ import logging;
 import scene_file;
 import window;
 
+#ifndef SCENES_DIR
+    #define SCENES_DIR "resources/scenes"
+#endif
+
 // NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
 _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
@@ -50,7 +54,12 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         LocalFree(static_cast<HLOCAL>(argv));
     }
 
-    // Load scene file (if provided) before window init to read runtime.useWarp
+    if (sceneFilePath.empty()) {
+        sceneFilePath = std::string(SCENES_DIR) + "/default.json";
+        spdlog::info("No scene path provided, using default scene '{}'", sceneFilePath);
+    }
+
+    // Load scene file before window init to read runtime flags
     SceneFileData sceneData;
     bool hasSceneFile = false;
     if (!sceneFilePath.empty()) {

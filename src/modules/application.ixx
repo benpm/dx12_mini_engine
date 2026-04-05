@@ -31,6 +31,28 @@ export import shadow;
 export import outline;
 export import render_graph;
 
+// Global application data and state
+export namespace app_slots
+{
+    // Root signature slot assignments
+
+    inline constexpr UINT rootPerFrameCB = 0;
+    inline constexpr UINT rootPerPassCB = 1;
+    inline constexpr UINT rootDrawIndex = 2;
+    inline constexpr UINT rootOutlineParams = 3;
+    inline constexpr UINT rootPerObjectSrv = 4;
+    inline constexpr UINT rootShadowSrv = 5;
+    inline constexpr UINT rootCubemapSrv = 6;
+    inline constexpr UINT rootSsaoSrv = 7;
+
+    // Note: rootPerObjectSrv is a descriptor table with one entry per back buffer, so the actual SRV for drawIndex N is at rootPerObjectSrv + (N * srvSlotPerObjectBase)
+
+    inline constexpr uint32_t srvSlotPerObjectBase = 0;
+    inline constexpr uint32_t srvSlotShadow = Scene::nBuffers;
+    inline constexpr uint32_t srvSlotCubemap = Scene::nBuffers + 1;
+    inline constexpr uint32_t srvSlotSsao = Scene::nBuffers + 2;
+}  // namespace app_slots
+
 export class Application
 {
    public:
@@ -103,6 +125,8 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12Resource> cubemapDepth;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapRtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapDsvHeap;
+    UINT cubemapRtvDescSize = 0;
+    UINT cubemapDsvDescSize = 0;
     uint32_t cubemapResolution = 128;
     bool cubemapEnabled = true;
     float cubemapNearPlane = 0.1f;

@@ -1,7 +1,7 @@
 module;
 
-#include <Windows.h>
 #include <d3d12.h>
+#include <Windows.h>
 #include <wrl.h>
 #include <cassert>
 #include <cstdint>
@@ -40,10 +40,7 @@ ComPtr<ID3D12GraphicsCommandList2> CommandQueue::getCmdList()
         this->cmdListQueue.pop();
     }
 
-    // Assign allocator to command list
-    chkDX(commandList->SetPrivateDataInterface(
-        __uuidof(ID3D12CommandAllocator), commandAllocator.Get()
-    ));
+    cmdListAllocatorMap[commandList.Get()] = commandAllocator;
 
     return commandList;
 }
@@ -52,23 +49,18 @@ uint64_t CommandQueue::execCmdList(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 {
     chkDX(cmdList->Close());
 
-    // Retrieve command allocator from private data of command list
-    ID3D12CommandAllocator* commandAllocator;
-    UINT dataSize = sizeof(ID3D12CommandAllocator*);
-    chkDX(cmdList->GetPrivateData(
-        __uuidof(ID3D12CommandAllocator), &dataSize, static_cast<void*>(&commandAllocator)
-    ));
+    auto allocIt = cmdListAllocatorMap.find(cmdList.Get());
+    assert(allocIt != cmdListAllocatorMap.end() && "Command list allocator mapping missing");
+    ComPtr<ID3D12CommandAllocator> commandAllocator = allocIt->second;
+    cmdListAllocatorMap.erase(allocIt);
 
     ID3D12CommandList* const commandLists[] = { cmdList.Get() };
     this->queue->ExecuteCommandLists(_countof(commandLists), commandLists);
     uint64_t fenceVal = this->signal();
 
     // Push bach the allocator and list to their queues so they can be re-used
-    this->cmdAllocQueue.emplace(CmdAllocEntry{ fenceVal, commandAllocator });
+    this->cmdAllocQueue.emplace(CmdAllocEntry{ fenceVal, commandAllocator.Get() });
     this->cmdListQueue.push(cmdList);
-
-    // Release ownership of the command allocator
-    commandAllocator->Release();
 
     return fenceVal;
 }
@@ -84,6 +76,11 @@ uint64_t CommandQueue::signal()
 bool CommandQueue::isFenceComplete(uint64_t fval)
 {
     return (this->fence->GetCompletedValue() >= fval);
+}
+
+uint64_t CommandQueue::completedFenceValue() const
+{
+    return this->fence->GetCompletedValue();
 }
 
 void CommandQueue::waitForFenceVal(uint64_t fval)

@@ -1,11 +1,11 @@
 module;
 
-#include <Windows.h>
 #include <d3d12.h>
-#include <wrl.h>
-#include "d3dx12_clean.h"
-#include <cstdint>
 #include <spdlog/spdlog.h>
+#include <Windows.h>
+#include <wrl.h>
+#include <cstdint>
+#include "d3dx12_clean.h"
 #include "id_ps_cso.h"
 #include "vertex_shader_cso.h"
 
@@ -86,10 +86,15 @@ void ObjectPicker::createResources(
     {
         const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_READBACK);
         const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(256);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            IID_PPV_ARGS(&readbackBuffer)
-        ));
+        for (auto& slot : readbackSlots) {
+            chkDX(device->CreateCommittedResource(
+                &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                IID_PPV_ARGS(&slot.buffer)
+            ));
+            slot.pendingRead = false;
+            slot.fenceValue = 0;
+        }
+        writeSlot = 0;
     }
 
     // --- PSO (reuses scene vertex shader, ID pixel shader, R32_UINT target) ---
@@ -192,9 +197,10 @@ void ObjectPicker::copyPickedPixel(
 )
 {
     if (x >= width_ || y >= height_) {
-        pendingRead = false;
         return;
     }
+
+    auto& slot = readbackSlots[writeSlot];
 
     // Transition ID RT to COPY_SOURCE
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -209,7 +215,7 @@ void ObjectPicker::copyPickedPixel(
     src.SubresourceIndex = 0;
 
     D3D12_TEXTURE_COPY_LOCATION dst = {};
-    dst.pResource = readbackBuffer.Get();
+    dst.pResource = slot.buffer.Get();
     dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
     dst.PlacedFootprint.Offset = 0;
     dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_UINT;
@@ -227,22 +233,49 @@ void ObjectPicker::copyPickedPixel(
     );
     cmdList->ResourceBarrier(1, &barrier);
 
-    pendingRead = true;
+    slot.pendingRead = true;
+    slot.fenceValue = 0;
+    writeSlot = (writeSlot + 1) % readbackRingSize;
 }
 
-void ObjectPicker::readPickResult()
+void ObjectPicker::setPendingReadbackFence(uint64_t fenceValue)
 {
-    if (!pendingRead) {
+    uint32_t lastSlot = (writeSlot + readbackRingSize - 1) % readbackRingSize;
+    auto& slot = readbackSlots[lastSlot];
+    if (!slot.pendingRead || slot.fenceValue != 0) {
         return;
     }
-    pendingRead = false;
+    slot.fenceValue = fenceValue;
+}
+
+void ObjectPicker::readPickResult(uint64_t completedFenceValue)
+{
+    int bestSlot = -1;
+    uint64_t bestFence = 0;
+    for (uint32_t i = 0; i < readbackRingSize; ++i) {
+        const auto& slot = readbackSlots[i];
+        if (!slot.pendingRead || slot.fenceValue == 0 || completedFenceValue < slot.fenceValue) {
+            continue;
+        }
+        if (slot.fenceValue >= bestFence) {
+            bestFence = slot.fenceValue;
+            bestSlot = static_cast<int>(i);
+        }
+    }
+    if (bestSlot < 0) {
+        return;
+    }
+
+    auto& slot = readbackSlots[bestSlot];
+    slot.pendingRead = false;
+    slot.fenceValue = 0;
 
     void* data = nullptr;
     D3D12_RANGE readRange = { 0, sizeof(uint32_t) };
-    if (SUCCEEDED(readbackBuffer->Map(0, &readRange, &data))) {
+    if (SUCCEEDED(slot.buffer->Map(0, &readRange, &data))) {
         pickedIndex = *static_cast<uint32_t*>(data);
         D3D12_RANGE writeRange = { 0, 0 };
-        readbackBuffer->Unmap(0, &writeRange);
+        slot.buffer->Unmap(0, &writeRange);
     } else {
         pickedIndex = invalidID;
     }

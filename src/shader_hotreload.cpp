@@ -4,6 +4,7 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
+#include <spdlog/spdlog.h>
 #include <Windows.h>
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +12,6 @@ module;
 #include <fstream>
 #include <string>
 #include <vector>
-#include <spdlog/spdlog.h>
 
 module shader_hotreload;
 
