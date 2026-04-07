@@ -314,7 +314,7 @@ void Application::render()
                         cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(),
                         static_cast<INT>(face), cubemapDsvDescSize
                     );
-                    FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
+                    FLOAT clearColor[] = { 0, 0, 0, 1 };
                     this->clearRTV(cmd, faceRtv, clearColor);
                     this->clearDepth(cmd, faceDsv);
                     cmd->RSSetViewports(1, &cubeVP);

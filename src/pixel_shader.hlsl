@@ -80,6 +80,22 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
     return F0 + (1.0f - F0) * pow(saturate(1.0f - cosTheta), 5.0f);
 }
 
+// Rayleigh sky approximation (matches bloom_composite_ps.hlsl)
+float3 rayleighSky(float3 viewDir, float3 sunDirection)
+{
+    static const float3 betaR = float3(5.8e-3f, 13.5e-3f, 33.1e-3f);
+    float sunDot = max(dot(viewDir, sunDirection), 0.0f);
+    float upDot = max(viewDir.y, 0.0f);
+    float phase = 0.75f * (1.0f + sunDot * sunDot);
+    float opticalDepth = 1.0f / (upDot + 0.15f);
+    float3 scatter = betaR * phase * opticalDepth;
+    float3 sky = scatter * 15.0f;
+    sky += float3(1.0f, 0.9f, 0.7f) * pow(sunDot, 256.0f) * 8.0f;
+    float horizonFade = exp(-upDot * 3.0f);
+    sky += float3(0.7f, 0.55f, 0.4f) * horizonFade * 0.4f;
+    return max(sky, 0.0f);
+}
+
 float calcShadow(float3 worldPos, matrix lightVP, float bias, float texelSize)
 {
     float4 lsPos = mul(lightVP, float4(worldPos, 1.0f));
@@ -151,8 +167,7 @@ float4 main(PixelIn IN) : SV_Target
         float3 specular = (D * G * F) / (4.0f * NdV * NdL + 0.0001f);
         float3 kD = (1.0f - F) * (1.0f - metallic);
 
-        float shadow =
-            calcShadow(IN.WorldPos, LightViewProj, ShadowBias, ShadowMapTexelSize);
+        float shadow = calcShadow(IN.WorldPos, LightViewProj, ShadowBias, ShadowMapTexelSize);
         Lo += (kD * albedo / PI + specular) * radiance * NdL * shadow;
     }
 
@@ -166,6 +181,10 @@ float4 main(PixelIn IN) : SV_Target
     if (objData.Reflective > 0.5f) {
         float3 R = reflect(-V, N);
         float3 envColor = envMap.SampleLevel(envSampler, R, roughness * 4.0f).rgb;
+        float envLum = dot(envColor, float3(0.299f, 0.587f, 0.114f));
+        if (envLum < 0.001f) {
+            envColor = rayleighSky(R, normalize(-DirLightDir.xyz));
+        }
         float3 F = FresnelSchlick(NdV, F0);
         float envStrength = 1.0f - roughness * roughness;
         color += envColor * F * envStrength;
