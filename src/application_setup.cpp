@@ -20,6 +20,8 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "grid_ps_cso.h"
+#include "grid_vs_cso.h"
 #include "normal_ps_cso.h"
 #include "pixel_shader_cso.h"
 #include "profiling.h"
@@ -144,6 +146,90 @@ void Application::createScenePSO()
     D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(PipelineStateStream),
                                                  &pipelineStateStream };
     chkDX(this->device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
+}
+
+// ---------------------------------------------------------------------------
+// createGridPSO — infinite grid root signature + PSO
+// ---------------------------------------------------------------------------
+
+void Application::createGridPSO()
+{
+    // Root signature: single CBV at b0 (GridCB: ViewProj, InvViewProj, CameraPos)
+    if (!gridRootSig) {
+        CD3DX12_ROOT_PARAMETER1 rootParam;
+        rootParam.InitAsConstantBufferView(
+            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
+        );
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsDesc;
+        rsDesc.Init_1_1(1, &rootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+        ComPtr<ID3DBlob> blob, err;
+        D3D12_FEATURE_DATA_ROOT_SIGNATURE feat = { D3D_ROOT_SIGNATURE_VERSION_1_1 };
+        if (FAILED(
+                device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &feat, sizeof(feat))
+            )) {
+            feat.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+        }
+        chkDX(D3DX12SerializeVersionedRootSignature(&rsDesc, feat.HighestVersion, &blob, &err));
+        chkDX(device->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&gridRootSig)
+        ));
+    }
+
+    auto vsData = shaderCompiler.data(gridVSIdx);
+    auto psData = shaderCompiler.data(gridPSIdx);
+    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(gridVSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_grid_vs, sizeof(g_grid_vs));
+    auto ps = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(gridPSIdx))
+                     : CD3DX12_SHADER_BYTECODE(g_grid_ps, sizeof(g_grid_ps));
+
+    struct PipelineStateStream
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+        CD3DX12_PIPELINE_STATE_STREAM_BLEND_DESC Blend;
+        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL DepthStencil;
+        CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+    } pss;
+
+    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+    rtvFormats.NumRenderTargets = 1;
+    rtvFormats.RTFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+
+    pss.pRootSignature = gridRootSig.Get();
+    pss.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pss.VS = vs;
+    pss.PS = ps;
+    pss.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+    pss.RTVFormats = rtvFormats;
+
+    // Alpha blending
+    CD3DX12_BLEND_DESC blendDesc(D3D12_DEFAULT);
+    blendDesc.RenderTarget[0].BlendEnable = TRUE;
+    blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    pss.Blend = blendDesc;
+
+    // Depth test enabled (read), depth write disabled (transparent)
+    CD3DX12_DEPTH_STENCIL_DESC dsDesc(D3D12_DEFAULT);
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    pss.DepthStencil = dsDesc;
+
+    // No face culling
+    CD3DX12_RASTERIZER_DESC rastDesc(D3D12_DEFAULT);
+    rastDesc.CullMode = D3D12_CULL_MODE_NONE;
+    pss.Rasterizer = rastDesc;
+
+    D3D12_PIPELINE_STATE_STREAM_DESC psoDesc = { sizeof(pss), &pss };
+    chkDX(device->CreatePipelineState(&psoDesc, IID_PPV_ARGS(&gridPSO)));
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +511,7 @@ bool Application::loadContent()
         outline.createResources(device.Get(), rootSignature.Get(), vs, ps);
     }
     createCubemapResources();
+    createGridPSO();
     billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
 
     // Init shader hot reload
@@ -438,6 +525,8 @@ bool Application::loadContent()
         bloomDownIdx = shaderCompiler.watch("bloom_downsample_ps.hlsl", "ps_6_0");
         bloomUpIdx = shaderCompiler.watch("bloom_upsample_ps.hlsl", "ps_6_0");
         bloomCompIdx = shaderCompiler.watch("bloom_composite_ps.hlsl", "ps_6_0");
+        gridVSIdx = shaderCompiler.watch("grid_vs.hlsl", "vs_6_0");
+        gridPSIdx = shaderCompiler.watch("grid_ps.hlsl", "ps_6_0");
     }
 
     // Spawn animated point light entities

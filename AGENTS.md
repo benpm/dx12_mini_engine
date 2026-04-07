@@ -207,6 +207,7 @@ update()  →  render()
                   ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT)
                   ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT)
                   ├─ Scene pass       (HDR RT, samples shadow+cubemap+SSAO)
+                  ├─ Grid pass        (infinite Y=0 grid, alpha-blended, depth-tested)
                   ├─ Outline pass     (silhouette for hovered/selected)
                   ├─ ID pass          (R32_UINT RT, entity index per pixel)
                   ├─ Billboards pass  (light sprite rendering)
@@ -229,7 +230,9 @@ update()  →  render()
 
 **Tonemappers** (selectable in UI): ACES Filmic, AgX, AgX Punchy, Gran Turismo / Uchimura, PBR Neutral.
 
-**Rayleigh sky**: Computed in `bloom_composite_ps.hlsl` during the composite pass. When a pixel has near-zero scene luminance (background), reconstructs view direction from UV + camera orientation vectors (passed as root constants), then computes Rayleigh scattering with sun glow and horizon warmth. Camera forward/right/up and sun direction are computed in `application.cpp` and passed via `BloomRenderer::SkyParams`.
+**Rayleigh sky**: Computed in `bloom_composite_ps.hlsl` during the composite pass. When a pixel has near-zero scene luminance (background), reconstructs view direction from UV + camera orientation vectors (passed as root constants), then computes Rayleigh scattering with sun glow and horizon warmth. Camera forward/right/up and sun direction are computed in `application.cpp` and passed via `BloomRenderer::SkyParams`. Also duplicated in `pixel_shader.hlsl` for cubemap reflection fallback — when a reflective material's cubemap sample is near-black (no geometry), the reflection vector is used to compute sky color inline.
+
+**Infinite grid**: Rendered via `grid_vs.hlsl` + `grid_ps.hlsl` with its own root signature (`gridRootSig`) and PSO (`gridPSO`). Vertex shader generates a fullscreen triangle, unprojects near/far planes to world space via `InvViewProj`. Pixel shader ray-intersects the Y=0 plane, draws unit lines (1m) and major lines (10m) with `fwidth`-based anti-aliasing. X axis highlighted blue, Z axis red. Alpha-blended with distance fade (80m). Depth-tested against scene geometry (read-only depth). Uses perPass CB slot 10 for `GridCB` (ViewProj, InvViewProj, CameraPos). Toggled via `showGrid` (Display menu, saved in scene files).
 
 **Ocean fog**: Height-based fog in `pixel_shader.hlsl`. Thickens exponentially below `FogStartY` (water surface). Fog color darkens with depth — near-surface uses `FogColor`, deep areas fade toward black. Also blends distance fog for depth cueing. Parameters (`FogStartY`, `FogDensity`, `FogColor`) stored in `SceneConstantBuffer` and editable in UI.
 
@@ -270,7 +273,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 
 ### ImGui UI panels
 
-* **Display**: vsync toggle, fullscreen toggle, tearing status, runtime mode.
+* **Display**: vsync toggle, grid toggle, fullscreen toggle, tearing status, runtime mode.
 * **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 * **Bloom**: threshold, intensity sliders.
 * **Tonemapping**: tonemapper combo.

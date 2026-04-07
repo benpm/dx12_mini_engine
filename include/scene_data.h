@@ -74,6 +74,7 @@ struct DisplayData
     bool animateEntities = true;
     float lightAnimSpeed = 1.0f;
     bool showBillboards = true;
+    bool showGrid = true;
 };
 
 struct EntityData

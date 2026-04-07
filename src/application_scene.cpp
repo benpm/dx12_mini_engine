@@ -77,7 +77,7 @@ SceneFileData Application::extractSceneData() const
     d.spawning = { spawningStopped, autoStopSpawning, spawnStopFrameMs, spawnBatchSize };
 
     // Display
-    d.display = { vsync, animateEntities, lightAnimationSpeed, showLightBillboards };
+    d.display = { vsync, animateEntities, lightAnimationSpeed, showLightBillboards, showGrid };
 
     // Background
     d.bgColor = bgColor;
@@ -223,6 +223,7 @@ void Application::applySceneData(const SceneFileData& d)
     animateEntities = d.display.animateEntities;
     lightAnimationSpeed = d.display.lightAnimSpeed;
     showLightBillboards = d.display.showBillboards;
+    showGrid = d.display.showGrid;
 
     // Background
     bgColor = d.bgColor;

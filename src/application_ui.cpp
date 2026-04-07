@@ -40,6 +40,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Display")) {
             ImGui::Checkbox("VSync", &vsync);
+            ImGui::Checkbox("Grid", &showGrid);
             bool fs = fullscreen;
             if (ImGui::Checkbox("Fullscreen", &fs)) {
                 pendingFullscreenValue = fs;

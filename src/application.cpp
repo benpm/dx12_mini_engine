@@ -437,6 +437,11 @@ void Application::update()
                        : D3D12_SHADER_BYTECODE{};
             outline.reloadPSO(device.Get(), rootSignature.Get(), vs, ps);
         }
+        bool gridChanged =
+            shaderCompiler.wasRecompiled(gridVSIdx) || shaderCompiler.wasRecompiled(gridPSIdx);
+        if (gridChanged) {
+            createGridPSO();
+        }
         if (bloomChanged) {
             auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
                 auto d = shaderCompiler.data(idx);

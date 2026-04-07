@@ -242,6 +242,8 @@ compile_shader(src/outline_ps.hlsl ps 6_0 OUTLINE_PS_HDR g_outline_ps)
 compile_shader(src/normal_ps.hlsl ps 6_0 NORMAL_PS_HDR g_normal_ps)
 compile_shader(src/ssao_ps.hlsl ps 6_0 SSAO_PS_HDR g_ssao_ps)
 compile_shader(src/ssao_blur_ps.hlsl ps 6_0 SSAO_BLUR_PS_HDR g_ssao_blur_ps)
+compile_shader(src/grid_vs.hlsl vs 6_0 GRID_VS_HDR g_grid_vs)
+compile_shader(src/grid_ps.hlsl ps 6_0 GRID_PS_HDR g_grid_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
@@ -251,6 +253,7 @@ add_custom_target(shaders DEPENDS
     ${ID_PS_HDR}
     ${OUTLINE_VS_HDR} ${OUTLINE_PS_HDR}
     ${NORMAL_PS_HDR} ${SSAO_PS_HDR} ${SSAO_BLUR_PS_HDR}
+    ${GRID_VS_HDR} ${GRID_PS_HDR}
 )
 add_dependencies(main shaders)
 

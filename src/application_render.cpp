@@ -463,6 +463,46 @@ void Application::render()
         }
     );
 
+    // --- Grid Pass ---
+    if (showGrid) {
+        // Write grid CB into perPass slot 10
+        struct GridCB
+        {
+            mat4 viewProj;
+            mat4 invViewProj;
+            vec4 cameraPos;
+        };
+        static_assert(sizeof(GridCB) <= 256, "GridCB must fit in one perPass slot");
+        auto* gridCB = reinterpret_cast<GridCB*>(
+            reinterpret_cast<uint8_t*>(passMappedBase) + 10 * passCBStride
+        );
+        gridCB->viewProj = viewProj;
+        gridCB->invViewProj = mat4(XMMatrixInverse(nullptr, XMLoadFloat4x4(&viewProj)));
+        gridCB->cameraPos = cameraPos;
+
+        renderGraph.addPass(
+            "Grid Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+            },
+            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                cmd->SetPipelineState(gridPSO.Get());
+                cmd->SetGraphicsRootSignature(gridRootSig.Get());
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->RSSetViewports(1, &this->viewport);
+                cmd->RSSetScissorRects(1, &this->scissorRect);
+                cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+                cmd->SetGraphicsRootConstantBufferView(0, getPassCBAddress(10));
+                cmd->DrawInstanced(3, 1, 0, 0);
+            }
+        );
+    }
+
     // --- Outline Pass ---
     if (hoveredEntity || selectedEntity) {
         renderGraph.addPass(

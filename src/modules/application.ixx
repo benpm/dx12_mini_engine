@@ -45,7 +45,8 @@ export namespace app_slots
     inline constexpr UINT rootCubemapSrv = 6;
     inline constexpr UINT rootSsaoSrv = 7;
 
-    // Note: rootPerObjectSrv is a descriptor table with one entry per back buffer, so the actual SRV for drawIndex N is at rootPerObjectSrv + (N * srvSlotPerObjectBase)
+    // Note: rootPerObjectSrv is a descriptor table with one entry per back buffer, so the actual
+    // SRV for drawIndex N is at rootPerObjectSrv + (N * srvSlotPerObjectBase)
 
     inline constexpr uint32_t srvSlotPerObjectBase = 0;
     inline constexpr uint32_t srvSlotShadow = Scene::nBuffers;
@@ -114,6 +115,12 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> normalPSO;
+
+    // Infinite grid
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> gridRootSig;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> gridPSO;
+    bool showGrid = true;
+    void createGridPSO();
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
@@ -206,6 +213,8 @@ export class Application
     size_t bloomDownIdx = 0;
     size_t bloomUpIdx = 0;
     size_t bloomCompIdx = 0;
+    size_t gridVSIdx = 0;
+    size_t gridPSIdx = 0;
 
     void transitionResource(
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
