@@ -155,8 +155,10 @@ function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
         COMMAND ${DXC_EXECUTABLE} -T ${SHADER_TYPE}_${SHADER_MODEL} -E main
+        -I ${CMAKE_CURRENT_SOURCE_DIR}/src
         -Fh ${OUTPUT_FILE} -Vn ${VAR_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sky.hlsli
         COMMENT "Compiling ${SHADER_FILE} -> ${SHADER_NAME}_cso.h"
         VERBATIM
     )

@@ -156,6 +156,7 @@ void Application::render()
     frameMapped->fogStartY = fogStartY;
     frameMapped->fogDensity = fogDensity;
     frameMapped->fogColor = vec4(fogColor, 0.0f);
+    frameMapped->time = lightTime;
 
     // Main pass PerPassCB (index 0)
     PerPassCB* mainPass = getPassMapped(0);
@@ -416,7 +417,8 @@ void Application::render()
         [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
             PROFILE_ZONE_NAMED("Scene Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Scene");
-            FLOAT clearColor[] = { bgColor.x, bgColor.y, bgColor.z, 1.0f };
+            // Clear to black — Rayleigh sky fills background in composite pass
+            FLOAT clearColor[] = { 0, 0, 0, 1 };
             auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
             cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
             auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -638,6 +640,7 @@ void Application::render()
             skyParams.aspectRatio =
                 static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
             skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
+            skyParams.time = lightTime;
 
             CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
                 rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),

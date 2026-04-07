@@ -60,6 +60,7 @@ export struct PerFrameCB
     float fogStartY;
     float fogDensity;
     vec4 fogColor;
+    float time;
 };
 
 export struct PerPassCB

@@ -45,6 +45,7 @@ export class BloomRenderer
         vec3 camForward, camRight, camUp;
         vec3 sunDir;
         float aspectRatio, tanHalfFov;
+        float time;
     };
 
     void render(

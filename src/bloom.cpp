@@ -389,6 +389,7 @@ void BloomRenderer::render(
     compositeCB[18] = sky.sunDir.z;
     compositeCB[19] = sky.aspectRatio;
     compositeCB[20] = sky.tanHalfFov;
+    compositeCB[21] = sky.time;
     cmdList->SetGraphicsRoot32BitConstants(2, 24, compositeCB, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 

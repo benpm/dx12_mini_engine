@@ -121,8 +121,8 @@ bool ShaderCompiler::compile(Watch& w)
     GetTempFileNameA(tempDir, "dxc", 0, tempFile);
 
     // Build command line
-    std::string cmd = "\"" + dxcPath_ + "\" -T " + w.target + " -E main -Fo \"" + tempFile +
-                      "\" \"" + w.path.string() + "\"";
+    std::string cmd = "\"" + dxcPath_ + "\" -T " + w.target + " -E main -I \"" + shaderDir_ +
+                      "\" -Fo \"" + tempFile + "\" \"" + w.path.string() + "\"";
 
     // Create pipe for error output
     SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };

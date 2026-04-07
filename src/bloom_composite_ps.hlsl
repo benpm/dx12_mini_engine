@@ -13,6 +13,7 @@ cbuffer BloomConstants : register(b0)
     float3 sunDir;
     float aspectRatio;
     float tanHalfFov;
+    float time;
 };
 
 // --- ACES Filmic (Narkowicz 2015) ---
@@ -143,38 +144,7 @@ float3 PBRNeutralTonemap(float3 color)
     return lerp(color, newPeak * float3(1, 1, 1), g);
 }
 
-// Rayleigh sky approximation
-float3 rayleighSky(float3 viewDir, float3 sunDirection)
-{
-    // Rayleigh scattering coefficients (proportional to 1/lambda^4)
-    static const float3 betaR = float3(5.8e-3f, 13.5e-3f, 33.1e-3f);
-
-    float sunDot = max(dot(viewDir, sunDirection), 0.0f);
-    float upDot = max(viewDir.y, 0.0f);
-
-    // Rayleigh phase function: (3/16pi)(1 + cos^2(theta))
-    float phase = 0.75f * (1.0f + sunDot * sunDot);
-
-    // Optical depth increases toward horizon (1/cos(zenith))
-    float opticalDepth = 1.0f / (upDot + 0.15f);
-
-    // Scattering: transmittance * phase * coefficients
-    float3 scatter = betaR * phase * opticalDepth;
-
-    // Base sky from scattering
-    float3 sky = scatter * 15.0f;
-
-    // Sun disc (soft glow)
-    float sunGlow = pow(sunDot, 256.0f) * 8.0f;
-    sky += float3(1.0f, 0.9f, 0.7f) * sunGlow;
-
-    // Warm horizon band
-    float horizonFade = exp(-upDot * 3.0f);
-    float3 horizonColor = float3(0.7f, 0.55f, 0.4f) * horizonFade * 0.4f;
-    sky += horizonColor;
-
-    return max(sky, 0.0f);
-}
+#include "sky.hlsli"
 
 float4 main(float2 uv : TEXCOORD) : SV_Target
 {
@@ -190,7 +160,7 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
         float3 viewDir = normalize(
             camForward + camRight * ndc.x * aspectRatio * tanHalfFov + camUp * ndc.y * tanHalfFov
         );
-        scene = rayleighSky(viewDir, sunDir);
+        scene = rayleighSky(viewDir, sunDir, time);
     }
 
     float3 hdr = scene + bloom * bloomIntensity;
@@ -222,3 +192,7 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
     ldr = select(ldr <= 0.0031308f, ldr * 12.92f, 1.055f * pow(ldr, 1.0f / 2.4f) - 0.055f);
     return float4(ldr, 1.0f);
 }
+
+
+
+
