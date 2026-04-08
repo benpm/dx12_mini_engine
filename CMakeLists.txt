@@ -155,10 +155,10 @@ function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
         COMMAND ${DXC_EXECUTABLE} -T ${SHADER_TYPE}_${SHADER_MODEL} -E main
-        -I ${CMAKE_CURRENT_SOURCE_DIR}/src
+        -I ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
         -Fh ${OUTPUT_FILE} -Vn ${VAR_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/sky.hlsli
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/sky.hlsli
         COMMENT "Compiling ${SHADER_FILE} -> ${SHADER_NAME}_cso.h"
         VERBATIM
     )
@@ -170,10 +170,11 @@ endfunction()
 # -------------------------------
 add_executable(main
     src/main.cpp
-    src/application.cpp
-    src/application_ui.cpp
-    src/application_render.cpp
-    src/application_setup.cpp
+    src/application/application.cpp
+    src/application/ui.cpp
+    src/application/render.cpp
+    src/application/setup.cpp
+    src/application/scene.cpp
     src/billboard.cpp
     src/scene.cpp
     src/bloom.cpp
@@ -187,7 +188,6 @@ add_executable(main
     src/terrain.cpp
     src/glaze_impl.cpp
     src/scene_file.cpp
-    src/application_scene.cpp
     src/ssao.cpp
     src/shadow.cpp
     src/outline.cpp
@@ -229,23 +229,23 @@ target_include_directories(main SYSTEM PRIVATE ${tinygltf_SOURCE_DIR} ${perlin_n
 # -------------------------------
 # Shader compilation
 # -------------------------------
-compile_shader(src/vertex_shader.hlsl vs 6_0 VS_HDR g_vertex_shader)
-compile_shader(src/pixel_shader.hlsl ps 6_0 PS_HDR g_pixel_shader)
-compile_shader(src/fullscreen_vs.hlsl vs 6_0 FULLSCREEN_VS_HDR g_fullscreen_vs)
-compile_shader(src/bloom_prefilter_ps.hlsl ps 6_0 BLOOM_PREFILTER_HDR g_bloom_prefilter_ps)
-compile_shader(src/bloom_downsample_ps.hlsl ps 6_0 BLOOM_DOWNSAMPLE_HDR g_bloom_downsample_ps)
-compile_shader(src/bloom_upsample_ps.hlsl ps 6_0 BLOOM_UPSAMPLE_HDR g_bloom_upsample_ps)
-compile_shader(src/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_composite_ps)
-compile_shader(src/billboard_vs.hlsl vs 6_0 BILLBOARD_VS_HDR g_billboard_vs)
-compile_shader(src/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
-compile_shader(src/id_ps.hlsl ps 6_0 ID_PS_HDR g_id_ps)
-compile_shader(src/outline_vs.hlsl vs 6_0 OUTLINE_VS_HDR g_outline_vs)
-compile_shader(src/outline_ps.hlsl ps 6_0 OUTLINE_PS_HDR g_outline_ps)
-compile_shader(src/normal_ps.hlsl ps 6_0 NORMAL_PS_HDR g_normal_ps)
-compile_shader(src/ssao_ps.hlsl ps 6_0 SSAO_PS_HDR g_ssao_ps)
-compile_shader(src/ssao_blur_ps.hlsl ps 6_0 SSAO_BLUR_PS_HDR g_ssao_blur_ps)
-compile_shader(src/grid_vs.hlsl vs 6_0 GRID_VS_HDR g_grid_vs)
-compile_shader(src/grid_ps.hlsl ps 6_0 GRID_PS_HDR g_grid_ps)
+compile_shader(src/shaders/vertex_shader.hlsl vs 6_0 VS_HDR g_vertex_shader)
+compile_shader(src/shaders/pixel_shader.hlsl ps 6_0 PS_HDR g_pixel_shader)
+compile_shader(src/shaders/fullscreen_vs.hlsl vs 6_0 FULLSCREEN_VS_HDR g_fullscreen_vs)
+compile_shader(src/shaders/bloom_prefilter_ps.hlsl ps 6_0 BLOOM_PREFILTER_HDR g_bloom_prefilter_ps)
+compile_shader(src/shaders/bloom_downsample_ps.hlsl ps 6_0 BLOOM_DOWNSAMPLE_HDR g_bloom_downsample_ps)
+compile_shader(src/shaders/bloom_upsample_ps.hlsl ps 6_0 BLOOM_UPSAMPLE_HDR g_bloom_upsample_ps)
+compile_shader(src/shaders/bloom_composite_ps.hlsl ps 6_0 BLOOM_COMPOSITE_HDR g_bloom_composite_ps)
+compile_shader(src/shaders/billboard_vs.hlsl vs 6_0 BILLBOARD_VS_HDR g_billboard_vs)
+compile_shader(src/shaders/billboard_ps.hlsl ps 6_0 BILLBOARD_PS_HDR g_billboard_ps)
+compile_shader(src/shaders/id_ps.hlsl ps 6_0 ID_PS_HDR g_id_ps)
+compile_shader(src/shaders/outline_vs.hlsl vs 6_0 OUTLINE_VS_HDR g_outline_vs)
+compile_shader(src/shaders/outline_ps.hlsl ps 6_0 OUTLINE_PS_HDR g_outline_ps)
+compile_shader(src/shaders/normal_ps.hlsl ps 6_0 NORMAL_PS_HDR g_normal_ps)
+compile_shader(src/shaders/ssao_ps.hlsl ps 6_0 SSAO_PS_HDR g_ssao_ps)
+compile_shader(src/shaders/ssao_blur_ps.hlsl ps 6_0 SSAO_BLUR_PS_HDR g_ssao_blur_ps)
+compile_shader(src/shaders/grid_vs.hlsl vs 6_0 GRID_VS_HDR g_grid_vs)
+compile_shader(src/shaders/grid_ps.hlsl ps 6_0 GRID_PS_HDR g_grid_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
@@ -289,7 +289,7 @@ endif()
 # -------------------------------
 target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     DXC_PATH="${DXC_EXECUTABLE}"
-    SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
+    SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
     MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
     SCENES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scenes"
 )

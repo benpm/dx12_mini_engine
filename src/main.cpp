@@ -10,7 +10,6 @@
 #include "scene_data.h"
 
 import application;
-import input;
 import logging;
 import scene_file;
 import window;
@@ -86,9 +85,6 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
         spdlog::info("Application created.");
 
-        // Input map just to show example for closing window with escape
-        app.inputMap.MapBool(Button::Exit, app.keyboardID, gainput::KeyEscape);
-
         ::ShowWindow(Window::get()->hWnd, hideWindow ? SW_HIDE : SW_SHOW);
         ::UpdateWindow(Window::get()->hWnd);
 
@@ -112,10 +108,6 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
                 inputManager.Update();
                 app.update();
                 app.render();
-
-                if (app.inputMap.GetBoolWasDown(Button::Exit)) {
-                    Window::get()->doExit = true;
-                }
             }
         }
     } catch (const std::exception& e) {

@@ -143,7 +143,7 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 **ObjectPicker** (`object_picking.ixx` + `object_picking.cpp`) — entity picking via ID render pass:
 
 * R32_UINT render target (viewport-sized), own depth buffer
-* Reuses scene vertex shader + ID pixel shader (`id_ps.hlsl`) that outputs draw index
+* Reuses scene vertex shader + ID pixel shader (`src/shaders/id_ps.hlsl`) that outputs draw index
 * PSO created from scene root signature (needs structured buffer + drawIndex root constant)
 * Single-pixel readback at mouse position each frame (1-frame latency)
 * `drawIndexToEntity` vector (in Application) maps draw index → flecs entity
@@ -174,15 +174,15 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 
 * SRV descriptor heap for ImGui
 * Methods: `init()`, `shutdown()`, `styleColorsDracula()`
-* Note: `renderImGui()` is in `application_ui.cpp` (app-specific UI)
+* Note: `renderImGui()` is in `src/application/ui.cpp` (app-specific UI)
 
-### Application class (split across 5 files)
+### Application class (split across 5 files in `src/application/`)
 
 * `application.cpp` — constructor, destructor, `update()`, helpers
-* `application_render.cpp` — `render()` — shadow, cubemap, normal pre-pass, SSAO, scene, outline, ID, billboards, bloom, imgui, present
-* `application_ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips
-* `application_setup.cpp` — `loadContent()`, `createScenePSO()`, `createNormalPSO()`, `createCubemapResources()`, `onResize()`
-* `application_scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization
+* `render.cpp` — `render()` — shadow, cubemap, normal pre-pass, SSAO, scene, outline, ID, billboards, bloom, imgui, present
+* `ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips
+* `setup.cpp` — `loadContent()`, `createScenePSO()`, `createNormalPSO()`, `createCubemapResources()`, `onResize()`
+* `scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 
@@ -234,9 +234,9 @@ update()  →  render()
 
 **Infinite grid**: Rendered via `grid_vs.hlsl` + `grid_ps.hlsl` with its own root signature (`gridRootSig`) and PSO (`gridPSO`). Vertex shader generates a fullscreen triangle, unprojects near/far planes to world space via `InvViewProj`. Pixel shader ray-intersects the Y=0 plane, draws unit lines (1m) and major lines (10m) with `fwidth`-based anti-aliasing. X axis highlighted blue, Z axis red. Alpha-blended with distance fade (80m). Depth-tested against scene geometry (read-only depth). Uses perPass CB slot 10 for `GridCB` (ViewProj, InvViewProj, CameraPos). Toggled via `showGrid` (Display menu, saved in scene files).
 
-**Ocean fog**: Height-based fog in `pixel_shader.hlsl`. Thickens exponentially below `FogStartY` (water surface). Fog color darkens with depth — near-surface uses `FogColor`, deep areas fade toward black. Also blends distance fog for depth cueing. Parameters (`FogStartY`, `FogDensity`, `FogColor`) stored in `SceneConstantBuffer` and editable in UI.
+**Ocean fog**: Height-based fog in `src/shaders/pixel_shader.hlsl`. Thickens exponentially below `FogStartY` (water surface). Fog color darkens with depth — near-surface uses `FogColor`, deep areas fade toward black. Also blends distance fog for depth cueing. Parameters (`FogStartY`, `FogDensity`, `FogColor`) stored in `SceneConstantBuffer` and editable in UI.
 
-### PBR / BSRDF shader (`src/pixel_shader.hlsl`)
+### PBR / BSRDF shader (`src/shaders/pixel_shader.hlsl`)
 
 Cook-Torrance BRDF:
 
@@ -269,7 +269,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
   * `default.json` — default startup scene with one reflective teapot when no scene argument is provided
 * **Runtime block**: optional section in scene files for automation and startup mode: `useWarp`, `hideWindow`, `screenshotFrame`, `exitAfterScreenshot`, `spawnPerFrame`, `skipImGui`, `singleTeapotMode`
 * **UI**: Scene menu has save/load path input + buttons
-* **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `application_scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` reuse engine types directly — `OrbitCamera`, `TerrainParams`, `Material`, `Animated`, `PointLight` — no duplicate "data" structs.
+* **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `src/application/scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` reuse engine types directly — `OrbitCamera`, `TerrainParams`, `Material`, `Animated`, `PointLight` — no duplicate "data" structs.
 
 ### ImGui UI panels
 
@@ -326,7 +326,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 Tracy Profiler v0.11.1 is integrated for CPU and GPU instrumentation. `TRACY_ON_DEMAND` is set so there is no overhead when the viewer is not connected.
 
 * **Header**: `include/profiling.h` — include ONLY from `.cpp` files, never from `.ixx` modules
-* **GPU context**: `g_tracyD3d12Ctx` (file-static in `application.cpp`, `extern`'d in `application_render.cpp` and `application_setup.cpp`); created in `loadContent()`, destroyed in `~Application()` after `flush()`
+* **GPU context**: `g_tracyD3d12Ctx` (file-static in `src/application/application.cpp`, `extern`'d in `render.cpp` and `setup.cpp`); created in `loadContent()`, destroyed in `~Application()` after `flush()`
 * **CPU zones**: `PROFILE_ZONE()` / `PROFILE_ZONE_NAMED(name)` — in `update()` and each render pass
 * **GPU zones**: `PROFILE_GPU_ZONE(ctx, cmdList.Get(), "name")` — Shadow, Normal Pre-pass+SSAO, Scene, Bloom
 * **Frame boundary**: `PROFILE_FRAME_MARK` after `Present` at end of `render()`

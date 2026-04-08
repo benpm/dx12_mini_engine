@@ -166,6 +166,7 @@ Application::Application()
     this->inputMap.MapFloat(Button::AxisDeltaY, this->mouseID, gainput::MouseAxisY);
     this->inputMap.MapBool(Button::ScrollUp, this->mouseID, gainput::MouseButtonWheelUp);
     this->inputMap.MapBool(Button::ScrollDown, this->mouseID, gainput::MouseButtonWheelDown);
+    this->inputMap.MapBool(Button::Exit, this->keyboardID, gainput::KeyEscape);
 
     this->loadContent();
     this->flush();
@@ -665,6 +666,21 @@ void Application::update()
         this->cam.radius *= 1.25f;
     }
     this->cam.radius = std::clamp(this->cam.radius, 0.1f, 1000.0f);
+
+    // Escape: deselect entity, or confirm exit
+    if (!ImGui::GetIO().WantCaptureKeyboard && this->inputMap.GetBoolWasDown(Button::Exit)) {
+        if (this->selectedEntity.is_alive()) {
+            this->selectedEntity = flecs::entity{};
+        } else {
+            int result = ::MessageBoxW(
+                this->hWnd, L"Are you sure you want to exit?", L"Confirm Exit",
+                MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2
+            );
+            if (result == IDYES) {
+                Window::get()->doExit = true;
+            }
+        }
+    }
 
     // Animate orbiting entities
     if (animateEntities) {
