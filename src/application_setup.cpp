@@ -17,6 +17,7 @@ module;
 #include <cstdlib>
 #include <filesystem>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
@@ -605,7 +606,7 @@ void Application::createNormalPSO()
 
 void Application::onResize(uint32_t width, uint32_t height)
 {
-    if (width == 0 || height == 0) {
+    if (this->isResizing || width == 0 || height == 0) {
         return;
     }
 
@@ -614,22 +615,34 @@ void Application::onResize(uint32_t width, uint32_t height)
         this->clientHeight = std::max(1u, height);
 
         this->cmdQueue.flush();
+        // Drop imported resource references from the previous frame before resizing the swap chain.
+        this->renderGraph.reset();
         for (int i = 0; i < this->nBuffers; ++i) {
             this->backBuffers[i].Reset();
         }
 
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
-        chkDX(this->swapChain->GetDesc(&swapChainDesc));
-        chkDX(this->swapChain->ResizeBuffers(
+        auto getDescHr = this->swapChain->GetDesc(&swapChainDesc);
+        if (FAILED(getDescHr)) {
+            throw std::runtime_error("IDXGISwapChain::GetDesc failed during resize");
+        }
+
+        auto resizeHr = this->swapChain->ResizeBuffers(
             this->nBuffers, this->clientWidth, this->clientHeight, swapChainDesc.BufferDesc.Format,
             swapChainDesc.Flags
-        ));
+        );
+        if (FAILED(resizeHr)) {
+            throw std::runtime_error("IDXGISwapChain::ResizeBuffers failed during resize");
+        }
 
         this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
         this->updateRenderTargetViews(this->rtvHeap);
         this->viewport = CD3DX12_VIEWPORT(
             0.0f, 0.0f, static_cast<float>(this->clientWidth),
             static_cast<float>(this->clientHeight)
+        );
+        this->scissorRect = CD3DX12_RECT(
+            0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         bloom.resize(device.Get(), clientWidth, clientHeight);

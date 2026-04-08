@@ -79,7 +79,7 @@ export class Application
     uint32_t clientHeight = 720;
     bool isInitialized = false;
     HWND hWnd;
-    RECT windowRect;
+    RECT windowRect{};
     std::unordered_set<Key> pressedKeys;
     std::unordered_set<MouseButton> pressedMouseButtons;
     vec2 mousePos;
@@ -177,6 +177,7 @@ export class Application
     bool fullscreen = false;
     bool pendingFullscreenChange = false;
     bool pendingFullscreenValue = false;
+    bool isResizing = false;
     int frameCount = 0;
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;

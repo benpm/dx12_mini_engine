@@ -353,6 +353,10 @@ Current pattern: uploads are tracked in `Scene::pendingUploads` as fence-keyed b
 
 `RenderGraph::reset()` clears `resources` and `externalResources` each frame. Imported textures (especially the current swap-chain back buffer) must be re-imported every frame to avoid stale handles/state tracking.
 
+### ResizeBuffers requires render-graph reset first
+
+`IDXGISwapChain::ResizeBuffers()` can fail with `DXGI_ERROR_INVALID_CALL` if old back buffers are still referenced indirectly. Before resetting `backBuffers[]` in `Application::onResize()`, call `renderGraph.reset()` (after GPU flush) so imported external `ComPtr` refs are released.
+
 ### Headless runtime picking
 
 When `runtime.hideWindow` is true (automation scenes), the ID picking pass is skipped in `Application::render()` to avoid unnecessary offscreen picking work.
@@ -383,7 +387,11 @@ With Tracy v0.13.1, `TRACY_CALLSTACK` is defined as `0` by default in `Tracy.hpp
 
 ### Fullscreen toggles are deferred
 
-Fullscreen transitions can generate synchronous `WM_SIZE` events that trigger `onResize()` and swap chain `ResizeBuffers()`. Queue UI fullscreen requests via `pendingFullscreenChange` / `pendingFullscreenValue` and apply them at the start of `update()`.
+Fullscreen transitions can generate synchronous `WM_SIZE` events that trigger `onResize()` and swap chain `ResizeBuffers()`. Queue UI fullscreen requests via `pendingFullscreenChange` / `pendingFullscreenValue` and apply them at the start of `update()`. Resources recreated in `onResize()` (HDR RT, depth buffer, bloom mips) must be created in their render-graph-expected initial states (e.g. HDR RT in `PIXEL_SHADER_RESOURCE`, not `RENDER_TARGET`) to avoid state mismatch on the first frame after resize.
+
+### ImGui input capture
+
+Camera rotation, zoom, and entity picking are gated by `ImGui::GetIO().WantCaptureMouse` in `update()` to prevent input passthrough when interacting with UI panels.
 
 ### PointLight entities survive clearScene()
 

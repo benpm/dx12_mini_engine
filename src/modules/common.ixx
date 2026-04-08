@@ -13,6 +13,7 @@ module;
 #include <string_view>
 
 #include <spdlog/fmt/fmt.h>
+#include <spdlog/spdlog.h>
 
 export module common;
 
@@ -74,11 +75,9 @@ export inline void chkDX(
 )
 {
     if (FAILED(hr)) {
-        throw std::runtime_error(
-            fmt::format(
-                "{} failed with HRESULT {} at {}:{} in {}", context, formatHRESULT(hr),
-                location.file_name(), location.line(), location.function_name()
-            )
+        spdlog::error(
+            "{} failed with HRESULT {} at {}:{} in {}", context, formatHRESULT(hr),
+            location.file_name(), location.line(), location.function_name()
         );
     }
 }

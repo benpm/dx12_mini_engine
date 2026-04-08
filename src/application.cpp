@@ -9,6 +9,7 @@ module;
 #include <dxgi1_6.h>
 #include <flecs.h>
 #include <gainput/gainput.h>
+#include <imgui.h>
 #include <ScreenGrab.h>
 #include <spdlog/spdlog.h>
 #include <wincodec.h>
@@ -122,6 +123,9 @@ Application::Application()
 
     this->viewport = CD3DX12_VIEWPORT(
         0.0f, 0.0f, static_cast<float>(this->clientWidth), static_cast<float>(this->clientHeight)
+    );
+    this->scissorRect = CD3DX12_RECT(
+        0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
     );
 
     spdlog::info("Creating CommandQueue");
@@ -621,7 +625,8 @@ void Application::update()
                        this->inputMap.GetFloat(Button::AxisY) };
 
     // --- Entity picking from ID buffer ---
-    {
+    const bool imguiCaptureMouse = ImGui::GetIO().WantCaptureMouse;
+    if (!imguiCaptureMouse) {
         hoveredEntity = flecs::entity{};
         uint32_t pickIdx = picker.pickedIndex;
         if (pickIdx != ObjectPicker::invalidID && pickIdx < scene.drawIndexToEntity.size()) {
@@ -644,19 +649,19 @@ void Application::update()
     }
 
     this->matModel = mat4{};
-    if (this->inputMap.GetBool(Button::LeftClick)) {
+    if (!imguiCaptureMouse && this->inputMap.GetBool(Button::LeftClick)) {
         this->cam.pitch += (this->mouseDelta.y / w) * 180_deg;
         this->cam.yaw -= (this->mouseDelta.x / w) * 360_deg;
         this->cam.pitch = std::clamp(this->cam.pitch, -89.9_deg, 89.9_deg);
     }
-    if (this->inputMap.GetBool(Button::RightClick)) {
+    if (!imguiCaptureMouse && this->inputMap.GetBool(Button::RightClick)) {
         this->cam.radius += (this->mouseDelta.y / w) * this->cam.radius;
     }
     this->cam.aspectRatio = w / static_cast<float>(this->clientHeight);
-    if (this->inputMap.GetBoolWasDown(Button::ScrollUp)) {
+    if (!imguiCaptureMouse && this->inputMap.GetBoolWasDown(Button::ScrollUp)) {
         this->cam.radius *= 0.8f;
     }
-    if (this->inputMap.GetBoolWasDown(Button::ScrollDown)) {
+    if (!imguiCaptureMouse && this->inputMap.GetBoolWasDown(Button::ScrollDown)) {
         this->cam.radius *= 1.25f;
     }
     this->cam.radius = std::clamp(this->cam.radius, 0.1f, 1000.0f);
@@ -695,6 +700,7 @@ void Application::update()
 void Application::setFullscreen(bool val)
 {
     if (this->fullscreen != val) {
+        this->isResizing = true;
         this->fullscreen = val;
         if (this->fullscreen) {
             if (::GetWindowRect(this->hWnd, &this->windowRect) == 0) {
@@ -744,6 +750,8 @@ void Application::setFullscreen(bool val)
             }
             ::ShowWindow(this->hWnd, SW_NORMAL);
         }
+
+        this->isResizing = false;
 
         RECT clientRect = {};
         if (::GetClientRect(this->hWnd, &clientRect) == 0) {

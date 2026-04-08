@@ -38,17 +38,14 @@ void BloomRenderer::createTexturesAndHeaps(ID3D12Device2* device, uint32_t width
     {
         D3D12_CLEAR_VALUE clearVal = {};
         clearVal.Format = hdrFormat;
-        clearVal.Color[0] = 0.4f;
-        clearVal.Color[1] = 0.6f;
-        clearVal.Color[2] = 0.9f;
         clearVal.Color[3] = 1.0f;
         const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
         const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
             hdrFormat, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
         );
         chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
-            IID_PPV_ARGS(&hdrRenderTarget)
+            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            &clearVal, IID_PPV_ARGS(&hdrRenderTarget)
         ));
     }
 
