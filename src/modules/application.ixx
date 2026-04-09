@@ -120,6 +120,8 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12RootSignature> gridRootSig;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> gridPSO;
     bool showGrid = true;
+    float gridMajorSize = 10.0f;
+    int gridSubdivisions = 10;
     void createGridPSO();
     D3D12_VIEWPORT viewport;
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);

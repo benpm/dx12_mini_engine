@@ -11,6 +11,7 @@ module;
 #include <spdlog/spdlog.h>
 #include <Windows.h>
 #include <wrl.h>
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -77,7 +78,8 @@ SceneFileData Application::extractSceneData() const
     d.spawning = { spawningStopped, autoStopSpawning, spawnStopFrameMs, spawnBatchSize };
 
     // Display
-    d.display = { vsync, animateEntities, lightAnimationSpeed, showLightBillboards, showGrid };
+    d.display = { vsync,    animateEntities, lightAnimationSpeed, showLightBillboards,
+                  showGrid, gridMajorSize,   gridSubdivisions };
 
     // Background
     d.bgColor = bgColor;
@@ -224,6 +226,8 @@ void Application::applySceneData(const SceneFileData& d)
     lightAnimationSpeed = d.display.lightAnimSpeed;
     showLightBillboards = d.display.showBillboards;
     showGrid = d.display.showGrid;
+    gridMajorSize = std::max(0.1f, d.display.gridMajorSize);
+    gridSubdivisions = std::clamp(d.display.gridSubdivisions, 1, 128);
 
     // Background
     bgColor = d.bgColor;

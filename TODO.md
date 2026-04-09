@@ -16,6 +16,7 @@
   - whether the current build is debug or release
   - Also, make the info/metrics panel go away via the View menu
 - [ ] Make configurable all colors via the JSON config
+- [ ] **Shader Hot Reload Robustness:** If a shader fails to compile during hot reload, do not replace the shader. In other words, keep the source for the last working version in memory. Only replace if the entire shader program is valid. Prevent the program from exiting on shader compile failure, unless it is during initial compilation.
 
 ---
 

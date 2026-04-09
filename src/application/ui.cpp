@@ -39,8 +39,14 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Display")) {
+            ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("VSync", &vsync);
             ImGui::Checkbox("Grid", &showGrid);
+            if (showGrid) {
+                ImGui::SliderFloat("Major Grid Size", &gridMajorSize, 1.0f, 200.0f, "%.1f m");
+                gridMajorSize = std::max(0.1f, gridMajorSize);
+                ImGui::SliderInt("Grid Subdivisions", &gridSubdivisions, 1, 128);
+            }
             bool fs = fullscreen;
             if (ImGui::Checkbox("Fullscreen", &fs)) {
                 pendingFullscreenValue = fs;
@@ -53,6 +59,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 (runtimeConfig.spawnPerFrame > 0 || runtimeConfig.screenshotFrame > 0) ? "Scene"
                                                                                        : "Default"
             );
+            ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
 

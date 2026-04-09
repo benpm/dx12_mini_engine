@@ -232,7 +232,7 @@ update()  →  render()
 
 **Rayleigh sky + clouds**: Shared implementation in `src/sky.hlsli` (included by `bloom_composite_ps.hlsl` and `pixel_shader.hlsl`). `rayleighSky(viewDir, sunDir, time)` computes Rayleigh scattering + procedural FBM clouds (hash-based value noise, 5 octaves, spherical projection, time-animated drift). HDR RT is cleared to black so the composite pass detects background via `sceneLum < 0.001`. `SkyParams` includes `time` (from `lightTime`); `PerFrameCB` also has `time` for reflection sky. DXC includes are enabled via `-I src/` in both CMake and shader hot reload. Cubemap reflection fallback in `pixel_shader.hlsl` uses the same sky function when envMap sample is near-black.
 
-**Infinite grid**: Rendered via `grid_vs.hlsl` + `grid_ps.hlsl` with its own root signature (`gridRootSig`) and PSO (`gridPSO`). Vertex shader generates a fullscreen triangle, unprojects near/far planes to world space via `InvViewProj`. Pixel shader ray-intersects the Y=0 plane, draws unit lines (1m) and major lines (10m) with `fwidth`-based anti-aliasing. X axis highlighted blue, Z axis red. Alpha-blended with distance fade (80m). Depth-tested against scene geometry (read-only depth). Uses perPass CB slot 10 for `GridCB` (ViewProj, InvViewProj, CameraPos). Toggled via `showGrid` (Display menu, saved in scene files).
+**Infinite grid**: Rendered via `grid_vs.hlsl` + `grid_ps.hlsl` with its own root signature (`gridRootSig`) and PSO (`gridPSO`). Vertex shader generates a fullscreen triangle, unprojects near/far planes to world space via `InvViewProj`. Pixel shader ray-intersects the Y=0 plane, draws minor and major lines with `fwidth`-based anti-aliasing. Major cell size and subdivision count are runtime-configurable from the Display menu and passed via perPass CB slot 10 `GridCB` (`ViewProj`, `InvViewProj`, `CameraPos`, `GridParams`). X axis highlighted blue, Z axis red. Alpha-blended with distance fade (80m). Depth-tested against scene geometry (read-only depth). Toggled via `showGrid` (Display menu, saved in scene files).
 
 **Ocean fog**: Height-based fog in `src/shaders/pixel_shader.hlsl`. Thickens exponentially below `FogStartY` (water surface). Fog color darkens with depth — near-surface uses `FogColor`, deep areas fade toward black. Also blends distance fog for depth cueing. Parameters (`FogStartY`, `FogDensity`, `FogColor`) stored in `SceneConstantBuffer` and editable in UI.
 
@@ -273,7 +273,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 
 ### ImGui UI panels
 
-* **Display**: vsync toggle, grid toggle, fullscreen toggle, tearing status, runtime mode.
+* **Display**: vsync toggle, grid toggle, major grid size, grid subdivisions, fullscreen toggle, tearing status, runtime mode.
 * **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 * **Bloom**: threshold, intensity sliders.
 * **Tonemapping**: tonemapper combo.

@@ -6,6 +6,7 @@ cbuffer GridCB : register(b0)
     matrix ViewProj;
     matrix InvViewProj;
     float4 CameraPos;
+    float4 GridParams;  // x=major grid size (m), y=subdivisions per major cell
 };
 
 struct PSInput
@@ -24,18 +25,22 @@ struct PSOutput
 float4 grid(float3 worldPos, float camDist)
 {
     float2 coord = worldPos.xz;
-    float2 dpdx = ddx(coord);
-    float2 dpdy = ddy(coord);
 
-    // Unit grid (1m spacing)
-    float2 grid1 = abs(frac(coord - 0.5f) - 0.5f);
-    float2 lineWidth1 = fwidth(coord);
+    float majorGridSize = max(GridParams.x, 0.001f);
+    float subdivisions = max(GridParams.y, 1.0f);
+    float minorGridSize = majorGridSize / subdivisions;
+    float minorScale = rcp(minorGridSize);
+    float majorScale = rcp(majorGridSize);
+
+    // Minor grid (major size / subdivisions spacing)
+    float2 grid1 = abs(frac(coord * minorScale - 0.5f) - 0.5f);
+    float2 lineWidth1 = fwidth(coord * minorScale);
     float2 draw1 = smoothstep(float2(0, 0), lineWidth1 * 1.5f, grid1);
     float line1 = 1.0f - min(draw1.x, draw1.y);
 
-    // Major grid (10m spacing)
-    float2 grid10 = abs(frac(coord * 0.1f - 0.5f) - 0.5f);
-    float2 lineWidth10 = fwidth(coord * 0.1f);
+    // Major grid
+    float2 grid10 = abs(frac(coord * majorScale - 0.5f) - 0.5f);
+    float2 lineWidth10 = fwidth(coord * majorScale);
     float2 draw10 = smoothstep(float2(0, 0), lineWidth10 * 1.5f, grid10);
     float line10 = 1.0f - min(draw10.x, draw10.y);
 

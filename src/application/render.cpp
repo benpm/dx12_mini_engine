@@ -13,6 +13,7 @@ module;
 #include <wincodec.h>
 #include <Windows.h>
 #include <wrl.h>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <vector>
@@ -473,6 +474,7 @@ void Application::render()
             mat4 viewProj;
             mat4 invViewProj;
             vec4 cameraPos;
+            vec4 gridParams;
         };
         static_assert(sizeof(GridCB) <= 256, "GridCB must fit in one perPass slot");
         auto* gridCB = reinterpret_cast<GridCB*>(
@@ -481,6 +483,10 @@ void Application::render()
         gridCB->viewProj = viewProj;
         gridCB->invViewProj = mat4(XMMatrixInverse(nullptr, XMLoadFloat4x4(&viewProj)));
         gridCB->cameraPos = cameraPos;
+        gridCB->gridParams = vec4(
+            std::max(0.1f, gridMajorSize), static_cast<float>(std::clamp(gridSubdivisions, 1, 128)),
+            0.0f, 0.0f
+        );
 
         renderGraph.addPass(
             "Grid Pass",
