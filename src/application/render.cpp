@@ -404,6 +404,7 @@ void Application::render()
 
     // --- Scene Pass ---
     uint32_t currentVertexCount = 0;
+    uint32_t currentDrawCalls = 0;
     renderGraph.addPass(
         "Scene Pass",
         [&](rg::RenderGraphBuilder& builder) {
@@ -454,6 +455,7 @@ void Application::render()
             for (uint32_t i = 0; i < static_cast<uint32_t>(scene.drawCmds.size()); ++i) {
                 currentVertexCount +=
                     scene.drawCmds[i].indexCount * scene.drawCmds[i].instanceCount;
+                currentDrawCalls++;
                 cmd->SetGraphicsRoot32BitConstant(
                     app_slots::rootDrawIndex, scene.drawCmds[i].baseDrawIndex, 0
                 );
@@ -693,6 +695,7 @@ void Application::render()
     renderGraph.execute(cmdList.Get());
 
     this->lastFrameVertexCount = currentVertexCount;
+    this->lastFrameDrawCalls = currentDrawCalls;
 
     uint64_t submitFenceValue = this->cmdQueue.execCmdList(cmdList);
     this->frameFenceValues[this->curBackBufIdx] = submitFenceValue;

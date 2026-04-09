@@ -274,6 +274,8 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 ### ImGui UI panels
 
 * **Display**: vsync toggle, grid toggle, major grid size, grid subdivisions, fullscreen toggle, tearing status, runtime mode.
+* **View**: metrics panel visibility toggle.
+* **Metrics** (floating window, toggled via View menu): build mode (Debug/Release), FPS + frame ms, FPS graph (last 5s, collapsible), draw calls, objects, vertices, ECS entity/component counts (MeshRef, Animated, InstanceGroup, PointLight, Pickable), subsystem status (shadow/cubemap/SSAO).
 * **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
 * **Bloom**: threshold, intensity sliders.
 * **Tonemapping**: tonemapper combo.

@@ -183,8 +183,14 @@ export class Application
     int frameCount = 0;
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;
+    uint32_t lastFrameDrawCalls = 0;
     float lastFrameMs = 0.0f;
     float recentFrameMs[3] = {};
+    // FPS history for chart (5 seconds at ~60fps = 300 samples)
+    static constexpr int fpsHistorySize = 300;
+    float fpsHistory[fpsHistorySize] = {};
+    int fpsHistoryHead = 0;
+    bool showMetrics = true;
     int recentFrameHead = 0;
     bool spawningStopped = false;
     bool autoStopSpawning = true;

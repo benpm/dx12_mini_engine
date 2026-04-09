@@ -403,6 +403,8 @@ void Application::update()
 
     lightTime += dt * std::max(0.0f, lightAnimationSpeed);
     lastFrameMs = dt * 1000.0f;
+    fpsHistory[fpsHistoryHead % fpsHistorySize] = 1.0f / std::max(dt, 1e-6f);
+    ++fpsHistoryHead;
     recentFrameMs[recentFrameHead % 3] = lastFrameMs;
     ++recentFrameHead;
     if (autoStopSpawning && !spawningStopped && recentFrameHead >= 3 &&
