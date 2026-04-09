@@ -425,40 +425,58 @@ void Application::update()
                             shaderCompiler.wasRecompiled(bloomDownIdx) ||
                             shaderCompiler.wasRecompiled(bloomUpIdx) ||
                             shaderCompiler.wasRecompiled(bloomCompIdx);
-        if (sceneChanged) {
-            createScenePSO();
-            auto vsData = shaderCompiler.data(sceneVSIdx);
-            D3D12_SHADER_BYTECODE vs =
-                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                       : D3D12_SHADER_BYTECODE{};
-            shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
-        }
-        if (outlineChanged) {
-            auto vsData = shaderCompiler.data(outlineVSIdx);
-            auto psData = shaderCompiler.data(outlinePSIdx);
-            D3D12_SHADER_BYTECODE vs =
-                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(outlineVSIdx) }
-                       : D3D12_SHADER_BYTECODE{};
-            D3D12_SHADER_BYTECODE ps =
-                psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
-                       : D3D12_SHADER_BYTECODE{};
-            outline.reloadPSO(device.Get(), rootSignature.Get(), vs, ps);
-        }
         bool gridChanged =
             shaderCompiler.wasRecompiled(gridVSIdx) || shaderCompiler.wasRecompiled(gridPSIdx);
+
+        // Wrap each PSO recreation in try/catch — on failure, keep the current PSO
+        if (sceneChanged) {
+            try {
+                createScenePSO();
+                auto vsData = shaderCompiler.data(sceneVSIdx);
+                D3D12_SHADER_BYTECODE vs =
+                    vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
+                           : D3D12_SHADER_BYTECODE{};
+                shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
+            } catch (const std::exception& e) {
+                spdlog::error("Hot reload PSO failed (scene): {}", e.what());
+            }
+        }
+        if (outlineChanged) {
+            try {
+                auto vsData = shaderCompiler.data(outlineVSIdx);
+                auto psData = shaderCompiler.data(outlinePSIdx);
+                D3D12_SHADER_BYTECODE vs =
+                    vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(outlineVSIdx) }
+                           : D3D12_SHADER_BYTECODE{};
+                D3D12_SHADER_BYTECODE ps =
+                    psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
+                           : D3D12_SHADER_BYTECODE{};
+                outline.reloadPSO(device.Get(), rootSignature.Get(), vs, ps);
+            } catch (const std::exception& e) {
+                spdlog::error("Hot reload PSO failed (outline): {}", e.what());
+            }
+        }
         if (gridChanged) {
-            createGridPSO();
+            try {
+                createGridPSO();
+            } catch (const std::exception& e) {
+                spdlog::error("Hot reload PSO failed (grid): {}", e.what());
+            }
         }
         if (bloomChanged) {
-            auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
-                auto d = shaderCompiler.data(idx);
-                return d ? D3D12_SHADER_BYTECODE{ d, shaderCompiler.size(idx) }
-                         : D3D12_SHADER_BYTECODE{};
-            };
-            bloom.reloadPipelines(
-                device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx), bc(bloomUpIdx),
-                bc(bloomCompIdx)
-            );
+            try {
+                auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
+                    auto d = shaderCompiler.data(idx);
+                    return d ? D3D12_SHADER_BYTECODE{ d, shaderCompiler.size(idx) }
+                             : D3D12_SHADER_BYTECODE{};
+                };
+                bloom.reloadPipelines(
+                    device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx),
+                    bc(bloomUpIdx), bc(bloomCompIdx)
+                );
+            } catch (const std::exception& e) {
+                spdlog::error("Hot reload PSO failed (bloom): {}", e.what());
+            }
         }
     }
 
