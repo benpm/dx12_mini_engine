@@ -2,6 +2,10 @@ module;
 
 #include <gainput/gainput.h>
 #include <Windows.h>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 export module input;
 
@@ -145,6 +149,97 @@ export namespace Button
 
 export extern gainput::InputManager inputManager;
 
-module :private;
+// --- Editor Actions & Hotkeys ---
 
-gainput::InputManager inputManager = gainput::InputManager{};
+export enum class EditorAction : uint8_t { ToggleFullscreen, DeleteEntity, Deselect, Count };
+
+export constexpr const char* editorActionName(EditorAction a)
+{
+    switch (a) {
+        case EditorAction::ToggleFullscreen:
+            return "toggleFullscreen";
+        case EditorAction::DeleteEntity:
+            return "deleteEntity";
+        case EditorAction::Deselect:
+            return "deselect";
+        default:
+            return "unknown";
+    }
+}
+
+export constexpr const char* editorActionLabel(EditorAction a)
+{
+    switch (a) {
+        case EditorAction::ToggleFullscreen:
+            return "Toggle Fullscreen";
+        case EditorAction::DeleteEntity:
+            return "Delete Entity";
+        case EditorAction::Deselect:
+            return "Deselect";
+        default:
+            return "Unknown";
+    }
+}
+
+export const char* keyName(Key k);
+export Key keyFromName(const std::string& name);
+
+export struct HotkeyBindings
+{
+    std::unordered_map<EditorAction, std::vector<Key>> bindings;
+
+    void setDefaults()
+    {
+        bindings.clear();
+        bindings[EditorAction::ToggleFullscreen] = { Key::F11 };
+        bindings[EditorAction::DeleteEntity] = { Key::Delete };
+        bindings[EditorAction::Deselect] = { Key::Escape };
+    }
+
+    // Check if any key bound to action was just pressed (edge-triggered)
+    bool wasPressed(EditorAction action, const std::unordered_map<UINT, bool>& prevKeys) const
+    {
+        auto it = bindings.find(action);
+        if (it == bindings.end()) {
+            return false;
+        }
+        for (Key k : it->second) {
+            SHORT state = GetAsyncKeyState(static_cast<int>(k));
+            bool isDown = (state & 0x8000) != 0;
+            auto prev = prevKeys.find(static_cast<UINT>(k));
+            bool wasDown = (prev != prevKeys.end()) && prev->second;
+            if (isDown && !wasDown) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Update previous key states for all bound keys
+    void updateKeyStates(std::unordered_map<UINT, bool>& prevKeys) const
+    {
+        for (const auto& [action, keys] : bindings) {
+            for (Key k : keys) {
+                UINT vk = static_cast<UINT>(k);
+                prevKeys[vk] = (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+            }
+        }
+    }
+
+    // Get shortcut string for an action (e.g. "F11" or "Delete, Backspace")
+    std::string shortcutString(EditorAction action) const
+    {
+        auto it = bindings.find(action);
+        if (it == bindings.end() || it->second.empty()) {
+            return "";
+        }
+        std::string result;
+        for (size_t i = 0; i < it->second.size(); ++i) {
+            if (i > 0) {
+                result += ", ";
+            }
+            result += keyName(it->second[i]);
+        }
+        return result;
+    }
+};

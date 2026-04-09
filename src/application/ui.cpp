@@ -52,6 +52,13 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 pendingFullscreenValue = fs;
                 pendingFullscreenChange = true;
             }
+            {
+                auto sc = hotkeys.shortcutString(EditorAction::ToggleFullscreen);
+                if (!sc.empty()) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(%s)", sc.c_str());
+                }
+            }
             ImGui::Separator();
             ImGui::Text("Tearing Supported: %s", tearingSupported ? "Yes" : "No");
             ImGui::Text(
@@ -511,13 +518,21 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 }
                 ImGui::SameLine();
             }
-            if (ImGui::Button("Deselect")) {
-                selectedEntity = flecs::entity{};
+            {
+                auto sc = hotkeys.shortcutString(EditorAction::Deselect);
+                std::string label = sc.empty() ? "Deselect" : "Deselect (" + sc + ")";
+                if (ImGui::Button(label.c_str())) {
+                    selectedEntity = flecs::entity{};
+                }
             }
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
-            if (ImGui::Button("Delete")) {
-                pendingDeleteSelected = true;
+            {
+                auto sc = hotkeys.shortcutString(EditorAction::DeleteEntity);
+                std::string label = sc.empty() ? "Delete" : "Delete (" + sc + ")";
+                if (ImGui::Button(label.c_str())) {
+                    pendingDeleteSelected = true;
+                }
             }
             ImGui::PopStyleColor();
         }

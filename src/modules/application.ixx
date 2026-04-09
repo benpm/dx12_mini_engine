@@ -9,6 +9,7 @@ module;
 #include <wrl.h>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "d3dx12_clean.h"
@@ -87,7 +88,6 @@ export class Application
     bool isInitialized = false;
     HWND hWnd;
     RECT windowRect{};
-    std::unordered_set<Key> pressedKeys;
     std::unordered_set<MouseButton> pressedMouseButtons;
     vec2 mousePos;
     vec2 mouseDelta;
@@ -222,6 +222,10 @@ export class Application
     std::optional<Animated> pendingAddAnimated;
     bool pendingAddPickable = false;
     bool pendingDeleteSelected = false;
+
+    // Hotkeys
+    HotkeyBindings hotkeys;
+    std::unordered_map<UINT, bool> prevKeyStates;
 
     gainput::DeviceId mouseID, rawMouseID;
 

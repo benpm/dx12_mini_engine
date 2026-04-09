@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
+#include <vector>
 
 struct ConfigData
 {
@@ -38,4 +40,11 @@ struct ConfigData
 
     // Paths
     std::string defaultScenePath = "resources/scenes/default.json";
+
+    // Hotkeys: action name → list of key names (e.g. "toggleFullscreen": ["F11"])
+    std::map<std::string, std::vector<std::string>> hotkeys = {
+        { "toggleFullscreen", { "F11" } },
+        { "deleteEntity", { "Delete" } },
+        { "deselect", { "Escape" } },
+    };
 };

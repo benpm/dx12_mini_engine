@@ -89,7 +89,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `imgui_layer.ixx` | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style |
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
 | `camera.ixx` | Re-exports Camera + OrbitCamera from `include/camera_types.h` |
-| `input.ixx` | Button/Key enums, gainput integration (uses `module :private;` for global) |
+| `input.ixx` | Button/Key enums, gainput integration, `EditorAction` enum, `HotkeyBindings` struct, key name lookup |
 | `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
 | `gizmo.ixx` | `GizmoState` struct — translation gizmo (3 arrow entities, drag logic) |
@@ -292,6 +292,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * **`--dump-config`**: writes a fresh `config.json` with all defaults and exits (no window/GPU needed).
 * **Load order**: config applied first via `app.applyConfig(config)`, then scene file via `app.applySceneData(sceneData)`. Scene values override config for shared settings (bloom, shadows, etc.).
 * **Glaze integration**: `readConfigJson`/`writeConfigJson` in `glaze_impl.cpp`. `ConfigData` is a plain aggregate — no `glz::meta` specialization needed.
+* **Hotkeys**: `ConfigData::hotkeys` maps action names to lists of key names (e.g. `"toggleFullscreen": ["F11"]`). `HotkeyBindings` struct (in `input.ixx`) manages edge-triggered key detection via `GetAsyncKeyState` and previous-frame state tracking. Default bindings: F11=fullscreen, Delete=delete entity, Escape=deselect. Shortcut labels shown in UI buttons/tooltips. New actions: add to `EditorAction` enum, add default in `HotkeyBindings::setDefaults()`, handle in `Application::update()`.
 
 ### ImGui UI panels
 

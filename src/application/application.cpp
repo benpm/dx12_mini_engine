@@ -168,6 +168,8 @@ Application::Application()
     this->inputMap.MapBool(Button::ScrollDown, this->mouseID, gainput::MouseButtonWheelDown);
     this->inputMap.MapBool(Button::Exit, this->keyboardID, gainput::KeyEscape);
 
+    hotkeys.setDefaults();
+
     this->loadContent();
     this->flush();
     this->imguiLayer.init(
@@ -226,6 +228,21 @@ void Application::applyConfig(const ConfigData& cfg)
     autoStopSpawning = cfg.autoStopSpawning;
     spawnStopFrameMs = cfg.spawnStopFrameMs;
     spawnBatchSize = cfg.spawnBatchSize;
+
+    // Apply hotkey bindings from config
+    hotkeys.setDefaults();
+    for (const auto& [actionName, keyNames] : cfg.hotkeys) {
+        for (int i = 0; i < static_cast<int>(EditorAction::Count); ++i) {
+            auto action = static_cast<EditorAction>(i);
+            if (actionName == editorActionName(action)) {
+                hotkeys.bindings[action].clear();
+                for (const auto& kn : keyNames) {
+                    hotkeys.bindings[action].push_back(keyFromName(kn));
+                }
+                break;
+            }
+        }
+    }
 }
 
 ConfigData Application::extractConfig() const
@@ -254,6 +271,16 @@ ConfigData Application::extractConfig() const
     cfg.autoStopSpawning = autoStopSpawning;
     cfg.spawnStopFrameMs = spawnStopFrameMs;
     cfg.spawnBatchSize = spawnBatchSize;
+
+    // Extract hotkey bindings to config
+    cfg.hotkeys.clear();
+    for (const auto& [action, keys] : hotkeys.bindings) {
+        std::vector<std::string> keyNames;
+        for (Key k : keys) {
+            keyNames.push_back(keyName(k));
+        }
+        cfg.hotkeys[editorActionName(action)] = std::move(keyNames);
+    }
     return cfg;
 }
 
@@ -794,20 +821,32 @@ void Application::update()
     }
     this->cam.radius = std::clamp(this->cam.radius, 0.1f, 1000.0f);
 
-    // Escape: deselect entity, or confirm exit
-    if (!ImGui::GetIO().WantCaptureKeyboard && this->inputMap.GetBoolWasDown(Button::Exit)) {
-        if (this->selectedEntity.is_alive()) {
-            this->selectedEntity = flecs::entity{};
-        } else {
-            int result = ::MessageBoxW(
-                this->hWnd, L"Are you sure you want to exit?", L"Confirm Exit",
-                MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2
-            );
-            if (result == IDYES) {
-                Window::get()->doExit = true;
+    // Hotkey actions (only when ImGui isn't capturing keyboard)
+    if (!ImGui::GetIO().WantCaptureKeyboard) {
+        if (hotkeys.wasPressed(EditorAction::ToggleFullscreen, prevKeyStates)) {
+            pendingFullscreenValue = !fullscreen;
+            pendingFullscreenChange = true;
+        }
+        if (hotkeys.wasPressed(EditorAction::DeleteEntity, prevKeyStates)) {
+            if (selectedEntity.is_alive()) {
+                pendingDeleteSelected = true;
+            }
+        }
+        if (hotkeys.wasPressed(EditorAction::Deselect, prevKeyStates)) {
+            if (selectedEntity.is_alive()) {
+                selectedEntity = flecs::entity{};
+            } else {
+                int result = ::MessageBoxW(
+                    hWnd, L"Are you sure you want to exit?", L"Confirm Exit",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2
+                );
+                if (result == IDYES) {
+                    Window::get()->doExit = true;
+                }
             }
         }
     }
+    hotkeys.updateKeyStates(prevKeyStates);
 
     // Animate orbiting entities
     if (animateEntities) {

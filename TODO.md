@@ -15,10 +15,10 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [X] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.
-- [ ] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
-  - F11 : toggle fullscreen
-  - Delete
+- [X] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
+  - *F11* : toggle fullscreen
+  - *Delete* : remove entity
+  - *Tab* : start navigating imgui GUI with keyboard (already enabled via ImGuiConfigFlags_NavEnableKeyboard)
 - [ ] **Editor Action Icons:** Find icons for all menu items in the GUI by searching this page: https://mui.com/material-ui/material-icons, and downloading 64x64 PNGs. Add icons to menus, submenus, and editor actions, as well as window titlebars in the program. Icons should be assignable thru the config file.
 - [ ] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
   - Editor actions should be able to be executed via a script
@@ -28,6 +28,8 @@
 
 ## Completed
 
+- [X] **Hotkeys:** Rebindable keybinds (F11=fullscreen, Delete=remove entity, Escape=deselect) via config.json, shown in UI tooltips
+- [X] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.
 - [X] **Configuration**: config.json loading/saving with merge semantics (add/remove keys, preserve values), `--dump-config` flag
 - [X]**Reorganization:** Shaders →`src/shaders/`, Application .cpp files →`src/application/`
 - [X] Escape deselects selected entity; if nothing selected, shows Yes/No exit confirmation dialog

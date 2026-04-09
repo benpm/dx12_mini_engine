@@ -178,6 +178,7 @@ add_executable(main
     src/billboard.cpp
     src/config.cpp
     src/gizmo.cpp
+    src/input.cpp
     src/scene.cpp
     src/bloom.cpp
     src/imgui_layer.cpp
