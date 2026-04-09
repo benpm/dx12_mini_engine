@@ -327,25 +327,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 ImGui::SliderFloat("Orbit Radius", &createAnimRadius, 0.0f, 30.0f);
             }
             if (ImGui::Button("Spawn Entity")) {
-                if (!scene.spawnableMeshRefs.empty()) {
-                    int mi = std::clamp(createMeshIdx, 0, (int)scene.spawnableMeshRefs.size() - 1);
-                    MeshRef mesh = scene.spawnableMeshRefs[mi];
-                    mesh.materialIndex =
-                        std::clamp(createMatIdx, 0, (int)scene.materials.size() - 1);
-                    Transform tf;
-                    tf.world = scale(createScale) * translate(createPos);
-                    auto e = scene.ecsWorld.entity().set(tf).set(mesh).add<Pickable>();
-                    if (createAnimated) {
-                        Animated anim;
-                        anim.speed = createAnimSpeed;
-                        anim.orbitRadius = createAnimRadius;
-                        anim.orbitY = createPos.y;
-                        anim.initialScale = createScale;
-                        anim.pulsePhase = static_cast<float>(scene.rng() % 1000) / 1000.0f * 6.28f;
-                        e.set(anim);
-                    }
-                    selectedEntity = e;
-                }
+                pendingCreateEntity = true;
             }
             ImGui::PopItemWidth();
             ImGui::EndMenu();
@@ -514,18 +496,18 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             if (!selectedEntity.has<Animated>() && !selectedEntity.has<InstanceAnimation>() &&
                 !selectedEntity.has<InstanceGroup>()) {
                 if (ImGui::Button("Add Animated")) {
-                    Animated anim;
+                    Animated anim{};
                     if (selectedEntity.has<Transform>()) {
                         auto tf = selectedEntity.get<Transform>();
                         anim.orbitY = tf.world._42;
                     }
-                    selectedEntity.set(anim);
+                    pendingAddAnimated = anim;
                 }
                 ImGui::SameLine();
             }
             if (!selectedEntity.has<Pickable>()) {
                 if (ImGui::Button("Add Pickable")) {
-                    selectedEntity.add<Pickable>();
+                    pendingAddPickable = true;
                 }
                 ImGui::SameLine();
             }
@@ -535,8 +517,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
             if (ImGui::Button("Delete")) {
-                selectedEntity.destruct();
-                selectedEntity = flecs::entity{};
+                pendingDeleteSelected = true;
             }
             ImGui::PopStyleColor();
         }

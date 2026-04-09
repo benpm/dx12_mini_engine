@@ -142,10 +142,10 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 
 **ObjectPicker** (`object_picking.ixx` + `object_picking.cpp`) — entity picking via ID render pass:
 
-* R32_UINT render target (viewport-sized), own depth buffer
-* Reuses scene vertex shader + ID pixel shader (`src/shaders/id_ps.hlsl`) that outputs draw index
+* R32_UINT render target (viewport-sized), own depth buffer, cleared to 0
+* Reuses scene vertex shader + ID pixel shader (`src/shaders/id_ps.hlsl`) that outputs `drawIndex + 1` (0 = no entity)
 * PSO created from scene root signature (needs structured buffer + drawIndex root constant)
-* Single-pixel readback at mouse position each frame (1-frame latency)
+* Single-pixel readback at mouse position each frame (1-frame latency); readback value is decremented by 1 to get actual draw index
 * `drawIndexToEntity` vector (in Application) maps draw index → flecs entity
 * Methods: `createResources()`, `resize()`, `readPickResult()`, `copyPickedPixel()`
 
@@ -191,7 +191,7 @@ Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 * **Scene PSO**: standard rasterization to HDR RT, stencil write. **Shadow PSO**: owned by `ShadowRenderer`, depth-only, front-face culling, depth bias. **Normal PSO**: vertex shader + `normal_ps.hlsl` → `R8G8B8A8_UNORM`. **Outline PSO**: owned by `OutlineRenderer`, extrude verts along normal, stencil test NOT_EQUAL.
 * **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 * Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`, `shadow.*`, `outline.*`.
-* **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, recompiles via `dxc.exe`, recreates PSOs. Scene PSO via `createScenePSO()`, shadow PSO via `shadow.reloadPSO()`, outline PSO via `outline.reloadPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both). **Robust**: if DXC compilation fails, old bytecode is preserved. If PSO recreation throws, the exception is caught and the previous PSO stays active — only initial load failures are fatal.
+* **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, launches DXC as an async subprocess. Compilation is non-blocking — `poll()` checks for process completion each frame. Once bytecode is ready, PSOs are recreated. Scene PSO via `createScenePSO()`, shadow PSO via `shadow.reloadPSO()`, outline PSO via `outline.reloadPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both). **Robust**: if DXC compilation fails, old bytecode is preserved. If PSO recreation throws, the exception is caught and the previous PSO stays active — only initial load failures are fatal.
 * **Animation system**: `update()` runs `scene.animQuery.each<Transform, Animated>()` — orbits entities around the Y axis at individual speeds, applies sinusoidal scale pulse (±15%). Central teapot has no `Animated` component and stays stationary. `scene.instanceAnimQuery.each<InstanceGroup, InstanceAnimation>()` spins each instance group in place by rebuilding transforms each frame from stored base positions/scales.
 * **GPU instancing**: `InstanceGroup` component stores N transforms and per-instance material overrides (albedo, roughness, metallic, emissiveStrength). Rendered via one `DrawIndexedInstanced(..., N, ...)` per group. Vertex/outline shaders use `SV_InstanceID` to index into `drawData[drawIndex + instanceID]`. `totalSlots` = regular entity count + sum of all instance group sizes; shadow/cubemap draw data stored at offsets `totalSlots` and `2*totalSlots`.
 
@@ -381,7 +381,7 @@ Use `chkDX(...)` for HRESULT-returning calls and `throwLastWin32Error(...)` for 
 
 ### No GPU ops inside renderImGui
 
-`renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`.
+`renderImGui` is called mid-frame with an open command list. Never call `clearScene()`, `flush()`, or `loadGltf()` directly inside it — use the deferred flags `pendingGltfPath` / `pendingResetToTeapot`, processed at the start of `update()`. Similarly, never mutate ECS entities (set/add components, destruct) inside `renderImGui` — use `pendingAddAnimated`, `pendingAddPickable`, `pendingDeleteSelected`, `pendingCreateEntity` flags, processed in `update()` before any ECS queries run.
 
 ### Tracy D3D12 callstack depth gotcha
 

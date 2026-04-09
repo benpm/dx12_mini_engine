@@ -393,6 +393,43 @@ void Application::update()
         saveSceneFile(path, data);
     }
 
+    // Process deferred ECS mutations from UI
+    if (pendingCreateEntity && !scene.spawnableMeshRefs.empty()) {
+        int mi = std::clamp(createMeshIdx, 0, (int)scene.spawnableMeshRefs.size() - 1);
+        MeshRef mesh = scene.spawnableMeshRefs[mi];
+        mesh.materialIndex = std::clamp(createMatIdx, 0, (int)scene.materials.size() - 1);
+        Transform tf;
+        tf.world = scale(createScale) * translate(createPos);
+        auto e = scene.ecsWorld.entity().set(tf).set(mesh).add<Pickable>();
+        if (createAnimated) {
+            Animated anim{};
+            anim.speed = createAnimSpeed;
+            anim.orbitRadius = createAnimRadius;
+            anim.orbitY = createPos.y;
+            anim.initialScale = createScale;
+            anim.pulsePhase = static_cast<float>(scene.rng() % 1000) / 1000.0f * 6.28f;
+            e.set(anim);
+        }
+        selectedEntity = e;
+    }
+    pendingCreateEntity = false;
+
+    if (pendingAddAnimated && selectedEntity.is_alive()) {
+        selectedEntity.set(*pendingAddAnimated);
+    }
+    pendingAddAnimated.reset();
+
+    if (pendingAddPickable && selectedEntity.is_alive()) {
+        selectedEntity.add<Pickable>();
+    }
+    pendingAddPickable = false;
+
+    if (pendingDeleteSelected && selectedEntity.is_alive()) {
+        selectedEntity.destruct();
+        selectedEntity = flecs::entity{};
+    }
+    pendingDeleteSelected = false;
+
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
 
@@ -649,9 +686,13 @@ void Application::update()
     const bool imguiCaptureMouse = ImGui::GetIO().WantCaptureMouse;
     if (!imguiCaptureMouse) {
         hoveredEntity = flecs::entity{};
-        uint32_t pickIdx = picker.pickedIndex;
-        if (pickIdx != ObjectPicker::invalidID && pickIdx < scene.drawIndexToEntity.size()) {
-            hoveredEntity = scene.drawIndexToEntity[pickIdx];
+        uint32_t pickVal = picker.pickedIndex;
+        // ID shader writes drawIndex+1, so 0 means "no entity"
+        if (pickVal > 0) {
+            uint32_t pickIdx = pickVal - 1;
+            if (pickIdx < scene.drawIndexToEntity.size()) {
+                hoveredEntity = scene.drawIndexToEntity[pickIdx];
+            }
         }
 
         bool leftDown = this->inputMap.GetBool(Button::LeftClick);

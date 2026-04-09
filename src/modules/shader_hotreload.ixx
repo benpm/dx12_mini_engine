@@ -1,5 +1,6 @@
 module;
 
+#include <Windows.h>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -16,7 +17,8 @@ export class ShaderCompiler
     // Register a shader file to watch (relative to shaderDir). Returns watch index.
     size_t watch(const char* filename, const char* target);
 
-    // Poll for file changes and recompile. Returns true if any shader was recompiled.
+    // Poll for file changes, kick off async compiles, collect results.
+    // Returns true if any shader finished recompiling this frame.
     bool poll(float dt);
 
     // Get compiled bytecode (nullptr if not yet hot-reloaded).
@@ -36,6 +38,11 @@ export class ShaderCompiler
         std::vector<uint8_t> bytecode;
         std::filesystem::file_time_type lastWrite{};
         bool recompiled = false;
+
+        // Async compilation state
+        HANDLE process = nullptr;
+        HANDLE readPipe = nullptr;
+        std::string tempFile;
     };
 
     std::string dxcPath_;
@@ -43,5 +50,6 @@ export class ShaderCompiler
     std::vector<Watch> watches_;
     float pollTimer_ = 0.f;
 
-    bool compile(Watch& w);
+    void launchCompile(Watch& w);
+    bool collectResult(Watch& w);
 };

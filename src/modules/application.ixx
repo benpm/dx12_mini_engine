@@ -7,6 +7,7 @@ module;
 #include <gainput/gainput.h>
 #include <Windows.h>
 #include <wrl.h>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -208,6 +209,12 @@ export class Application
     bool createAnimated = false;
     float createAnimSpeed = 1.0f;
     float createAnimRadius = 5.0f;
+    bool pendingCreateEntity = false;
+
+    // Deferred ECS mutations (set from UI, applied in update() before queries)
+    std::optional<Animated> pendingAddAnimated;
+    bool pendingAddPickable = false;
+    bool pendingDeleteSelected = false;
 
     gainput::DeviceId mouseID, rawMouseID;
 

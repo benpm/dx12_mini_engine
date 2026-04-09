@@ -569,8 +569,7 @@ void Application::render()
                 PROFILE_ZONE_NAMED("ID Pass");
                 auto idRtv = picker.getRTV();
                 auto idDsv = picker.getDSV();
-                FLOAT clearColor[] = { static_cast<float>(ObjectPicker::invalidID), 0.0f, 0.0f,
-                                       0.0f };
+                FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
                 cmd->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
                 cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
