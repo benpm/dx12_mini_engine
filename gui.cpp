@@ -1,12 +1,13 @@
-#include <gui.hpp>
-#include <gfx.hpp>
-#include <app.hpp>
-#include <scenes.hpp>
-#include <algorithm>
-#include <array>
-#include <model.hpp>
-#include <util.hpp>
 #include <stb_image.h>
+#include <algorithm>
+#include <app.hpp>
+#include <array>
+#include <gfx.hpp>
+#include <gui.hpp>
+#include <model.hpp>
+#include <scenes.hpp>
+#include <string_view>
+#include <util.hpp>
 
 // ImGui custom assert handler that integrates with our logging system
 void ImGuiAssertHandler(const char* expr, const char* file, int line)
@@ -91,7 +92,7 @@ void EditorActions::init()
     }
     initialized = true;
 
-    ///LABEL: actions definitions
+    /// LABEL: actions definitions
     // Initialize as a temporary vector first, then convert to map
     std::vector<EditorAction> tempActions = {
         // Select/Idle mode (also executes slice if slice plane is active)
@@ -108,7 +109,8 @@ void EditorActions::init()
               },
           .execute =
               [](App& app) {
-                  // When slicing, Escape cancels slicing (hide slice gizmos) without clearing selection.
+                  // When slicing, Escape cancels slicing (hide slice gizmos) without clearing
+                  // selection.
                   if (app.state() == App::State::slicing ||
                       (app.gizSlicePlane && app.gizSlicePlane->isRender)) {
                       app.state(App::State::idle);
@@ -686,9 +688,9 @@ bool GUI::initImGUI(GLFWwindow* window)
 
     // Enable error recovery with debug logging
     io.ConfigErrorRecovery = true;
-    io.ConfigErrorRecoveryEnableAssert = true;  // Enable asserts on errors
+    io.ConfigErrorRecoveryEnableAssert = true;    // Enable asserts on errors
     io.ConfigErrorRecoveryEnableDebugLog = true;  // Enable debug log output
-    io.ConfigErrorRecoveryEnableTooltip = true;  // Show error tooltips
+    io.ConfigErrorRecoveryEnableTooltip = true;   // Show error tooltips
 
     // Initialize ImGui for GLFW and OpenGL3
     bool initGLFW = ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -700,8 +702,10 @@ bool GUI::initImGUI(GLFWwindow* window)
 
 GUI::GUI(GLFWwindow* window)
 {
-    const fs::path defaultFontPath = (opts::resources / "fonts" / "Roboto-Medium.ttf").make_preferred();
-    const fs::path monospaceFontPath = (opts::resources / "fonts" / "RobotoMono-Medium.ttf").make_preferred();
+    const fs::path defaultFontPath =
+        (opts::resources / "fonts" / "Roboto-Medium.ttf").make_preferred();
+    const fs::path monospaceFontPath =
+        (opts::resources / "fonts" / "RobotoMono-Medium.ttf").make_preferred();
 
     this->initImGUI(window);
 
@@ -717,12 +721,10 @@ GUI::GUI(GLFWwindow* window)
     $debug("Loading fonts: {} and {}", defaultFontPath.string(), monospaceFontPath.string());
 
     float fontSize = 13.0f * dpiScale;
-    this->defaultFont = io.Fonts->AddFontFromFileTTF(
-        defaultFontPath.string().c_str(), fontSize, &fontConfig
-    );
-    this->monospaceFont = io.Fonts->AddFontFromFileTTF(
-        monospaceFontPath.string().c_str(), fontSize, &fontConfig
-    );
+    this->defaultFont =
+        io.Fonts->AddFontFromFileTTF(defaultFontPath.string().c_str(), fontSize, &fontConfig);
+    this->monospaceFont =
+        io.Fonts->AddFontFromFileTTF(monospaceFontPath.string().c_str(), fontSize, &fontConfig);
 
     // If the font fails to load, fall back to default
     if (io.Fonts->Fonts.empty()) {
@@ -917,7 +919,7 @@ namespace gui
 
         ImGui::Begin("##Toolbar", nullptr, toolbarFlags);
 
-        ///TODO: Make this configurable
+        /// TODO: Make this configurable
         const float buttonSize = 48.0f;
         const bool hasSurface = (bool)app.selectedSurface;
         // Disable selection tools when Alt is held (camera mode)
@@ -932,8 +934,8 @@ namespace gui
             // Use custom isEnabled if provided, otherwise fall back to requiresSurface check
             // Also disable all selection tools when Alt is pressed (camera mode)
             const bool canExecute =
-                !altPressed &&
-                (action.isEnabled ? action.isEnabled(app) : (!action.requiresSurface || hasSurface));
+                !altPressed && (action.isEnabled ? action.isEnabled(app)
+                                                 : (!action.requiresSurface || hasSurface));
             const std::string tooltipStr =
                 action.tooltip() + (!canExecute && action.requiresSurface && !hasSurface
                                         ? " (select a surface first)"
@@ -965,8 +967,8 @@ namespace gui
 
         // Position the subtoolbar at the top center, offset by menu bar height
         ImGui::SetNextWindowPos(
-            ImVec2(static_cast<float>(app.winSize.x()) * 0.5f, 10.0f + menuBarHeight), ImGuiCond_Always,
-            ImVec2(0.5f, 0.0f)
+            ImVec2(static_cast<float>(app.winSize.x()) * 0.5f, 10.0f + menuBarHeight),
+            ImGuiCond_Always, ImVec2(0.5f, 0.0f)
         );
         ImGui::SetNextWindowBgAlpha(0.85f);
 
@@ -1098,8 +1100,7 @@ namespace gui
                     if (app.hoveredSurface && app.hoveredSurface->hoveredFaceID != invalid_idx) {
                         const ispan_idx_t spanIdx =
                             app.hoveredSurface->gdata.spanIdxAt(app.hoveredSurface->hoveredFaceID);
-                        const ispan_t hSpan =
-                            app.hoveredSurface->gdata.getSpan(spanIdx);
+                        const ispan_t hSpan = app.hoveredSurface->gdata.getSpan(spanIdx);
                         Vector3u twins = Vector3u::Constant(invalid_idx);
                         Vector3u halfedges = Vector3u::Constant(invalid_idx);
                         Vector3u vertices = Vector3u::Constant(invalid_idx);
@@ -1170,8 +1171,7 @@ namespace gui
                     }
                     if (ImGui::Button("Import")) {
                         Model::load(
-                            opts::models / models[selectedModel].second, app.tree,
-                            app.history
+                            opts::models / models[selectedModel].second, app.tree, app.history
                         );
                     }
                 }
@@ -1276,9 +1276,7 @@ namespace gui
                     } else {
                         for (const auto& [i, op] :
                              ranges::enumerate(app.history.operations) | std::views::reverse) {
-                            const std::string label = fmt::format(
-                                "({}) {}", i + 1, op->label()
-                            );
+                            const std::string label = fmt::format("({}) {}", i + 1, op->label());
                             if (i >= app.history.position()) {
                                 ImGui::TextDisabled("%s", label.c_str());
                             } else {
@@ -1466,7 +1464,9 @@ namespace gui
                 }
             } else {
                 // For other states, show the state name
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "State: %s", stateToString(app.state()));
+                ImGui::TextColored(
+                    ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "State: %s", stateToString(app.state())
+                );
             }
             ImGui::End();
         }
@@ -1490,10 +1490,11 @@ namespace gui
             ImGui::TextUnformatted(value.data(), value.data() + value.size());
         };
 
-        // Position at top-right corner, using pivot (1, 0) to anchor from top-right, offset by menu bar
+        // Position at top-right corner, using pivot (1, 0) to anchor from top-right, offset by menu
+        // bar
         ImGui::SetNextWindowPos(
-            ImVec2(static_cast<float>(app.winSize.x()) - 10.0f, 10.0f + menuBarHeight), ImGuiCond_Always,
-            ImVec2(1.0f, 0.0f)  // Pivot: right edge, top edge
+            ImVec2(static_cast<float>(app.winSize.x()) - 10.0f, 10.0f + menuBarHeight),
+            ImGuiCond_Always, ImVec2(1.0f, 0.0f)  // Pivot: right edge, top edge
         );
         ImGui::SetNextWindowSize(ImVec2(0, 0));
         ImGui::SetNextWindowBgAlpha(0.35f);
@@ -1614,8 +1615,10 @@ namespace gui
     {
         if (!app.gizSlicePlane->isRender && ImGui::Button("Cut Patch")) {
             app.state(App::State::slicing);
-        } else if (app.gizSlicePlane->isRender &&
-                   (ImGui::Button("Cut") || app.keyboard.pressed.contains(GLFW_KEY_ENTER))) {
+        } else if (
+            app.gizSlicePlane->isRender &&
+            (ImGui::Button("Cut") || app.keyboard.pressed.contains(GLFW_KEY_ENTER))
+        ) {
             bool allPatches = true;
             uint32_t patchCount = 0;
             uint64_t patchID = invalid_idx;
@@ -1653,8 +1656,10 @@ namespace gui
 
         if (!app.gizSlicePlane->isRender && ImGui::Button("Slice Plane")) {
             app.state(App::State::slicing);
-        } else if (app.gizSlicePlane->isRender &&
-                   (ImGui::Button("Slice") || app.keyboard.pressed.contains(GLFW_KEY_ENTER))) {
+        } else if (
+            app.gizSlicePlane->isRender &&
+            (ImGui::Button("Slice") || app.keyboard.pressed.contains(GLFW_KEY_ENTER))
+        ) {
             app.doAction([&](App& app) {
                 if (!app.selectedSurface) {
                     return;
@@ -1742,15 +1747,21 @@ namespace gui
             ImGui::Text("Image Button Demo:");
 
             // Example image buttons using matcap textures
-            if (app.gui.imageButton((opts::resources / "textures" / "matcaps" / "mc1.png").string(), 32, "Matcap 1")) {
+            if (app.gui.imageButton(
+                    (opts::resources / "textures" / "matcaps" / "mc1.png").string(), 32, "Matcap 1"
+                )) {
                 // Handle button click
             }
             ImGui::SameLine();
-            if (app.gui.imageButton((opts::resources / "textures" / "matcaps" / "mc2.png").string(), 32, "Matcap 2")) {
+            if (app.gui.imageButton(
+                    (opts::resources / "textures" / "matcaps" / "mc2.png").string(), 32, "Matcap 2"
+                )) {
                 // Handle button click
             }
             ImGui::SameLine();
-            if (app.gui.imageButton((opts::resources / "textures" / "matcaps" / "mc3.png").string(), 32, "Matcap 3")) {
+            if (app.gui.imageButton(
+                    (opts::resources / "textures" / "matcaps" / "mc3.png").string(), 32, "Matcap 3"
+                )) {
                 // Handle button click
             }
         }

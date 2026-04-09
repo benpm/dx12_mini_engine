@@ -83,9 +83,6 @@ PSOutput main(PSInput IN)
     float camDist = length(worldPos - CameraPos.xyz);
 
     OUT.Color = grid(worldPos, camDist);
-    if (OUT.Color.a < 0.01f) {
-        discard;
-    }
 
     // Compute proper depth
     float4 clipPos = mul(ViewProj, float4(worldPos, 1.0f));
