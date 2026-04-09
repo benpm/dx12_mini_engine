@@ -551,6 +551,7 @@ bool Application::loadContent()
     }
 
     picker.createResources(device, clientWidth, clientHeight, rootSignature);
+    gizmo.init(scene, device.Get(), cmdQueue);
 
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);

@@ -132,6 +132,7 @@ export class Scene
 
     std::vector<DrawCmd> drawCmds;
     std::vector<flecs::entity> drawIndexToEntity;
+    std::vector<bool> isGizmoDraw;
     uint32_t totalSlots = 0;
     bool anyReflective = false;
     vec3 reflectivePos{};

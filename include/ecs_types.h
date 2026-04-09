@@ -65,6 +65,20 @@ struct TerrainEntity
 {
 };
 
+// Translation gizmo arrow axis
+enum class GizmoAxis : uint8_t
+{
+    X = 0,
+    Y = 1,
+    Z = 2
+};
+
+// Tag: marks a gizmo arrow entity
+struct GizmoArrow
+{
+    GizmoAxis axis;
+};
+
 // Per-frame Y-axis rotation for an InstanceGroup entity
 struct InstanceAnimation
 {

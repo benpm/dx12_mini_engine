@@ -104,6 +104,18 @@ void Application::render()
     scene.populateDrawCommands(curBackBufIdx, this->matModel);
     this->lastFrameObjectCount = scene.totalSlots;
 
+    // Build filtered draw command list (excludes gizmo arrows)
+    std::vector<DrawCmd> sceneDrawCmds;
+    std::vector<DrawCmd> gizmoDrawCmds;
+    sceneDrawCmds.reserve(scene.drawCmds.size());
+    for (const auto& dc : scene.drawCmds) {
+        if (dc.baseDrawIndex < scene.isGizmoDraw.size() && scene.isGizmoDraw[dc.baseDrawIndex]) {
+            gizmoDrawCmds.push_back(dc);
+        } else {
+            sceneDrawCmds.push_back(dc);
+        }
+    }
+
     PerFrameCB* frameMapped = scene.perFrameMapped[curBackBufIdx];
     PerPassCB* passMappedBase = scene.perPassMapped[curBackBufIdx];
     const uint64_t passCBStride = (sizeof(PerPassCB) + 255) & ~255;
@@ -207,7 +219,7 @@ void Application::render()
 
                 shadow.render(
                     cmd, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
-                    scene.sceneSrvDescSize, curBackBufIdx, scene.drawCmds, 0  // 0 offset now
+                    scene.sceneSrvDescSize, curBackBufIdx, sceneDrawCmds, 0
                 );
             }
         );
@@ -230,7 +242,8 @@ void Application::render()
                     scene.totalSlots;  // Place cubemap object data after main ones
                 std::vector<uint32_t> nonReflectiveIndices;
                 for (uint32_t i = 0; i < scene.totalSlots; ++i) {
-                    if (objectMapped[i].reflective < 0.5f) {
+                    if (objectMapped[i].reflective < 0.5f &&
+                        !(i < scene.isGizmoDraw.size() && scene.isGizmoDraw[i])) {
                         nonReflectiveIndices.push_back(i);
                     }
                 }
@@ -376,7 +389,7 @@ void Application::render()
                 bindSceneHeapAndObjects(cmd);
                 bindPerFrameAndPass(cmd, normalPassAddr);
 
-                for (const auto& dc : scene.drawCmds) {
+                for (const auto& dc : sceneDrawCmds) {
                     cmd->SetGraphicsRoot32BitConstant(
                         app_slots::rootDrawIndex, dc.baseDrawIndex, 0
                     );
@@ -452,21 +465,77 @@ void Application::render()
             cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
 
             cmd->OMSetStencilRef(1);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(scene.drawCmds.size()); ++i) {
-                currentVertexCount +=
-                    scene.drawCmds[i].indexCount * scene.drawCmds[i].instanceCount;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(sceneDrawCmds.size()); ++i) {
+                currentVertexCount += sceneDrawCmds[i].indexCount * sceneDrawCmds[i].instanceCount;
                 currentDrawCalls++;
                 cmd->SetGraphicsRoot32BitConstant(
-                    app_slots::rootDrawIndex, scene.drawCmds[i].baseDrawIndex, 0
+                    app_slots::rootDrawIndex, sceneDrawCmds[i].baseDrawIndex, 0
                 );
                 cmd->DrawIndexedInstanced(
-                    scene.drawCmds[i].indexCount, scene.drawCmds[i].instanceCount,
-                    scene.drawCmds[i].indexOffset, static_cast<INT>(scene.drawCmds[i].vertexOffset),
-                    0
+                    sceneDrawCmds[i].indexCount, sceneDrawCmds[i].instanceCount,
+                    sceneDrawCmds[i].indexOffset, static_cast<INT>(sceneDrawCmds[i].vertexOffset), 0
                 );
             }
         }
     );
+
+    // --- Gizmo Pass (renders on top of scene geometry) ---
+    if (selectedEntity.is_alive() && !gizmoDrawCmds.empty()) {
+        renderGraph.addPass(
+            "Gizmo Pass",
+            [&](rg::RenderGraphBuilder& builder) {
+                builder.writeRenderTarget(
+                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+                builder.writeDepthStencil(
+                    hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+                );
+            },
+            [&, scenePassAddr = getPassCBAddress(0)](
+                ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+            ) {
+                PROFILE_ZONE_NAMED("Gizmo Pass");
+                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
+                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+
+                cmd->SetPipelineState(this->pipelineState.Get());
+                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                bindSharedGeometry(cmd);
+                cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+                bindSceneHeapAndObjects(cmd);
+                bindPerFrameAndPass(cmd, scenePassAddr);
+
+                CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(app_slots::srvSlotShadow), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
+
+                CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
+
+                CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
+                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
+                    static_cast<INT>(app_slots::srvSlotSsao), scene.sceneSrvDescSize
+                );
+                cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
+
+                for (const auto& dc : gizmoDrawCmds) {
+                    cmd->SetGraphicsRoot32BitConstant(
+                        app_slots::rootDrawIndex, dc.baseDrawIndex, 0
+                    );
+                    cmd->DrawIndexedInstanced(
+                        dc.indexCount, dc.instanceCount, dc.indexOffset,
+                        static_cast<INT>(dc.vertexOffset), 0
+                    );
+                }
+            }
+        );
+    }
 
     // --- Grid Pass ---
     if (showGrid) {
@@ -513,8 +582,10 @@ void Application::render()
         );
     }
 
-    // --- Outline Pass ---
-    if (hoveredEntity || selectedEntity) {
+    // --- Outline Pass (skip gizmo entities) ---
+    flecs::entity outlineHovered =
+        (hoveredEntity && !gizmo.isGizmoEntity(hoveredEntity)) ? hoveredEntity : flecs::entity{};
+    if (outlineHovered || selectedEntity) {
         renderGraph.addPass(
             "Outline Pass",
             [&](rg::RenderGraphBuilder& builder) {
@@ -546,7 +617,7 @@ void Application::render()
                 outlineCtx.scissorRect = &this->scissorRect;
 
                 outline.render(
-                    cmd, outlineCtx, scene.drawCmds, scene.drawIndexToEntity, hoveredEntity,
+                    cmd, outlineCtx, scene.drawCmds, scene.drawIndexToEntity, outlineHovered,
                     selectedEntity
                 );
             }

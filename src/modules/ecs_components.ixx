@@ -14,3 +14,5 @@ export using ::InstanceGroup;
 export using ::InstanceAnimation;
 export using ::TerrainEntity;
 export using ::PointLight;
+export using ::GizmoAxis;
+export using ::GizmoArrow;

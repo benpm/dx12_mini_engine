@@ -30,6 +30,7 @@ export import scene_file;
 export import ssao;
 export import shadow;
 export import outline;
+export import gizmo;
 export import render_graph;
 
 // Global application data and state
@@ -104,6 +105,7 @@ export class Application
     SsaoRenderer ssao;
     ShadowRenderer shadow;
     OutlineRenderer outline;
+    GizmoState gizmo;
     // Entity picking/selection
     flecs::entity hoveredEntity;
     flecs::entity selectedEntity;

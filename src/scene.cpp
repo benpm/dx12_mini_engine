@@ -794,4 +794,10 @@ void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
     });
 
     totalSlots = drawIdx;
+
+    // Mark gizmo draws for filtering in render passes
+    isGizmoDraw.resize(drawIndexToEntity.size());
+    for (uint32_t i = 0; i < drawIndexToEntity.size(); ++i) {
+        isGizmoDraw[i] = drawIndexToEntity[i].has<GizmoArrow>();
+    }
 }

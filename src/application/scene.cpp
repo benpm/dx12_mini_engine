@@ -90,8 +90,11 @@ SceneFileData Application::extractSceneData() const
     // Materials
     d.materials = scene.materials;
 
-    // Entities
+    // Entities (skip gizmo arrows)
     scene.drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mr) {
+        if (e.has<GizmoArrow>()) {
+            return;
+        }
         EntityData ed;
 
         for (size_t i = 0; i < scene.spawnableMeshRefs.size(); ++i) {

@@ -15,9 +15,6 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [ ] Add a interactive gizmo for transforming entities with the `Transform` component, allowing the user to move them via a set of 3 arrows, one for each 3D axis.
-  - Generate the arrow mesh dynamically.
-  - Clicking and dragging on one of the arrows should move the transform position in the direction of the associated axis.
 - [ ] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values. When the config is loaded, 
 - [ ] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
   - F11 : toggle fullscreen
@@ -39,6 +36,7 @@
 - [X] Fix shader hot reload hang — async DXC compilation (non-blocking process launch + poll for completion)
 - [X] Fix tooltip showing when hovering nothing — ID shader writes drawIndex+1, clear RT to 0, subtract 1 on readback
 - [X] Mouse wheel zoom (already implemented)
+- [X] 3D translation gizmo — 3 colored arrows (R/G/B for X/Y/Z) at selected entity position, click+drag to translate along axis
 - [X] Capture input events when interacting with the UI, preventing key presses and mouse events from being handled if the UI is occluding. This is a built in feature for imgui, use context7 to find the docs.
 - [X] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. — fd67af8
 - [X] Remove explicit clang diagnostic ignore pragmas — de0ee11

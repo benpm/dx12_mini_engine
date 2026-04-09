@@ -696,6 +696,13 @@ void Application::update()
         }
 
         bool leftDown = this->inputMap.GetBool(Button::LeftClick);
+
+        // Update gizmo (drag detection + entity translation)
+        gizmo.update(
+            scene, selectedEntity, cam, viewport, mousePos, leftDown, leftClickActive,
+            picker.pickedIndex
+        );
+
         if (leftDown && !leftClickActive) {
             clickStartPos = mousePos;
             leftClickActive = true;
@@ -704,14 +711,15 @@ void Application::update()
             leftClickActive = false;
             float dx = mousePos.x - clickStartPos.x;
             float dy = mousePos.y - clickStartPos.y;
-            if (dx * dx + dy * dy < 9.0f) {  // < 3px drag = click
+            // Suppress selection when clicking on gizmo arrow or dragging gizmo
+            if (dx * dx + dy * dy < 9.0f && !gizmo.isGizmoEntity(hoveredEntity)) {
                 selectedEntity = hoveredEntity;
             }
         }
     }
 
     this->matModel = mat4{};
-    if (!imguiCaptureMouse && this->inputMap.GetBool(Button::LeftClick)) {
+    if (!imguiCaptureMouse && !gizmo.isDragging() && this->inputMap.GetBool(Button::LeftClick)) {
         this->cam.pitch += (this->mouseDelta.y / w) * 180_deg;
         this->cam.yaw -= (this->mouseDelta.x / w) * 360_deg;
         this->cam.pitch = std::clamp(this->cam.pitch, -89.9_deg, 89.9_deg);

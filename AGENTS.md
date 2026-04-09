@@ -90,8 +90,9 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
 | `camera.ixx` | Re-exports Camera + OrbitCamera from `include/camera_types.h` |
 | `input.ixx` | Button/Key enums, gainput integration (uses `module :private;` for global) |
-| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight) |
+| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
+| `gizmo.ixx` | `GizmoState` struct — translation gizmo (3 arrow entities, drag logic) |
 | `billboard.ixx` | `BillboardRenderer` class — point light sprite rendering |
 | `object_picking.ixx` | `ObjectPicker` class — ID render pass, readback for entity picking |
 | `terrain.ixx` | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh |
@@ -117,7 +118,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 
 ### Subsystem architecture
 
-Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`, `ShadowRenderer shadow`, `OutlineRenderer outline`, `SsaoRenderer ssao`, `ObjectPicker picker`, `BillboardRenderer billboards`, `rg::RenderGraph renderGraph`.
+Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImGuiLayer imguiLayer`, `ShadowRenderer shadow`, `OutlineRenderer outline`, `SsaoRenderer ssao`, `ObjectPicker picker`, `BillboardRenderer billboards`, `GizmoState gizmo`, `rg::RenderGraph renderGraph`.
 
 **RenderGraph** (`render_graph.ixx` + `render_graph.cpp`) — orchestrates rendering passes:
 
@@ -170,6 +171,16 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 * Owns `pso` (stencil NOT_EQUAL, no depth write, cull none)
 * Methods: `createResources()`, `reloadPSO()`, `render()` (draws outline for hovered/selected entities)
 
+**GizmoState** (`gizmo.ixx` + `gizmo.cpp`) — translation gizmo subsystem:
+
+* 3 arrow ECS entities (`Transform + MeshRef + GizmoArrow`) — dynamically generated cylinder+cone mesh along +Y, rotated per axis
+* Arrow entities are filtered from shadow/cubemap/normal/scene passes via `Scene::isGizmoDraw`; rendered in dedicated Gizmo Pass (depth-cleared, on top of scene)
+* Participates in ID pass for click detection; drag projects mouse delta onto screen-space axis direction
+* Materials: emissive R/G/B (emissiveStrength=5) so arrows glow regardless of lighting
+* Constant screen-space size: `gizmoScale = distance(entity, camera) * 0.1`
+* Hidden via `scale(0)` transform when no entity is selected
+* Methods: `init()`, `update()`, `isGizmoEntity()`, `isDragging()`
+
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 
 * SRV descriptor heap for ImGui
@@ -207,6 +218,7 @@ update()  →  render()
                   ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT)
                   ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT)
                   ├─ Scene pass       (HDR RT, samples shadow+cubemap+SSAO)
+                  ├─ Gizmo pass       (translation arrows, depth-cleared, renders on top)
                   ├─ Grid pass        (infinite Y=0 grid, alpha-blended, depth-tested)
                   ├─ Outline pass     (silhouette for hovered/selected)
                   ├─ ID pass          (R32_UINT RT, entity index per pixel)
