@@ -200,6 +200,64 @@ Application::~Application()
 }
 
 // ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+void Application::applyConfig(const ConfigData& cfg)
+{
+    vsync = cfg.vsync;
+    tonemapMode = cfg.tonemapMode;
+    bloomThreshold = cfg.bloomThreshold;
+    bloomIntensity = cfg.bloomIntensity;
+    ssao.enabled = cfg.ssaoEnabled;
+    ssao.radius = cfg.ssaoRadius;
+    ssao.bias = cfg.ssaoBias;
+    ssao.kernelSize = cfg.ssaoKernelSize;
+    shadow.enabled = cfg.shadowsEnabled;
+    cubemapEnabled = cfg.cubemapEnabled;
+    cubemapResolution = cfg.cubemapResolution;
+    showGrid = cfg.showGrid;
+    gridMajorSize = cfg.gridMajorSize;
+    gridSubdivisions = cfg.gridSubdivisions;
+    showMetrics = cfg.showMetrics;
+    showLightBillboards = cfg.showLightBillboards;
+    animateEntities = cfg.animateEntities;
+    lightAnimationSpeed = cfg.lightAnimationSpeed;
+    autoStopSpawning = cfg.autoStopSpawning;
+    spawnStopFrameMs = cfg.spawnStopFrameMs;
+    spawnBatchSize = cfg.spawnBatchSize;
+}
+
+ConfigData Application::extractConfig() const
+{
+    ConfigData cfg;
+    cfg.windowWidth = clientWidth;
+    cfg.windowHeight = clientHeight;
+    cfg.vsync = vsync;
+    cfg.tonemapMode = tonemapMode;
+    cfg.bloomThreshold = bloomThreshold;
+    cfg.bloomIntensity = bloomIntensity;
+    cfg.ssaoEnabled = ssao.enabled;
+    cfg.ssaoRadius = ssao.radius;
+    cfg.ssaoBias = ssao.bias;
+    cfg.ssaoKernelSize = ssao.kernelSize;
+    cfg.shadowsEnabled = shadow.enabled;
+    cfg.cubemapEnabled = cubemapEnabled;
+    cfg.cubemapResolution = cubemapResolution;
+    cfg.showGrid = showGrid;
+    cfg.gridMajorSize = gridMajorSize;
+    cfg.gridSubdivisions = gridSubdivisions;
+    cfg.showMetrics = showMetrics;
+    cfg.showLightBillboards = showLightBillboards;
+    cfg.animateEntities = animateEntities;
+    cfg.lightAnimationSpeed = lightAnimationSpeed;
+    cfg.autoStopSpawning = autoStopSpawning;
+    cfg.spawnStopFrameMs = spawnStopFrameMs;
+    cfg.spawnBatchSize = spawnBatchSize;
+    return cfg;
+}
+
+// ---------------------------------------------------------------------------
 // Low-level helpers
 // ---------------------------------------------------------------------------
 

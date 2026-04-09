@@ -2,6 +2,7 @@
 #include <glaze/glaze.hpp>
 
 #include "camera_types.h"
+#include "config_data.h"
 #include "scene_data.h"
 #include "terrain_types.h"
 
@@ -133,6 +134,33 @@ template <> struct glz::meta<InstanceGroupData>
         &T::albedoOverrides
     );
 };
+
+bool readConfigJson(const std::string& path, ConfigData& out, std::string& err)
+{
+    std::string buf;
+    // Read file contents, then parse with unknown keys allowed (config may have obsolete keys)
+    auto fec = glz::file_to_buffer(buf, path);
+    if (fec != glz::error_code::none) {
+        err = "Failed to read file";
+        return false;
+    }
+    auto ec = glz::read<glz::opts{ .error_on_unknown_keys = false }>(out, buf);
+    if (ec) {
+        err = glz::format_error(ec, buf);
+        return false;
+    }
+    return true;
+}
+
+bool writeConfigJson(const std::string& path, const ConfigData& data, std::string& err)
+{
+    auto ec = glz::write_file_json<glz::opts{ .prettify = true }>(data, path, std::string{});
+    if (ec) {
+        err = glz::format_error(ec, std::string{});
+        return false;
+    }
+    return true;
+}
 
 bool readSceneJson(const std::string& path, SceneFileData& out, std::string& err)
 {

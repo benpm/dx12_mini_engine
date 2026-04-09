@@ -176,6 +176,7 @@ add_executable(main
     src/application/setup.cpp
     src/application/scene.cpp
     src/billboard.cpp
+    src/config.cpp
     src/gizmo.cpp
     src/scene.cpp
     src/bloom.cpp
@@ -210,6 +211,7 @@ target_sources(main
     src/modules/scene.ixx
     src/modules/bloom.ixx
     src/modules/billboard.ixx
+    src/modules/config.ixx
     src/modules/gizmo.ixx
     src/modules/imgui_layer.ixx
     src/modules/shader_hotreload.ixx

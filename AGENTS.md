@@ -96,6 +96,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `billboard.ixx` | `BillboardRenderer` class — point light sprite rendering |
 | `object_picking.ixx` | `ObjectPicker` class — ID render pass, readback for entity picking |
 | `terrain.ixx` | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh |
+| `config.ixx` | `ConfigData` struct + load/save/merge config.json via glaze |
 | `scene_file.ixx` | Scene file serialization — load/save JSON scene files via glaze |
 | `ssao.ixx` | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes |
 | `shadow.ixx` | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO |
@@ -274,7 +275,7 @@ Cook-Torrance BRDF:
 
 JSON scene files (via glaze) store all configurable scene state: camera, bloom, lighting, fog, shadows, cubemap, terrain params, materials, entities, instance groups, and display settings. Entities and instance groups reference meshes by name (resolved against `spawnableMeshNames` on load). `InstanceGroupData` stores per-instance positions, scales, and albedo overrides.
 
-* **CLI**: first positional argument is a scene file path (replaces old `--test` flag). If omitted, engine loads `resources/scenes/default.json`.
+* **CLI**: first positional argument is a scene file path. If omitted, engine loads the path from `config.json`'s `defaultScenePath` (default: `resources/scenes/default.json`). `--dump-config` writes default `config.json` and exits.
 * **Scene files**: stored in `resources/scenes/` (`SCENES_DIR` CMake define)
   * `test.json` — test automation scene (WARP, hidden window, screenshot at frame 10, exit)
   * `empty.json` — empty scene with defaults, spawning stopped
@@ -282,6 +283,15 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * **Runtime block**: optional section in scene files for automation and startup mode: `useWarp`, `hideWindow`, `screenshotFrame`, `exitAfterScreenshot`, `spawnPerFrame`, `skipImGui`, `singleTeapotMode`
 * **UI**: Scene menu has save/load path input + buttons
 * **Implementation**: `scene_file.ixx` module wraps `glaze_impl.cpp` (isolated TU for glaze templates). `src/application/scene.cpp` has `applySceneData()`/`extractSceneData()` for converting between `SceneFileData` structs and Application state. Data structs in `include/scene_data.h` reuse engine types directly — `OrbitCamera`, `TerrainParams`, `Material`, `Animated`, `PointLight` — no duplicate "data" structs.
+
+### Configuration system
+
+`config.json` stores global engine defaults (window size, graphics toggles, display settings, spawning params, default scene path). Struct in `include/config_data.h`, module in `config.ixx` + `config.cpp`.
+
+* **Merge semantics**: on startup, `mergeConfig()` reads existing `config.json` (with `error_on_unknown_keys = false` so obsolete keys are silently skipped), then writes back. Missing keys get defaults, obsolete keys are dropped, existing values are preserved.
+* **`--dump-config`**: writes a fresh `config.json` with all defaults and exits (no window/GPU needed).
+* **Load order**: config applied first via `app.applyConfig(config)`, then scene file via `app.applySceneData(sceneData)`. Scene values override config for shared settings (bloom, shadows, etc.).
+* **Glaze integration**: `readConfigJson`/`writeConfigJson` in `glaze_impl.cpp`. `ConfigData` is a plain aggregate — no `glz::meta` specialization needed.
 
 ### ImGui UI panels
 

@@ -10,6 +10,7 @@
 #include "scene_data.h"
 
 import application;
+import config;
 import logging;
 import scene_file;
 import window;
@@ -34,28 +35,43 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         return -1;
     }
 
-    // Parse CLI arguments: first non-flag argument is the scene file path
+    // Parse CLI arguments
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     spdlog::info("Command line: {}", GetCommandLineA());
     std::string sceneFilePath;
+    bool dumpConfig = false;
     if (argv) {
         for (int i = 1; i < argc; ++i) {
-            // Convert wide string to narrow
             int len = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, nullptr, nullptr);
             std::string arg(len - 1, '\0');
             WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, arg.data(), len, nullptr, nullptr);
-            if (!arg.empty() && arg[0] != '-') {
+            if (arg == "--dump-config") {
+                dumpConfig = true;
+            } else if (!arg.empty() && arg[0] != '-') {
                 sceneFilePath = arg;
-                break;
             }
         }
         LocalFree(static_cast<HLOCAL>(argv));
     }
 
+    // Handle --dump-config: write defaults and exit
+    if (dumpConfig) {
+        ConfigData defaults{};
+        if (saveConfig("config.json", defaults)) {
+            spdlog::info("Dumped default config to config.json");
+        }
+        CoUninitialize();
+        return 0;
+    }
+
+    // Load / merge config
+    ConfigData config{};
+    mergeConfig("config.json", config);
+
     if (sceneFilePath.empty()) {
-        sceneFilePath = std::string(SCENES_DIR) + "/default.json";
-        spdlog::info("No scene path provided, using default scene '{}'", sceneFilePath);
+        sceneFilePath = config.defaultScenePath;
+        spdlog::info("No scene path provided, using config default '{}'", sceneFilePath);
     }
 
     // Load scene file before window init to read runtime flags
@@ -74,9 +90,13 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
     try {
         spdlog::info("Initializing window...");
-        Window::get()->initialize(hInstance, "D3D12 Experiment", 1280, 720, nCmdShow, useWarp);
+        Window::get()->initialize(
+            hInstance, "D3D12 Experiment", config.windowWidth, config.windowHeight, nCmdShow,
+            useWarp
+        );
         spdlog::info("Creating Application...");
         Application app;
+        app.applyConfig(config);
 
         if (hasSceneFile) {
             app.applySceneData(sceneData);

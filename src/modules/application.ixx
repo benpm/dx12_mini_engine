@@ -18,6 +18,7 @@ export module application;
 export import window;
 export import camera;
 export import command_queue;
+export import config;
 export import input;
 export import scene;
 export import bloom;
@@ -73,6 +74,10 @@ export class Application
     // Scene file serialization
     SceneFileData extractSceneData() const;
     void applySceneData(const SceneFileData& data);
+
+    // Config
+    void applyConfig(const ConfigData& cfg);
+    ConfigData extractConfig() const;
 
    private:
     constexpr static uint8_t nBuffers = 3u;

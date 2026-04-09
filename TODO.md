@@ -15,7 +15,7 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [ ] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values. When the config is loaded, 
+- [X] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.
 - [ ] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
   - F11 : toggle fullscreen
   - Delete
@@ -28,6 +28,7 @@
 
 ## Completed
 
+- [X] **Configuration**: config.json loading/saving with merge semantics (add/remove keys, preserve values), `--dump-config` flag
 - [X]**Reorganization:** Shaders →`src/shaders/`, Application .cpp files →`src/application/`
 - [X] Escape deselects selected entity; if nothing selected, shows Yes/No exit confirmation dialog
 - [X]**Info / Metrics:** FPS graph, draw calls, entity/component counts, Debug/Release indicator, View menu toggle
