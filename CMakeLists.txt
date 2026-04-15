@@ -119,6 +119,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glaze)
 
+# Fetch Lua 5.4 (small C library, no CMakeLists.txt — build as static lib manually)
+FetchContent_Declare(
+    lua
+    GIT_REPOSITORY https://github.com/lua/lua.git
+    GIT_TAG v5.4.7
+)
+FetchContent_MakeAvailable(lua)
+file(GLOB LUA_SOURCES ${lua_SOURCE_DIR}/*.c)
+list(FILTER LUA_SOURCES EXCLUDE REGEX "(lua|luac|onelua)\\.c$")
+add_library(lua_lib STATIC ${LUA_SOURCES})
+target_include_directories(lua_lib PUBLIC ${lua_SOURCE_DIR})
+target_compile_definitions(lua_lib PRIVATE LUA_USE_WINDOWS)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(lua_lib PRIVATE -Wno-everything)
+endif()
+
 # Fetch Tracy profiler (on-demand: zero overhead when viewer not connected)
 set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
 set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
@@ -195,6 +211,8 @@ add_executable(main
     src/shadow.cpp
     src/outline.cpp
     src/render_graph.cpp
+    src/lua_scripting.cpp
+    src/lua_scripting_impl.cpp
     resources.rc
 )
 target_sources(main
@@ -223,6 +241,7 @@ target_sources(main
     src/modules/shadow.ixx
     src/modules/outline.ixx
     src/modules/render_graph.ixx
+    src/modules/lua_scripting.ixx
     src/modules/application.ixx
     src/modules/window.ixx
 )
@@ -297,6 +316,7 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
     MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
     SCENES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scenes"
+    SCRIPTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scripts"
 )
 
 target_compile_definitions(main PRIVATE
@@ -347,6 +367,7 @@ target_link_libraries(main PRIVATE
     imgui_lib
     flecs::flecs_static
     glaze::glaze
+    lua_lib
     Microsoft::DirectX-Headers
 )
 
@@ -385,4 +406,31 @@ if(BUILD_TESTING)
     endif()
 
     doctest_discover_tests(unit_tests)
+
+    add_executable(lua_scripting_tests
+        tests/lua_scripting_tests.cpp
+        src/lua_scripting_impl.cpp
+    )
+    target_compile_features(lua_scripting_tests PRIVATE cxx_std_23)
+    target_include_directories(lua_scripting_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(lua_scripting_tests PRIVATE doctest::doctest lua_lib flecs::flecs_static spdlog::spdlog)
+    target_compile_definitions(lua_scripting_tests PRIVATE FMT_CONSTEVAL=)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+        target_compile_options(lua_scripting_tests PRIVATE
+            -Wall -Wno-c++98-compat -fcolor-diagnostics
+            $<$<CONFIG:Debug>:-O0 -g>
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+        )
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(lua_scripting_tests PRIVATE
+            /W3
+            $<$<CONFIG:Debug>:/Od /Zi>
+            $<$<CONFIG:Release>:/O2>
+            $<$<CONFIG:RelWithDebInfo>:/O2 /Zi>
+        )
+    else()
+        target_compile_options(lua_scripting_tests PRIVATE -Wall)
+    endif()
+    doctest_discover_tests(lua_scripting_tests)
 endif()

@@ -340,6 +340,32 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Scripts")) {
+            ImGui::PushItemWidth(220.0f);
+            const auto& bindings = luaScripting.getActionBindings();
+            if (bindings.empty()) {
+                ImGui::TextDisabled("No action bindings loaded");
+            } else {
+                for (const auto& b : bindings) {
+                    if (ImGui::MenuItem(b.actionName.c_str())) {
+                        luaScripting.executeAction(b.actionName);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", b.scriptPath.c_str());
+                    }
+                }
+            }
+            ImGui::Separator();
+            static char oneOffScriptBuf[256] = "";
+            ImGui::InputText("Script Path", oneOffScriptBuf, sizeof(oneOffScriptBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Run")) {
+                luaScripting.executeScript(oneOffScriptBuf);
+            }
+            ImGui::PopItemWidth();
+            ImGui::EndMenu();
+        }
+
         ImGui::EndMainMenuBar();
     }
 
@@ -496,6 +522,17 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                         ImGui::EndTabItem();
                     }
                 }
+                if (selectedEntity.has<Scripted>()) {
+                    if (ImGui::BeginTabItem("Scripted")) {
+                        auto s = selectedEntity.get<Scripted>();
+                        ImGui::Text("Script: %s", s.scriptPath.c_str());
+                        ImGui::Text("Lua Ref: %d", s.luaRef);
+                        if (ImGui::Button("Detach Script")) {
+                            luaScripting.detachScript(selectedEntity);
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
                 ImGui::EndTabBar();
             }
 
@@ -517,6 +554,14 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                     pendingAddPickable = true;
                 }
                 ImGui::SameLine();
+            }
+            if (!selectedEntity.has<Scripted>()) {
+                static char scriptPathBuf[256] = "color_cycle.lua";
+                ImGui::InputText("Script", scriptPathBuf, sizeof(scriptPathBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("Attach Script")) {
+                    luaScripting.attachScript(selectedEntity, scriptPathBuf);
+                }
             }
             {
                 auto sc = hotkeys.shortcutString(EditorAction::Deselect);

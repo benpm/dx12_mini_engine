@@ -34,6 +34,7 @@ export import shadow;
 export import outline;
 export import gizmo;
 export import render_graph;
+export import lua_scripting;
 
 // Global application data and state
 export namespace app_slots
@@ -226,6 +227,9 @@ export class Application
     // Hotkeys
     HotkeyBindings hotkeys;
     std::unordered_map<UINT, bool> prevKeyStates;
+
+    // Lua scripting
+    LuaScripting luaScripting;
 
     gainput::DeviceId mouseID, rawMouseID;
 

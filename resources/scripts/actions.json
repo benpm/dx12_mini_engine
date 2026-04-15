@@ -1,0 +1,20 @@
+{
+    "actions": [
+        {
+            "name": "Spawn Ring",
+            "script": "spawn_ring.lua"
+        },
+        {
+            "name": "Spawn Grid",
+            "script": "spawn_grid.lua"
+        },
+        {
+            "name": "Randomize Colors",
+            "script": "randomize_colors.lua"
+        },
+        {
+            "name": "Delete All",
+            "script": "delete_all.lua"
+        }
+    ]
+}

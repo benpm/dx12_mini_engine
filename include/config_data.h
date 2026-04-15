@@ -10,6 +10,7 @@ struct ConfigData
     // Window
     uint32_t windowWidth = 1280;
     uint32_t windowHeight = 720;
+    bool startFullscreen = false;
 
     // Graphics defaults
     bool vsync = true;
@@ -40,6 +41,8 @@ struct ConfigData
 
     // Paths
     std::string defaultScenePath = "resources/scenes/default.json";
+    std::string scriptsDir = "resources/scripts";
+    std::string actionBindingsFile = "resources/scripts/actions.json";
 
     // Hotkeys: action name → list of key names (e.g. "toggleFullscreen": ["F11"])
     std::map<std::string, std::vector<std::string>> hotkeys = {

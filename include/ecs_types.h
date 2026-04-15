@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lua_script_types.h"
 #include "math_types.h"
 
 #include <cstdint>

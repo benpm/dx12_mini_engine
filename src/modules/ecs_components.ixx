@@ -16,3 +16,5 @@ export using ::TerrainEntity;
 export using ::PointLight;
 export using ::GizmoAxis;
 export using ::GizmoArrow;
+export using ::Scripted;
+export using ::ScriptActionBinding;

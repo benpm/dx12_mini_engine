@@ -172,12 +172,19 @@ Application::Application()
 
     this->loadContent();
     this->flush();
+
+    // Initialize Lua scripting
+#ifndef SCRIPTS_DIR
+    #define SCRIPTS_DIR ""
+#endif
+    luaScripting.init(scene, SCRIPTS_DIR);
+    std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
+    luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
         hWnd, device.Get(), cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
     );
 
-    // Enter fullscreen only after all rendering resources/subsystems are initialized.
-    this->setFullscreen(true);
+    // Fullscreen applied later via applyConfig (after message loop starts).
 
     this->isInitialized = true;
     Window::get()->isReady = true;
@@ -190,6 +197,8 @@ Application::~Application()
     win->onPaintFn = nullptr;
     win->onResizeFn = nullptr;
     win->callbackCtx = nullptr;
+
+    luaScripting.shutdown();
 
     this->flush();
 #ifdef TRACY_ENABLE
@@ -207,6 +216,10 @@ Application::~Application()
 
 void Application::applyConfig(const ConfigData& cfg)
 {
+    if (cfg.startFullscreen) {
+        pendingFullscreenChange = true;
+        pendingFullscreenValue = true;
+    }
     vsync = cfg.vsync;
     tonemapMode = cfg.tonemapMode;
     bloomThreshold = cfg.bloomThreshold;
@@ -510,6 +523,9 @@ void Application::update()
     pendingAddPickable = false;
 
     if (pendingDeleteSelected && selectedEntity.is_alive()) {
+        if (selectedEntity.has<Scripted>()) {
+            luaScripting.detachScript(selectedEntity);
+        }
         selectedEntity.destruct();
         selectedEntity = flecs::entity{};
     }
@@ -533,6 +549,20 @@ void Application::update()
         recentFrameMs[0] > spawnStopFrameMs && recentFrameMs[1] > spawnStopFrameMs &&
         recentFrameMs[2] > spawnStopFrameMs) {
         spawningStopped = true;
+    }
+
+    // Lua scripting update + hot reload poll (every ~1s)
+    luaScripting.selectedEntityId = selectedEntity.is_alive() ? selectedEntity.id() : 0;
+    luaScripting.updateScriptedEntities(dt, lightTime, frameCount);
+    static float luaHotReloadTimer = 0.0f;
+    luaHotReloadTimer += dt;
+    if (luaHotReloadTimer >= 1.0f) {
+        luaHotReloadTimer = 0.0f;
+        luaScripting.pollHotReload();
+    }
+    // If a script destroyed the selected entity, clear selection
+    if (selectedEntity.is_alive() == false) {
+        selectedEntity = flecs::entity{};
     }
 
     // Shader hot reload

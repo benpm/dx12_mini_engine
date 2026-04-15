@@ -110,6 +110,7 @@ export class Scene
         ecsWorld.query<InstanceGroup, InstanceAnimation>()
     };
     flecs::query<PointLight> lightQuery{ ecsWorld.query<PointLight>() };
+    flecs::query<Scripted> scriptQuery{ ecsWorld.query<Scripted>() };
 
     ComPtr<ID3D12Resource> megaVB;
     ComPtr<ID3D12Resource> megaIB;

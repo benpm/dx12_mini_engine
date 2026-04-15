@@ -27,6 +27,7 @@ export class Window
     void (*onResizeFn)(void*, uint32_t, uint32_t) = nullptr;
     void* callbackCtx = nullptr;
     bool isReady = false;
+    bool inMessageLoop = false;
 
     void initialize(
         HINSTANCE hInstance,

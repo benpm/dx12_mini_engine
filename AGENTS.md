@@ -33,7 +33,7 @@ cmake --build build --config Release
 # Test (loads test scene: WARP adapter, 10 frames, screenshot, exit)
 ./build/Debug/main.exe resources/scenes/test.json
 
-# Unit tests (doctest + CTest)
+# Unit tests (doctest + CTest, includes lua_scripting_tests)
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
@@ -97,6 +97,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `object_picking.ixx` | `ObjectPicker` class — ID render pass, readback for entity picking |
 | `terrain.ixx` | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh |
 | `config.ixx` | `ConfigData` struct + load/save/merge config.json via glaze |
+| `lua_scripting.ixx` | `LuaScripting` class + `Scripted` component — Lua 5.4 scripting engine |
 | `scene_file.ixx` | Scene file serialization — load/save JSON scene files via glaze |
 | `ssao.ixx` | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes |
 | `shadow.ixx` | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO |
@@ -294,6 +295,19 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * **Glaze integration**: `readConfigJson`/`writeConfigJson` in `glaze_impl.cpp`. `ConfigData` is a plain aggregate — no `glz::meta` specialization needed.
 * **Hotkeys**: `ConfigData::hotkeys` maps action names to lists of key names (e.g. `"toggleFullscreen": ["F11"]`). `HotkeyBindings` struct (in `input.ixx`) manages edge-triggered key detection via `GetAsyncKeyState` and previous-frame state tracking. Default bindings: F11=fullscreen, Delete=delete entity, Escape=deselect. Shortcut labels shown in UI buttons/tooltips. New actions: add to `EditorAction` enum, add default in `HotkeyBindings::setDefaults()`, handle in `Application::update()`.
 
+### Lua scripting system
+
+Lua 5.4 (FetchContent, compiled as static C lib) provides entity scripting and editor action automation. Module in `lua_scripting.ixx` + `lua_scripting.cpp`, bindings in `lua_scripting_impl.cpp` (isolated TU, includes `lua.h` directly).
+
+* **Scripted component** (`include/lua_script_types.h`): `scriptPath` (relative to `SCRIPTS_DIR`), `luaRef` (Lua registry reference to script table). Scripts return a table with optional `on_create(id)`, `on_update(id, dt)`, `on_destroy(id)` callbacks.
+* **Engine API**: ~40 functions under global `engine` table — entity CRUD, transform get/set, material manipulation, component add/remove (Pickable, Animated, PointLight), entity queries, mesh spawning, editor action execution, logging, frame info (dt/time/frameCount).
+* **Execution model**: `LuaScripting::updateScriptedEntities()` called each frame in `Application::update()` after deferred ECS mutations. Iterates `scriptQuery` — loads unloaded scripts, calls `on_update`. Entity destroys from scripts are deferred and processed within the same call.
+* **Action bindings**: `resources/scripts/actions.json` maps action names to script paths. One-shot scripts executed via `engine.execute_action("name")` or from Scripts menu in UI.
+* **Hot reload**: Polls script file timestamps every ~1s. Changed scripts are reloaded — old ref unreffed, `on_destroy`/`on_create` called.
+* **Engine context**: `Scene*`, materials, mesh refs stored as lightuserdata in Lua registry. Plain TU (`lua_scripting_impl.cpp`) includes `flecs.h` + engine headers directly.
+* **Error handling**: All Lua calls via `lua_pcall`. Errors logged via spdlog, scripts stay loaded for hot-reload fix.
+* **UI**: Scripts menu (action bindings + one-off script execution), Entity Inspector Scripted tab (detach), Attach Script input.
+
 ### ImGui UI panels
 
 * **Display**: vsync toggle, grid toggle, major grid size, grid subdivisions, fullscreen toggle, tearing status, runtime mode.
@@ -312,8 +326,23 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * **SSAO**: enable/disable, radius, bias, kernel size sliders.
 * **Scene** (file menu): scene path input + Load/Save buttons; GLB path input + Load button + Reset-to-Teapot; title/description text inputs (saved in scene JSON, shown as bottom-right overlay).
 * **Create**: mesh selector (from loaded mesh refs), material selector, position/scale, animated toggle with speed/radius. Spawns entity on click.
-* **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle). Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
+* **Scripts**: action bindings from `actions.json` with Execute buttons, one-off script path input + Run button.
+* **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle), Scripted (script path, detach). Attach Script input, Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
 * **Title/Description overlay**: when `sceneTitle` / `sceneDescription` are set, drawn directly to foreground via `ImGui::GetForegroundDrawList()` in the bottom-right corner. Title at 1.4× font size, description at normal size, both with 1-pixel drop shadow.
+
+
+### Testing
+
+* **Unit tests** (`tests/unit_tests.cpp`): doctest-based, covers math utilities, terrain generation, etc.
+* **Lua scripting tests** (`tests/lua_scripting_tests.cpp`): 24 test cases (147 assertions) covering all ~40 `engine.*` Lua API functions. Uses a `LuaTestFixture` with a standalone flecs world, materials, mesh refs, and Lua state — no GPU or window needed. Links `lua_lib`, `flecs::flecs_static`, `spdlog::spdlog`, `doctest::doctest`.
+* **CTest**: `doctest_discover_tests()` auto-registers all test cases. Run via `ctest --test-dir build -C Debug --output-on-failure`.
+* **Integration test**: `./build/Debug/main.exe resources/scenes/test.json` loads a WARP-adapter scene, renders 10 frames, writes `screenshot.png`, and exits. Used for visual regression checks.
+
+### Example Lua scripts (`resources/scripts/`)
+
+* **Per-entity** (attach via `Scripted` component): `orbit.lua` (Y-axis orbit), `bounce.lua` (vertical bounce with squash/stretch), `pulse_emissive.lua` (pulsing glow)
+* **One-shot actions** (run from Scripts menu or `engine.execute_action()`): `spawn_grid.lua` (5x5 entity grid), `randomize_colors.lua` (random albedo on all MeshRef entities), `delete_all.lua` (destroy all MeshRef entities)
+* **Action bindings**: `resources/scripts/actions.json` maps action names to script paths
 
 
 ---
@@ -330,6 +359,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 | tinygltf v2.9.5 | FetchContent | GLB/glTF loading |
 | PerlinNoise v3.0.0 | FetchContent | Terrain heightmap |
 | glaze v5.2.1 | FetchContent | JSON serialization |
+| Lua 5.4.7 | FetchContent | Scripting engine (compiled as static C lib) |
 | doctest v2.4.11 | FetchContent | Unit testing + CTest discovery |
 | Tracy v0.13.1 | FetchContent | CPU+GPU profiling (on-demand) |
 
@@ -341,7 +371,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * clang-format: Chromium base, 4-space indent, 100-col limit.
 * clang-tidy: bugprone, modernize, performance, readability checks.
 * Windows subsystem (no console) — use `spdlog` for all logging.
-* DX12 debug layer enabled in Debug builds.
+* DX12 debug layer enabled in Debug builds (only when debugger is attached — see Key Patterns).
 
 
 ---
@@ -433,3 +463,44 @@ The terrain entity is tagged with `TerrainEntity` at creation (in `loadContent()
 ### glTF matrix convention
 
 glTF matrices are column-major. When loading into `XMMATRIX` (row-major), transpose: put glTF column *i* as XMMATRIX row *i*. For TRS nodes use `S * R * T` order in DirectXMath.
+
+### D3D12 debug layer gated on debugger
+
+`enableDebugging()` in `window.cpp` checks `IsDebuggerPresent()` before enabling the D3D12 debug layer and DXGI debug factory flag. Without a debugger, debug layer breakpoints (STATUS_BREAKPOINT 0x80000003) crash the process.
+
+### Window callback gating (inMessageLoop)
+
+`Window::inMessageLoop` (default `false`) gates `WM_SIZE` and `WM_PAINT` callbacks in `WndProc`. Set to `true` in `main.cpp` before `ShowWindow` so the resize triggered by `ShowWindow` is handled, but premature callbacks during window creation are suppressed. Never call `UpdateWindow()` — it triggers synchronous `WM_PAINT` → render before the message loop starts.
+
+### SEH exception filter
+
+`main.cpp` installs `SetUnhandledExceptionFilter(sehFilter)` to log unhandled SEH exceptions (code + address) via spdlog before termination. Cannot use `__try/__except` in the same function as C++ `try/catch`.
+
+### startFullscreen config
+
+`ConfigData::startFullscreen` (default `false`) replaces any hardcoded `setFullscreen(true)` in the constructor. Applied in `applyConfig()` via `pendingFullscreenChange`/`pendingFullscreenValue` to go through the deferred fullscreen path.
+
+
+---
+
+## Debugging Notes
+
+### Default scene launch crash (2026-04-14)
+
+**Symptom**: Running `main.exe` without arguments (loading `default.json`) crashed immediately. The test scene (`test.json`, WARP + hidden window) worked fine.
+
+**Debugging process**:
+
+1. **Initial triage**: Added SEH exception filter (`SetUnhandledExceptionFilter`) to `main.cpp` to capture crash details before termination. First crash logged: `STATUS_BREAKPOINT (0x80000003)` in the D3D12 runtime.
+
+2. **D3D12 debug layer**: The debug layer was unconditionally enabled in Debug builds. Without a debugger attached, debug layer breakpoints (`int 3`) become unhandled exceptions → crash. **Fix**: Gated `enableDebugging()` on `IsDebuggerPresent()` in `window.cpp`. Also gated `DXGI_CREATE_FACTORY_DEBUG` flag on the same check.
+
+3. **Second crash**: After fixing the debug layer, a new crash appeared — access violation during the first `render()` call. The call stack showed it was triggered by a `WM_PAINT` handler running before the message loop started.
+
+4. **Premature WM_SIZE / WM_PAINT**: `ShowWindow(SW_SHOW)` sends `WM_SIZE` synchronously, which triggered `onResize()` → swap chain `ResizeBuffers()` during window initialization. `UpdateWindow()` then sent synchronous `WM_PAINT` → `render()` before the Application was fully initialized. **Fix**: Added `Window::inMessageLoop` flag (default `false`), checked in `WndProc` before dispatching `WM_SIZE`/`WM_PAINT`. Set to `true` in `main.cpp` just before `ShowWindow`. Removed `UpdateWindow()` entirely.
+
+5. **Hardcoded fullscreen**: The Application constructor called `setFullscreen(true)`, which generated synchronous `WM_SIZE` events during construction. **Fix**: Replaced with `ConfigData::startFullscreen` (default `false`), applied via the deferred fullscreen mechanism in `applyConfig()`.
+
+6. **Environment-specific residual**: After all code fixes, a crash persisted on the development machine (Parsec Virtual Display Adapter). The access violation (0xC0000005) occurred inside DX12 rendering to a visible window with the virtual display driver. The WARP adapter + hidden window path continued to work. This was confirmed as an environment issue, not a code bug.
+
+**Key takeaway**: Multiple independent issues compounded — each fix exposed the next crash. The SEH filter was essential for capturing crash codes without a debugger. The `inMessageLoop` pattern prevents a class of init-order bugs where Win32 message dispatch runs callbacks before the application is ready.

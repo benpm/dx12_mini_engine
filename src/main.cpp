@@ -19,11 +19,22 @@ import window;
     #define SCENES_DIR "resources/scenes"
 #endif
 
+static LONG WINAPI sehFilter(EXCEPTION_POINTERS* ep)
+{
+    spdlog::error(
+        "Unhandled SEH exception 0x{:08x} at 0x{:016x}", ep->ExceptionRecord->ExceptionCode,
+        reinterpret_cast<uintptr_t>(ep->ExceptionRecord->ExceptionAddress)
+    );
+    spdlog::default_logger()->flush();
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 // NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
 _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     // Disable error popup
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    ::SetUnhandledExceptionFilter(sehFilter);
 
     // Setup logging before doing anything else so we can capture any errors that happen during
     // initialization
@@ -105,8 +116,12 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
         spdlog::info("Application created.");
 
-        ::ShowWindow(Window::get()->hWnd, hideWindow ? SW_HIDE : SW_SHOW);
-        ::UpdateWindow(Window::get()->hWnd);
+        // Enable WM_SIZE/WM_PAINT callbacks before ShowWindow so the resize
+        // triggered by ShowWindow is handled correctly by onResize().
+        Window::get()->inMessageLoop = true;
+        if (!hideWindow) {
+            ::ShowWindow(Window::get()->hWnd, SW_SHOW);
+        }
 
         MSG msg = {};
         while (msg.message != WM_QUIT) {

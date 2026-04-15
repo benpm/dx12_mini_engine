@@ -21,6 +21,20 @@ cmake --preset windows-clang
 cmake --build build --config Debug
 ```
 
+## Testing
+
+```bash
+# Unit tests (doctest + CTest)
+ctest --test-dir build -C Debug --output-on-failure
+
+# Integration test (WARP adapter, renders 10 frames, writes screenshot.png)
+./build/Debug/main.exe resources/scenes/test.json
+```
+
+## Lua Scripting
+
+Lua 5.4 scripts can be attached to entities (`Scripted` component) or run as one-shot editor actions. ~40 `engine.*` API functions expose entity CRUD, transforms, materials, components, queries, spawning, and editor actions. See `resources/scripts/` for examples. Action bindings are configured in `resources/scripts/actions.json`.
+
 ## Agents
 
 For agent contributions, see [AGENTS.md](AGENTS.md). This project is meant to be my learning of DirectX12, so I mostly use agents to write boilerplate, helping me write features while I learn the API by making more interesting features out of the building blocks that AI tools have provided. This project is also meant to be in feature-parity with my [OpenGL experimental engine](https://github.com/benpm/gl_playground).

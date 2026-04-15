@@ -35,8 +35,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     if (win->isReady) {
         switch (message) {
             case WM_PAINT:
-                inputManager.Update();
-                if (win->onPaintFn) {
+                if (win->inMessageLoop && win->onPaintFn) {
+                    inputManager.Update();
                     win->onPaintFn(win->callbackCtx);
                 }
                 ::ValidateRect(hwnd, nullptr);
@@ -46,7 +46,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             case WM_SIZE: {
                 RECT clientRect = {};
                 ::GetClientRect(win->hWnd, &clientRect);
-                if (win->onResizeFn) {
+                if (win->inMessageLoop && win->onResizeFn) {
                     win->onResizeFn(
                         win->callbackCtx, static_cast<uint32_t>(clientRect.right - clientRect.left),
                         static_cast<uint32_t>(clientRect.bottom - clientRect.top)
@@ -92,6 +92,10 @@ static void regWinClass(HINSTANCE hInst, const wchar_t* windowClassName)
 static void enableDebugging()
 {
 #if defined(_DEBUG)
+    if (!::IsDebuggerPresent()) {
+        spdlog::debug("No debugger attached — skipping D3D12 debug layer");
+        return;
+    }
     ComPtr<ID3D12Debug> debugInterface;
     chkDX(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
     debugInterface->EnableDebugLayer();
@@ -136,7 +140,9 @@ static ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
     ComPtr<IDXGIFactory4> dxgiFactory;
     UINT createFactoryFlags = 0;
 #if defined(_DEBUG)
-    createFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+    if (::IsDebuggerPresent()) {
+        createFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+    }
 #endif
 
     chkDX(CreateDXGIFactory2(createFactoryFlags, IID_PPV_ARGS(&dxgiFactory)));
