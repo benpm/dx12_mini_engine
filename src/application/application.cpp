@@ -24,6 +24,7 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "icons.h"
 #include "profiling.h"
 #include "resource.h"
 
@@ -242,6 +243,10 @@ void Application::applyConfig(const ConfigData& cfg)
     spawnStopFrameMs = cfg.spawnStopFrameMs;
     spawnBatchSize = cfg.spawnBatchSize;
 
+    // Apply icon config
+    iconConfig = cfg.icons;
+    rebuildIconCache();
+
     // Apply hotkey bindings from config
     hotkeys.setDefaults();
     for (const auto& [actionName, keyNames] : cfg.hotkeys) {
@@ -294,7 +299,29 @@ ConfigData Application::extractConfig() const
         }
         cfg.hotkeys[editorActionName(action)] = std::move(keyNames);
     }
+    cfg.icons = iconConfig;
     return cfg;
+}
+
+// ---------------------------------------------------------------------------
+// Icon helpers
+// ---------------------------------------------------------------------------
+
+void Application::rebuildIconCache()
+{
+    iconCache.clear();
+    for (const auto& [key, name] : iconConfig) {
+        iconCache[key] = iconStr(name);
+    }
+}
+
+std::string Application::iconLabel(const char* key, const char* label) const
+{
+    auto it = iconCache.find(key);
+    if (it != iconCache.end() && !it->second.empty()) {
+        return it->second + label;
+    }
+    return label;
 }
 
 // ---------------------------------------------------------------------------

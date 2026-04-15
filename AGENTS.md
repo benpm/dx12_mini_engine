@@ -116,6 +116,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 * `include/camera_types.h` defines Camera (abstract base) + OrbitCamera — included by `camera.ixx` and `scene_data.h`; `OrbitCamera` used directly in `SceneFileData` (glz::meta excludes `aspectRatio`)
 * `include/terrain_types.h` defines TerrainParams (geometry + material/position fields) — included by `terrain.ixx` and `scene_data.h`; replaces former `TerrainData` duplicate
 * `include/d3dx12_clean.h` wraps `<directx/d3dx12.h>` (from DirectX-Headers vcpkg) with Clang warning suppression
+* `include/icons.h` defines Material Icons codepoints (`IconCP::*`), `iconUtf8()`, `iconCodepointFromName()`, `iconStr()` — included by `application.ixx`, `imgui_layer.cpp`, `application.cpp`
 * **Application public API is minimal** — only `update()`, `render()`, `runtimeConfig`, `cam`, `inputMap`, `keyboardID`, `applySceneData()`, `extractSceneData()` are public
 
 ### Subsystem architecture
@@ -186,6 +187,7 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 **ImGuiLayer** (`imgui_layer.ixx` + `imgui_layer.cpp`) — owns ImGui init/teardown:
 
 * SRV descriptor heap for ImGui
+* Fonts: Roboto-Medium.ttf (text) + MaterialIcons-Regular.ttf (icons, merged via `MergeMode`). Icon glyphs in PUA range (U+E000–U+F8FF).
 * Methods: `init()`, `shutdown()`, `styleColorsDracula()`
 * Note: `renderImGui()` is in `src/application/ui.cpp` (app-specific UI)
 
@@ -294,6 +296,7 @@ JSON scene files (via glaze) store all configurable scene state: camera, bloom, 
 * **Load order**: config applied first via `app.applyConfig(config)`, then scene file via `app.applySceneData(sceneData)`. Scene values override config for shared settings (bloom, shadows, etc.).
 * **Glaze integration**: `readConfigJson`/`writeConfigJson` in `glaze_impl.cpp`. `ConfigData` is a plain aggregate — no `glz::meta` specialization needed.
 * **Hotkeys**: `ConfigData::hotkeys` maps action names to lists of key names (e.g. `"toggleFullscreen": ["F11"]`). `HotkeyBindings` struct (in `input.ixx`) manages edge-triggered key detection via `GetAsyncKeyState` and previous-frame state tracking. Default bindings: F11=fullscreen, Delete=delete entity, Escape=deselect. Shortcut labels shown in UI buttons/tooltips. New actions: add to `EditorAction` enum, add default in `HotkeyBindings::setDefaults()`, handle in `Application::update()`.
+* **Icons**: `ConfigData::icons` maps UI element keys (e.g. `"menu.Display"`, `"action.Delete"`, `"window.Metrics"`) to Material Icon names (e.g. `"desktop_windows"`, `"delete"`, `"bar_chart"`). Icon names resolve to codepoints via `iconCodepointFromName()` in `include/icons.h`. Font loaded in `ImGuiLayer::init()` as merged Material Icons font. Application caches icon UTF-8 strings in `iconCache` (rebuilt in `applyConfig()`). `iconLabel(key, label)` helper returns icon-prefixed label for ImGui widgets. 34 icons available, 64x64 PNGs in `resources/icons/`. New icons: add codepoint to `IconCP` namespace + lookup map in `icons.h`, add default mapping in `ConfigData::icons`.
 
 ### Lua scripting system
 
@@ -309,6 +312,8 @@ Lua 5.4 (FetchContent, compiled as static C lib) provides entity scripting and e
 * **UI**: Scripts menu (action bindings + one-off script execution), Entity Inspector Scripted tab (detach), Attach Script input.
 
 ### ImGui UI panels
+
+All menu bar menus, action buttons, and window titlebars display Material Icons via the merged icon font. Icons are config-driven — see Configuration system → Icons.
 
 * **Display**: vsync toggle, grid toggle, major grid size, grid subdivisions, fullscreen toggle, tearing status, runtime mode.
 * **View**: metrics panel visibility toggle.
@@ -361,6 +366,7 @@ Lua 5.4 (FetchContent, compiled as static C lib) provides entity scripting and e
 | glaze v5.2.1 | FetchContent | JSON serialization |
 | Lua 5.4.7 | FetchContent | Scripting engine (compiled as static C lib) |
 | doctest v2.4.11 | FetchContent | Unit testing + CTest discovery |
+| Material Icons | google/material-design-icons | Icon font for UI menus (`resources/fonts/`) |
 | Tracy v0.13.1 | FetchContent | CPU+GPU profiling (on-demand) |
 
 

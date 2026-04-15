@@ -7,12 +7,14 @@ module;
 #include <gainput/gainput.h>
 #include <Windows.h>
 #include <wrl.h>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "icons.h"
 
 export module application;
 
@@ -227,6 +229,13 @@ export class Application
     // Hotkeys
     HotkeyBindings hotkeys;
     std::unordered_map<UINT, bool> prevKeyStates;
+
+    // Icons (config-driven, maps UI element key → icon name)
+    std::map<std::string, std::string> iconConfig;
+    // Cached icon UTF-8 prefix strings (built from iconConfig)
+    std::unordered_map<std::string, std::string> iconCache;
+    void rebuildIconCache();
+    std::string iconLabel(const char* key, const char* label) const;
 
     // Lua scripting
     LuaScripting luaScripting;

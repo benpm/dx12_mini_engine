@@ -317,6 +317,7 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
     SCENES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scenes"
     SCRIPTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scripts"
+    ICONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
 )
 
 target_compile_definitions(main PRIVATE
@@ -350,6 +351,14 @@ add_custom_command(TARGET main POST_BUILD
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/light.png
     $<TARGET_FILE_DIR:main>/light.png
     COMMENT "Copying light sprite to output directory"
+)
+
+# Copy MaterialIcons-Regular.ttf (icon font for UI menus)
+add_custom_command(TARGET main POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/MaterialIcons-Regular.ttf
+    $<TARGET_FILE_DIR:main>/MaterialIcons-Regular.ttf
+    COMMENT "Copying MaterialIcons-Regular.ttf to output directory"
 )
 
 target_link_libraries(main PRIVATE

@@ -9,6 +9,7 @@ module;
 #include <wrl.h>
 #include <string>
 #include "d3dx12_clean.h"
+#include "icons.h"
 
 module imgui_layer;
 
@@ -129,6 +130,19 @@ void ImGuiLayer::init(
         } else {
             io.Fonts->AddFontDefault();
             io.FontGlobalScale = dpiScale;
+        }
+
+        // Merge Material Icons font (icon glyphs in PUA range)
+        std::string iconFontPath = fontPath.substr(0, fontPath.find_last_of("\\/") + 1);
+        iconFontPath += "MaterialIcons-Regular.ttf";
+        if (GetFileAttributesA(iconFontPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            static const ImWchar iconRanges[] = { IconCP::MIN, IconCP::MAX, 0 };
+            ImFontConfig iconCfg;
+            iconCfg.MergeMode = true;
+            iconCfg.PixelSnapH = true;
+            iconCfg.GlyphMinAdvanceX = fontSize;
+            iconCfg.GlyphOffset.y = fontSize * 0.2f;
+            io.Fonts->AddFontFromFileTTF(iconFontPath.c_str(), fontSize, &iconCfg, iconRanges);
         }
     }
 

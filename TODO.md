@@ -15,19 +15,18 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [X] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
-  - *F11* : toggle fullscreen
-  - *Delete* : remove entity
-  - *Tab* : start navigating imgui GUI with keyboard (already enabled via ImGuiConfigFlags_NavEnableKeyboard)
-- [ ] **Editor Action Icons:** Find icons for all menu items in the GUI by searching this page: https://mui.com/material-ui/material-icons, and downloading 64x64 PNGs. Add icons to menus, submenus, and editor actions, as well as window titlebars in the program. Icons should be assignable thru the config file.
-- [X] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
-  - Editor actions should be able to be executed via a script
-  - Scripts can be attached to entities via a `Scripted` component
-
 ---
 
 ## Completed
 
+- [X] **Editor Action Icons:** Material Icons font (`MaterialIcons-Regular.ttf`) merged into ImGui fonts. 34 icons from [MUI Material Icons](https://mui.com/material-ui/material-icons/) as 64x64 PNGs in `resources/icons/`. Icons on all 16 menu bar menus, 8 action buttons, 2 window titlebars. Icon assignments configurable via `config.json` `icons` map (key → Material Icon name). `include/icons.h` provides codepoint constants and lookup functions.
+- [X] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
+  - Editor actions should be able to be executed via a script
+  - Scripts can be attached to entities via a `Scripted` component
+- [X] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
+  - *F11* : toggle fullscreen
+  - *Delete* : remove entity
+  - *Tab* : start navigating imgui GUI with keyboard (already enabled via ImGuiConfigFlags_NavEnableKeyboard)
 - [X] **Lua Scripting Support**: Lua 5.4 via FetchContent, `Scripted` component, ~40 engine API functions (entity CRUD, transforms, materials, components, queries, spawning, editor actions), per-entity scripts with on_create/on_update/on_destroy lifecycle, action bindings via actions.json, script hot reload, Scripts menu + inspector UI. 24 unit tests (147 assertions) in `tests/lua_scripting_tests.cpp`. 6 example scripts in `resources/scripts/` (orbit, bounce, pulse_emissive, spawn_grid, randomize_colors, delete_all).
 - [X] **Hotkeys:** Rebindable keybinds (F11=fullscreen, Delete=remove entity, Escape=deselect) via config.json, shown in UI tooltips
 - [X] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.

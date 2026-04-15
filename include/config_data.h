@@ -50,4 +50,41 @@ struct ConfigData
         { "deleteEntity", { "Delete" } },
         { "deselect", { "Escape" } },
     };
+
+    // Icons: UI element name → Material Icons icon name (see resources/icons/)
+    std::map<std::string, std::string> icons = {
+        // Main menu bar menus
+        { "menu.Display", "desktop_windows" },
+        { "menu.Camera", "videocam" },
+        { "menu.Bloom", "flare" },
+        { "menu.Tonemap", "tune" },
+        { "menu.View", "visibility" },
+        { "menu.Scene", "wb_sunny" },
+        { "menu.Shadows", "contrast" },
+        { "menu.Animation", "animation" },
+        { "menu.Spawning", "add_circle" },
+        { "menu.Lights", "lightbulb" },
+        { "menu.Material", "palette" },
+        { "menu.Reflections", "flip" },
+        { "menu.SSAO", "blur_on" },
+        { "menu.File", "folder" },
+        { "menu.Create", "add_box" },
+        { "menu.Scripts", "code" },
+        // Menu items / buttons
+        { "action.LoadScene", "folder_open" },
+        { "action.SaveScene", "save" },
+        { "action.LoadGLB", "upload_file" },
+        { "action.ResetToTeapot", "restore" },
+        { "action.SpawnEntity", "add" },
+        { "action.Delete", "delete" },
+        { "action.Deselect", "deselect" },
+        { "action.Run", "play_arrow" },
+        { "action.AddAnimated", "animation" },
+        { "action.AddPickable", "touch_app" },
+        { "action.AttachScript", "attach_file" },
+        { "action.Fullscreen", "fullscreen" },
+        // Window titles
+        { "window.Metrics", "bar_chart" },
+        { "window.EntityInspector", "info" },
+    };
 };

@@ -38,7 +38,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     constexpr float degToRad = 0.0174532925f;
 
     if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("Display")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Display", "Display").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("VSync", &vsync);
             ImGui::Checkbox("Grid", &showGrid);
@@ -70,7 +70,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Camera")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Camera", "Camera").c_str())) {
             ImGui::PushItemWidth(220.0f);
             float fovDeg = cam.fov * radToDeg;
             if (ImGui::SliderFloat("FOV", &fovDeg, 20.0f, 120.0f, "%.1f deg")) {
@@ -96,7 +96,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Bloom")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Bloom", "Bloom").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::SliderFloat("Threshold", &bloomThreshold, 0.0f, 3.0f);
             ImGui::SliderFloat("Intensity", &bloomIntensity, 0.0f, 5.0f);
@@ -104,7 +104,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Tonemap")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Tonemap", "Tonemap").c_str())) {
             const char* tonemappers[] = { "ACES Filmic", "AgX", "AgX Punchy", "Gran Turismo",
                                           "PBR Neutral" };
             ImGui::PushItemWidth(180.0f);
@@ -113,12 +113,12 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("View")) {
+        if (ImGui::BeginMenu(iconLabel("menu.View", "View").c_str())) {
             ImGui::Checkbox("Metrics Panel", &showMetrics);
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Scene")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Scene", "Scene").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::ColorEdit3("Background", &bgColor.x);
             ImGui::Separator();
@@ -139,7 +139,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Shadows")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Shadows", "Shadows").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Enabled", &shadow.enabled);
             ImGui::SliderFloat("Bias", &shadow.bias, 0.0001f, 0.01f, "%.4f");
@@ -165,7 +165,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Animation")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Animation", "Animation").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Animate Entities", &animateEntities);
             ImGui::SliderFloat("Light Animation Speed", &lightAnimationSpeed, 0.0f, 4.0f, "%.2f");
@@ -174,7 +174,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Spawning")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Spawning", "Spawning").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Stop Spawning", &spawningStopped);
             ImGui::Checkbox("Auto Stop", &autoStopSpawning);
@@ -189,7 +189,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Lights")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Lights", "Lights").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Show Billboards", &showLightBillboards);
             ImGui::SliderFloat("Billboard Size", &billboards.spriteSize, 0.01f, 3.0f, "%.2f");
@@ -212,7 +212,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Material")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Material", "Material").c_str())) {
             ImGui::PushItemWidth(220.0f);
             if (!scene.materials.empty()) {
                 if (scene.materials.size() > 1) {
@@ -240,7 +240,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Reflections")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Reflections", "Reflections").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Cubemap Enabled", &cubemapEnabled);
             int res = static_cast<int>(cubemapResolution);
@@ -257,7 +257,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("SSAO")) {
+        if (ImGui::BeginMenu(iconLabel("menu.SSAO", "SSAO").c_str())) {
             ImGui::PushItemWidth(220.0f);
             ImGui::Checkbox("Enabled", &ssao.enabled);
             ImGui::SliderFloat("Radius", &ssao.radius, 0.01f, 2.0f, "%.3f");
@@ -268,17 +268,17 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Scene")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Scene", "Scene").c_str())) {
             ImGui::PushItemWidth(300.0f);
             ImGui::InputText("##scenePath", scenePathBuf, sizeof(scenePathBuf));
             ImGui::PopItemWidth();
             ImGui::SameLine();
-            if (ImGui::MenuItem("Load Scene")) {
+            if (ImGui::MenuItem(iconLabel("action.LoadScene", "Load Scene").c_str())) {
                 if (scenePathBuf[0] != '\0') {
                     pendingSceneLoad = scenePathBuf;
                 }
             }
-            if (ImGui::MenuItem("Save Scene")) {
+            if (ImGui::MenuItem(iconLabel("action.SaveScene", "Save Scene").c_str())) {
                 if (scenePathBuf[0] != '\0') {
                     pendingSceneSave = scenePathBuf;
                 }
@@ -288,12 +288,12 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::InputText("##gltfPath", gltfPathBuf, sizeof(gltfPathBuf));
             ImGui::PopItemWidth();
             ImGui::SameLine();
-            if (ImGui::MenuItem("Load GLB")) {
+            if (ImGui::MenuItem(iconLabel("action.LoadGLB", "Load GLB").c_str())) {
                 if (gltfPathBuf[0] != '\0') {
                     pendingGltfPath = gltfPathBuf;
                 }
             }
-            if (ImGui::MenuItem("Reset to Teapot")) {
+            if (ImGui::MenuItem(iconLabel("action.ResetToTeapot", "Reset to Teapot").c_str())) {
                 pendingResetToTeapot = true;
             }
             ImGui::Separator();
@@ -308,7 +308,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Create")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Create", "Create").c_str())) {
             ImGui::PushItemWidth(220.0f);
             if (!scene.spawnableMeshNames.empty()) {
                 std::vector<const char*> meshNames;
@@ -333,14 +333,14 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 ImGui::SliderFloat("Anim Speed", &createAnimSpeed, 0.0f, 5.0f);
                 ImGui::SliderFloat("Orbit Radius", &createAnimRadius, 0.0f, 30.0f);
             }
-            if (ImGui::Button("Spawn Entity")) {
+            if (ImGui::Button(iconLabel("action.SpawnEntity", "Spawn Entity").c_str())) {
                 pendingCreateEntity = true;
             }
             ImGui::PopItemWidth();
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Scripts")) {
+        if (ImGui::BeginMenu(iconLabel("menu.Scripts", "Scripts").c_str())) {
             ImGui::PushItemWidth(220.0f);
             const auto& bindings = luaScripting.getActionBindings();
             if (bindings.empty()) {
@@ -359,7 +359,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             static char oneOffScriptBuf[256] = "";
             ImGui::InputText("Script Path", oneOffScriptBuf, sizeof(oneOffScriptBuf));
             ImGui::SameLine();
-            if (ImGui::Button("Run")) {
+            if (ImGui::Button(iconLabel("action.Run", "Run").c_str())) {
                 luaScripting.executeScript(oneOffScriptBuf);
             }
             ImGui::PopItemWidth();
@@ -379,7 +379,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     if (showMetrics) {
         if (ImGui::Begin(
-                "Metrics", &showMetrics,
+                iconLabel("window.Metrics", "Metrics").c_str(), &showMetrics,
                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing |
                     ImGuiWindowFlags_NoNav
             )) {
@@ -454,7 +454,10 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
     // --- Entity Inspector ---
     if (selectedEntity.is_alive()) {
         ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Entity Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::Begin(
+                iconLabel("window.EntityInspector", "Entity Inspector").c_str(), nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize
+            )) {
             ImGui::Text("Entity ID: %llu", selectedEntity.id());
 
             if (ImGui::BeginTabBar("Components")) {
@@ -539,7 +542,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::Separator();
             if (!selectedEntity.has<Animated>() && !selectedEntity.has<InstanceAnimation>() &&
                 !selectedEntity.has<InstanceGroup>()) {
-                if (ImGui::Button("Add Animated")) {
+                if (ImGui::Button(iconLabel("action.AddAnimated", "Add Animated").c_str())) {
                     Animated anim{};
                     if (selectedEntity.has<Transform>()) {
                         auto tf = selectedEntity.get<Transform>();
@@ -550,7 +553,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 ImGui::SameLine();
             }
             if (!selectedEntity.has<Pickable>()) {
-                if (ImGui::Button("Add Pickable")) {
+                if (ImGui::Button(iconLabel("action.AddPickable", "Add Pickable").c_str())) {
                     pendingAddPickable = true;
                 }
                 ImGui::SameLine();
@@ -559,13 +562,14 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
                 static char scriptPathBuf[256] = "color_cycle.lua";
                 ImGui::InputText("Script", scriptPathBuf, sizeof(scriptPathBuf));
                 ImGui::SameLine();
-                if (ImGui::Button("Attach Script")) {
+                if (ImGui::Button(iconLabel("action.AttachScript", "Attach Script").c_str())) {
                     luaScripting.attachScript(selectedEntity, scriptPathBuf);
                 }
             }
             {
                 auto sc = hotkeys.shortcutString(EditorAction::Deselect);
-                std::string label = sc.empty() ? "Deselect" : "Deselect (" + sc + ")";
+                auto ico = iconLabel("action.Deselect", "");
+                std::string label = ico + (sc.empty() ? "Deselect" : "Deselect (" + sc + ")");
                 if (ImGui::Button(label.c_str())) {
                     selectedEntity = flecs::entity{};
                 }
@@ -574,7 +578,8 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
             {
                 auto sc = hotkeys.shortcutString(EditorAction::DeleteEntity);
-                std::string label = sc.empty() ? "Delete" : "Delete (" + sc + ")";
+                auto ico = iconLabel("action.Delete", "");
+                std::string label = ico + (sc.empty() ? "Delete" : "Delete (" + sc + ")");
                 if (ImGui::Button(label.c_str())) {
                     pendingDeleteSelected = true;
                 }
