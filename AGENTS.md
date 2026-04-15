@@ -458,6 +458,10 @@ Camera rotation, zoom, and entity picking are gated by `ImGui::GetIO().WantCaptu
 
 `clearScene()` removes entities via `delete_with<MeshRef>()` and `delete_with<InstanceGroup>()` — only entities with those components are deleted. `PointLight` entities have no `MeshRef`, so they persist across scene resets. Light data is restored from JSON via `lightQuery.each(...)` in `applySceneData()`.
 
+### Gizmo entities must be recreated after scene clears
+
+`clearScene()` deletes gizmo arrows (`GizmoArrow + MeshRef`) along with normal mesh entities. Any flow that clears/reloads scene content (`pendingResetToTeapot`, non-append `loadGltf`, or `applySceneData()` single-teapot reset) must call `gizmo.init(scene, device.Get(), cmdQueue)` afterward, otherwise `GizmoState` retains stale entity handles and Flecs can assert on first update.
+
 ### TerrainEntity tag and positionY
 
 The terrain entity is tagged with `TerrainEntity` at creation (in `loadContent()`). `applySceneData()` queries for `TerrainEntity` entities to update their `Transform.world = translate(0, positionY, 0)` from the scene file. This must be guarded by `contentLoaded` since terrain is created in the Application constructor (before the caller can invoke `applySceneData`).
@@ -490,6 +494,36 @@ glTF matrices are column-major. When loading into `XMMATRIX` (row-major), transp
 ---
 
 ## Debugging Notes
+
+### No-arg launch Flecs invalid-entity assert (2026-04-15)
+
+**Symptom**: Running `main.exe` without arguments reached startup logs and then aborted with:
+
+`fatal: flecs_cpp.c: assert(ecs_is_alive(world, entity))`
+
+The integration scene (`resources/scenes/test.json`) still completed successfully, which pointed to a default-scene application path issue rather than a global render failure.
+
+**Root cause**:
+
+- `runtime.singleTeapotMode` scene application clears scene content.
+- `Scene::clearScene()` deletes `MeshRef` entities, which includes gizmo arrows (`GizmoArrow + MeshRef`).
+- `GizmoState` still held stale arrow entity handles and touched them during the next update, triggering Flecs alive checks.
+
+**Fix pattern**:
+
+- Reinitialize gizmo immediately after any clear/reload path that can destroy gizmo arrows:
+  - deferred reset-to-teapot
+  - non-append GLTF load
+  - scene-file load path after apply
+  - single-teapot branch in `applySceneData()`
+
+**Reusable tips for bugs like this**:
+
+1. When a crash is scene-dependent, compare no-arg startup with `resources/scenes/test.json` first.
+2. Audit every path that calls `clearScene()` and list subsystems that cache entity IDs/handles.
+3. Treat cached ECS handles as invalid across clears unless explicitly rebuilt.
+4. Prefer resetting/reinitializing subsystem state over adding ad hoc `is_alive()` guards everywhere.
+5. Verify with both interactive startup and headless/integration flow so regressions are caught early.
 
 ### Default scene launch crash (2026-04-14)
 

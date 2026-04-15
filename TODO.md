@@ -19,6 +19,8 @@
 
 ## Completed
 
+- [X] Fix no-arg startup Flecs invalid-entity assert by reinitializing gizmo after scene clear/reload paths; documented troubleshooting checklist in README.md and AGENTS.md.
+
 - [X] **Editor Action Icons:** Material Icons font (`MaterialIcons-Regular.ttf`) merged into ImGui fonts. 34 icons from [MUI Material Icons](https://mui.com/material-ui/material-icons/) as 64x64 PNGs in `resources/icons/`. Icons on all 16 menu bar menus, 8 action buttons, 2 window titlebars. Icon assignments configurable via `config.json` `icons` map (key → Material Icon name). `include/icons.h` provides codepoint constants and lookup functions.
 - [X] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
   - Editor actions should be able to be executed via a script

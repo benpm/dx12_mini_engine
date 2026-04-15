@@ -248,6 +248,7 @@ void Application::applySceneData(const SceneFileData& d)
     if (contentLoaded && runtimeConfig.singleTeapotMode) {
         scene.clearScene(cmdQueue);
         scene.loadTeapot(device.Get(), cmdQueue, false);
+        gizmo.init(scene, device.Get(), cmdQueue);
         spawningStopped = true;
         autoStopSpawning = false;
     }

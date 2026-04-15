@@ -477,6 +477,7 @@ void Application::update()
         pendingResetToTeapot = false;
         scene.clearScene(cmdQueue);
         scene.loadTeapot(device.Get(), cmdQueue);
+        gizmo.init(scene, device.Get(), cmdQueue);
         spawningStopped = false;
         recentFrameHead = 0;
         recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
@@ -489,6 +490,8 @@ void Application::update()
         recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
         if (!scene.loadGltf(path, device.Get(), cmdQueue)) {
             spdlog::error("Failed to load GLB: {}", path);
+        } else {
+            gizmo.init(scene, device.Get(), cmdQueue);
         }
     }
 
@@ -506,6 +509,9 @@ void Application::update()
                 }
             }
             applySceneData(data);
+            if (!runtimeConfig.singleTeapotMode) {
+                gizmo.init(scene, device.Get(), cmdQueue);
+            }
             spawningStopped = data.spawning.stopped;
             recentFrameHead = 0;
             recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
