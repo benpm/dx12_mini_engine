@@ -313,25 +313,31 @@ Lua 5.4 (FetchContent, compiled as static C lib) provides entity scripting and e
 
 ### ImGui UI panels
 
-All menu bar menus, action buttons, and window titlebars display Material Icons via the merged icon font. Icons are config-driven — see Configuration system → Icons.
+All menu bar menus, action buttons, and window titlebars display Material Icons via the merged icon font. Icons are config-driven — see Configuration system → Icons. Organized into a standard editor structure:
 
-* **Display**: vsync toggle, grid toggle, major grid size, grid subdivisions, fullscreen toggle, tearing status, runtime mode.
-* **View**: metrics panel visibility toggle.
+* **File**: scene path (Load/Save), GLB path (Load/Reset), scene title/description.
+* **Edit**:
+  * **Create**: mesh selector (from loaded mesh refs), material selector, position/scale, animated toggle with speed/radius. Spawns entity on click.
+  * **Material**: global material editor (albedo, roughness, metallic, emissive color + strength, reflective checkbox). Material selector when GLB has multiple.
+* **View**:
+  * **Display**: vsync toggle, grid toggle (size/subdivs), fullscreen toggle, tearing status, runtime mode.
+  * **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
+  * **Metrics Panel**: toggle for the floating Metrics window.
+* **Render**:
+  * **Tonemap**: tonemapper selection (ACES Filmic, AgX, AgX Punchy, Gran Turismo, PBR Neutral).
+  * **Shadows**: enable/disable, bias, raster depth/slope/clamp bias, light distance, ortho size, near/far.
+  * **Reflections**: cubemap enable/disable, resolution slider (32–512, recreates resources), near/far planes.
+  * **Bloom**: threshold, intensity sliders.
+  * **SSAO**: enable/disable, radius, bias, kernel size.
+* **World**:
+  * **Environment**: background color, directional light (direction/color/brightness), ambient brightness, height fog (startY, density, color).
+  * **Lights**: billboard toggle/size, point-light brightness, per-light controls for all `PointLight` entities.
+  * **Animation**: entity animation toggle, light animation speed/time scrub.
+  * **Spawning**: manual pause/resume, auto-stop toggle, frame-ms threshold, spawn batch size, reset perf gate.
+* **Tools**:
+  * **Scripts**: action bindings from `actions.json` with Execute buttons, one-off script path input + Run button.
+
 * **Metrics** (floating window, toggled via View menu): build mode (Debug/Release), FPS + frame ms, FPS graph (last 5s, collapsible), draw calls, objects, vertices, ECS entity/component counts (MeshRef, Animated, InstanceGroup, PointLight, Pickable), subsystem status (shadow/cubemap/SSAO).
-* **Camera**: FOV, near/far planes, orbit radius, yaw, pitch.
-* **Bloom**: threshold, intensity sliders.
-* **Tonemapping**: tonemapper combo.
-* **Scene**: background color; directional light direction/color/brightness; point light brightness; ambient brightness; ocean fog (start Y, density, color).
-* **Shadows**: enable/disable; shader bias; raster depth/slope/clamp bias (rebuilds shadow PSO on change); shadow light distance, ortho size, near/far.
-* **Animation**: entity animation toggle; light animation speed; light time scrub.
-* **Spawning**: manual pause/resume, auto-stop toggle, frame-ms threshold, spawn batch size, reset perf gate.
-* **Lights**: billboard toggle/size; point-light brightness; per-light center/amplitude/frequency/color controls for all `PointLight` entities (iterated via `lightQuery`).
-* **Material**: albedo, roughness, metallic, emissive color + strength, reflective checkbox. Material selector when GLB has multiple.
-* **Reflections**: cubemap enable/disable, cubemap resolution slider (32–512, recreates resources on change), cubemap near/far planes.
-* **SSAO**: enable/disable, radius, bias, kernel size sliders.
-* **Scene** (file menu): scene path input + Load/Save buttons; GLB path input + Load button + Reset-to-Teapot; title/description text inputs (saved in scene JSON, shown as bottom-right overlay).
-* **Create**: mesh selector (from loaded mesh refs), material selector, position/scale, animated toggle with speed/radius. Spawns entity on click.
-* **Scripts**: action bindings from `actions.json` with Execute buttons, one-off script path input + Run button.
 * **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle), Scripted (script path, detach). Attach Script input, Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
 * **Title/Description overlay**: when `sceneTitle` / `sceneDescription` are set, drawn directly to foreground via `ImGui::GetForegroundDrawList()` in the bottom-right corner. Title at 1.4× font size, description at normal size, both with 1-pixel drop shadow.
 

@@ -15,41 +15,45 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
+- [ ] Make grid lines not appear in front of geometry when that geometry is selected ![alt text](image.png)
+- [ ] Outlines no longer work (probably related to above issue)
+- [ ] 
+
 ---
 
 ## Completed
 
-- [X] Fix no-arg startup Flecs invalid-entity assert by reinitializing gizmo after scene clear/reload paths; documented troubleshooting checklist in README.md and AGENTS.md.
+- [x] Fix no-arg startup Flecs invalid-entity assert by reinitializing gizmo after scene clear/reload paths; documented troubleshooting checklist in README.md and AGENTS.md.
 
-- [X] **Editor Action Icons:** Material Icons font (`MaterialIcons-Regular.ttf`) merged into ImGui fonts. 34 icons from [MUI Material Icons](https://mui.com/material-ui/material-icons/) as 64x64 PNGs in `resources/icons/`. Icons on all 16 menu bar menus, 8 action buttons, 2 window titlebars. Icon assignments configurable via `config.json` `icons` map (key → Material Icon name). `include/icons.h` provides codepoint constants and lookup functions.
-- [X] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
+- [x] **Editor Action Icons:** Material Icons font (`MaterialIcons-Regular.ttf`) merged into ImGui fonts. 34 icons from [MUI Material Icons](https://mui.com/material-ui/material-icons/) as 64x64 PNGs in `resources/icons/`. Icons on all 16 menu bar menus, 8 action buttons, 2 window titlebars. Icon assignments configurable via `config.json` `icons` map (key → Material Icon name). `include/icons.h` provides codepoint constants and lookup functions.
+- [x] **Lua Scripting Support**: Add support for [LuaJIT](https://luajit.org/) for dynamic scripting support. Scripts should be able to interact with entities. Editor actions should be able to be associated with scripts via JSON files. Expose as much as you can, especially interaction with the ECS, thru Lua scripts.
   - Editor actions should be able to be executed via a script
   - Scripts can be attached to entities via a `Scripted` component
-- [X] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
+- [x] **Hotkeys:** Add rebindable keybinds for various editor actions. Allow these to be configured via the config json. Show keybinds for editor actions in the tooltips. Allow multiple keys to be assigned to an action.
   - *F11* : toggle fullscreen
   - *Delete* : remove entity
   - *Tab* : start navigating imgui GUI with keyboard (already enabled via ImGuiConfigFlags_NavEnableKeyboard)
-- [X] **Lua Scripting Support**: Lua 5.4 via FetchContent, `Scripted` component, ~40 engine API functions (entity CRUD, transforms, materials, components, queries, spawning, editor actions), per-entity scripts with on_create/on_update/on_destroy lifecycle, action bindings via actions.json, script hot reload, Scripts menu + inspector UI. 24 unit tests (147 assertions) in `tests/lua_scripting_tests.cpp`. 6 example scripts in `resources/scripts/` (orbit, bounce, pulse_emissive, spawn_grid, randomize_colors, delete_all).
-- [X] **Hotkeys:** Rebindable keybinds (F11=fullscreen, Delete=remove entity, Escape=deselect) via config.json, shown in UI tooltips
-- [X] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.
-- [X] **Configuration**: config.json loading/saving with merge semantics (add/remove keys, preserve values), `--dump-config` flag
+- [x] **Lua Scripting Support**: Lua 5.4 via FetchContent, `Scripted` component, ~40 engine API functions (entity CRUD, transforms, materials, components, queries, spawning, editor actions), per-entity scripts with on_create/on_update/on_destroy lifecycle, action bindings via actions.json, script hot reload, Scripts menu + inspector UI. 24 unit tests (147 assertions) in `tests/lua_scripting_tests.cpp`. 6 example scripts in `resources/scripts/` (orbit, bounce, pulse_emissive, spawn_grid, randomize_colors, delete_all).
+- [x] **Hotkeys:** Rebindable keybinds (F11=fullscreen, Delete=remove entity, Escape=deselect) via config.json, shown in UI tooltips
+- [x] **Configuration**: Identify global settings that should be able to be configured via config file. Add a configuration loading and saving feature. If no config is loaded, the defaults should automatically be written out by the program to `config.json`. If that file exists, add and remove keys, but do not modify values otherwise. It should also be possible to pass a flag, `--dump-config`, to force writing to config.json, overwriting the values.
+- [x] **Configuration**: config.json loading/saving with merge semantics (add/remove keys, preserve values), `--dump-config` flag
 - [X]**Reorganization:** Shaders →`src/shaders/`, Application .cpp files →`src/application/`
-- [X] Escape deselects selected entity; if nothing selected, shows Yes/No exit confirmation dialog
+- [x] Escape deselects selected entity; if nothing selected, shows Yes/No exit confirmation dialog
 - [X]**Info / Metrics:** FPS graph, draw calls, entity/component counts, Debug/Release indicator, View menu toggle
 - [X]**Shader Hot Reload Robustness:** Failed hot reloads keep previous working PSO; try/catch around PSO recreation
-- [X] Fix "Add Animated" / entity mutation crash — defer all ECS mutations from UI to start of `update()`
-- [X] Fix shader hot reload hang — async DXC compilation (non-blocking process launch + poll for completion)
-- [X] Fix tooltip showing when hovering nothing — ID shader writes drawIndex+1, clear RT to 0, subtract 1 on readback
-- [X] Mouse wheel zoom (already implemented)
-- [X] 3D translation gizmo — 3 colored arrows (R/G/B for X/Y/Z) at selected entity position, click+drag to translate along axis
-- [X] Capture input events when interacting with the UI, preventing key presses and mouse events from being handled if the UI is occluding. This is a built in feature for imgui, use context7 to find the docs.
-- [X] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. — fd67af8
-- [X] Remove explicit clang diagnostic ignore pragmas — de0ee11
-- [X] Add SSAO (Screen-Space Ambient Occlusion) — f7c410c
-- [X] Add an optional title and description field to the scene .json, which are displayed as text in the bottom right of the screen. — d5bb439
-- [X] Add support for multiple objects using the same buffer for data, so that all geometry can be drawn in a single drawcall
-- [X] Add UI scaling
-- [X] Add object picking via ID render pass with Pickable component
-- [X] Entity hover highlight (emissive tint) + click-to-select + tabbed inspector UI
-- [X] Perlin noise terrain generation (256x256 grid, terrain module) — 9bdb739
-- [X] Create Entity UI + enhanced inspector (delete, add components) — b3fe8d1
+- [x] Fix "Add Animated" / entity mutation crash — defer all ECS mutations from UI to start of `update()`
+- [x] Fix shader hot reload hang — async DXC compilation (non-blocking process launch + poll for completion)
+- [x] Fix tooltip showing when hovering nothing — ID shader writes drawIndex+1, clear RT to 0, subtract 1 on readback
+- [x] Mouse wheel zoom (already implemented)
+- [x] 3D translation gizmo — 3 colored arrows (R/G/B for X/Y/Z) at selected entity position, click+drag to translate along axis
+- [x] Capture input events when interacting with the UI, preventing key presses and mouse events from being handled if the UI is occluding. This is a built in feature for imgui, use context7 to find the docs.
+- [x] Add an outline fragment shader. Research best way to do outline rendering. When an object is hovered, instead of modulating the draw color, show an outline. If it's selected, show a thicker outline with a brighter color. — fd67af8
+- [x] Remove explicit clang diagnostic ignore pragmas — de0ee11
+- [x] Add SSAO (Screen-Space Ambient Occlusion) — f7c410c
+- [x] Add an optional title and description field to the scene .json, which are displayed as text in the bottom right of the screen. — d5bb439
+- [x] Add support for multiple objects using the same buffer for data, so that all geometry can be drawn in a single drawcall
+- [x] Add UI scaling
+- [x] Add object picking via ID render pass with Pickable component
+- [x] Entity hover highlight (emissive tint) + click-to-select + tabbed inspector UI
+- [x] Perlin noise terrain generation (256x256 grid, terrain module) — 9bdb739
+- [x] Create Entity UI + enhanced inspector (delete, add components) — b3fe8d1

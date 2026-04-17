@@ -68,6 +68,9 @@ struct ConfigData
         { "menu.Reflections", "flip" },
         { "menu.SSAO", "blur_on" },
         { "menu.File", "folder" },
+        { "menu.Edit", "tune" },
+        { "menu.Render", "palette" },
+        { "menu.World", "landscape" },
         { "menu.Create", "add_box" },
         { "menu.Scripts", "code" },
         // Menu items / buttons
