@@ -211,6 +211,7 @@ add_executable(main
     src/shadow.cpp
     src/outline.cpp
     src/render_graph.cpp
+    src/gbuffer.cpp
     src/lua_scripting.cpp
     src/lua_scripting_impl.cpp
     resources.rc
@@ -241,6 +242,7 @@ target_sources(main
     src/modules/shadow.ixx
     src/modules/outline.ixx
     src/modules/render_graph.ixx
+    src/modules/gbuffer.ixx
     src/modules/lua_scripting.ixx
     src/modules/application.ixx
     src/modules/window.ixx
@@ -270,6 +272,7 @@ compile_shader(src/shaders/ssao_ps.hlsl ps 6_0 SSAO_PS_HDR g_ssao_ps)
 compile_shader(src/shaders/ssao_blur_ps.hlsl ps 6_0 SSAO_BLUR_PS_HDR g_ssao_blur_ps)
 compile_shader(src/shaders/grid_vs.hlsl vs 6_0 GRID_VS_HDR g_grid_vs)
 compile_shader(src/shaders/grid_ps.hlsl ps 6_0 GRID_PS_HDR g_grid_ps)
+compile_shader(src/shaders/gbuffer_ps.hlsl ps 6_0 GBUFFER_PS_HDR g_gbuffer_ps)
 add_custom_target(shaders DEPENDS
     ${VS_HDR} ${PS_HDR}
     ${FULLSCREEN_VS_HDR}
@@ -280,6 +283,7 @@ add_custom_target(shaders DEPENDS
     ${OUTLINE_VS_HDR} ${OUTLINE_PS_HDR}
     ${NORMAL_PS_HDR} ${SSAO_PS_HDR} ${SSAO_BLUR_PS_HDR}
     ${GRID_VS_HDR} ${GRID_PS_HDR}
+    ${GBUFFER_PS_HDR}
 )
 add_dependencies(main shaders)
 

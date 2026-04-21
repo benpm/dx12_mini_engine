@@ -5,7 +5,7 @@
     During work, stop if there is a major issue, consistent build issues that have nothing to do with the task, etc. etc.
 
     - Before completing task:
-      1. Check that task has sufficient information. If not, skip it for now
+      1. Check that task has sufficient information. If not, ask clarifying questions in this document and move on
       2. git pull
 
     - After completing task:
@@ -17,7 +17,12 @@
 
 - [ ] Make grid lines not appear in front of geometry when that geometry is selected ![alt text](image.png)
 - [ ] Outlines no longer work (probably related to above issue)
-- [ ] 
+- [ ] Get the [sponza scene](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) from the internet and load it. Download the files using FetchContent at configure time, putting it into an external_scenes directory in resources. Compress the  
+- [ ] Implement Level of Detail (LOD)
+  - Generate simplified meshes for multiple levels of detail depending on triangle count for each asset
+  - Depending on distance from camera, replace models with their respective simplified versions
+- [ ] Download and use some assets from [glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets), making sure they load correctly. Download them using CMake, so don't add them directly to the repo, rather download them during build time using CMake
+- [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
 
 ---
 

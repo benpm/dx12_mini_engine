@@ -174,7 +174,12 @@ void Application::render()
     // Main pass PerPassCB (index 0)
     PerPassCB* mainPass = getPassMapped(0);
     mainPass->viewProj = viewProj;
+    mainPass->prevViewProj = prevViewProj;
     mainPass->cameraPos = cameraPos;
+
+    if (prevViewProj.m[0][0] == 0.0f) {
+        mainPass->prevViewProj = viewProj;
+    }
 
     // --- Render Graph Setup ---
     renderGraph.reset();
@@ -186,7 +191,16 @@ void Application::render()
         "ShadowMap", shadow.shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     auto hNormalRT = renderGraph.importTexture(
-        "NormalRT", ssao.normalRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "NormalRT", gbuffer.resources[GBuffer::Normal].Get(), D3D12_RESOURCE_STATE_COMMON
+    );
+    auto hAlbedoRT = renderGraph.importTexture(
+        "AlbedoRT", gbuffer.resources[GBuffer::Albedo].Get(), D3D12_RESOURCE_STATE_COMMON
+    );
+    auto hMaterialRT = renderGraph.importTexture(
+        "MaterialRT", gbuffer.resources[GBuffer::Material].Get(), D3D12_RESOURCE_STATE_COMMON
+    );
+    auto hMotionRT = renderGraph.importTexture(
+        "MotionRT", gbuffer.resources[GBuffer::Motion].Get(), D3D12_RESOURCE_STATE_COMMON
     );
     auto hHdrRT = renderGraph.importTexture(
         "HdrRT", bloom.hdrRenderTarget.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
@@ -356,51 +370,60 @@ void Application::render()
         );
     }
 
-    // --- Normal Pre-pass ---
-    if (ssao.enabled) {
-        // Normal pass PerPassCB (index 8)
-        PerPassCB* normalPass = getPassMapped(8);
-        normalPass->viewProj = viewProj;
-        normalPass->cameraPos = cameraPos;
+    // --- G-Buffer Pass (formerly Normal Pre-pass) ---
+    // G-Buffer pass PerPassCB (index 8)
+    PerPassCB* gbufferPass = getPassMapped(8);
+    gbufferPass->viewProj = viewProj;
+    gbufferPass->prevViewProj = prevViewProj;
+    gbufferPass->cameraPos = cameraPos;
 
-        renderGraph.addPass(
-            "Normal Pre-pass",
-            [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(hNormalRT, ssao.normalRtvCpu());
-                builder.writeDepthStencil(
-                    hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+    renderGraph.addPass(
+        "G-Buffer Pass",
+        [&](rg::RenderGraphBuilder& builder) {
+            builder.writeRenderTarget(hNormalRT, gbuffer.getRtv(GBuffer::Normal));
+            builder.writeRenderTarget(hAlbedoRT, gbuffer.getRtv(GBuffer::Albedo));
+            builder.writeRenderTarget(hMaterialRT, gbuffer.getRtv(GBuffer::Material));
+            builder.writeRenderTarget(hMotionRT, gbuffer.getRtv(GBuffer::Motion));
+            builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+        },
+        [&, gbufferPassAddr = getPassCBAddress(8)](
+            ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+        ) {
+            PROFILE_ZONE_NAMED("G-Buffer Pass");
+            PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");
+
+            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[] = {
+                gbuffer.getRtv(GBuffer::Normal), gbuffer.getRtv(GBuffer::Albedo),
+                gbuffer.getRtv(GBuffer::Material), gbuffer.getRtv(GBuffer::Motion)
+            };
+            auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+
+            FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+            FLOAT clearZero[] = { 0, 0, 0, 0 };
+            cmd->ClearRenderTargetView(rtvs[0], clearNormal, 0, nullptr);
+            cmd->ClearRenderTargetView(rtvs[1], clearZero, 0, nullptr);
+            cmd->ClearRenderTargetView(rtvs[2], clearZero, 0, nullptr);
+            cmd->ClearRenderTargetView(rtvs[3], clearZero, 0, nullptr);
+            this->clearDepth(cmd, dsv);
+
+            cmd->SetPipelineState(this->gbufferPSO.Get());
+            cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+            bindSharedGeometry(cmd);
+            cmd->OMSetRenderTargets(4, rtvs, false, &dsv);
+            bindSceneHeapAndObjects(cmd);
+            bindPerFrameAndPass(cmd, gbufferPassAddr);
+
+            for (const auto& dc : sceneDrawCmds) {
+                cmd->SetGraphicsRoot32BitConstant(app_slots::rootDrawIndex, dc.baseDrawIndex, 0);
+                cmd->DrawIndexedInstanced(
+                    dc.indexCount, dc.instanceCount, dc.indexOffset,
+                    static_cast<INT>(dc.vertexOffset), 0
                 );
-            },
-            [&, normalPassAddr = getPassCBAddress(8)](
-                ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
-            ) {
-                PROFILE_ZONE_NAMED("Normal Pre-pass");
-                PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Normal Pre-pass");
-                auto normalRtv = ssao.normalRtvCpu();
-                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-                FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-                cmd->ClearRenderTargetView(normalRtv, clearNormal, 0, nullptr);
-                this->clearDepth(cmd, dsv);
-
-                cmd->SetPipelineState(this->normalPSO.Get());
-                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
-                bindSharedGeometry(cmd);
-                cmd->OMSetRenderTargets(1, &normalRtv, true, &dsv);
-                bindSceneHeapAndObjects(cmd);
-                bindPerFrameAndPass(cmd, normalPassAddr);
-
-                for (const auto& dc : sceneDrawCmds) {
-                    cmd->SetGraphicsRoot32BitConstant(
-                        app_slots::rootDrawIndex, dc.baseDrawIndex, 0
-                    );
-                    cmd->DrawIndexedInstanced(
-                        dc.indexCount, dc.instanceCount, dc.indexOffset,
-                        static_cast<INT>(dc.vertexOffset), 0
-                    );
-                }
             }
-        );
+        }
+    );
 
+    if (ssao.enabled) {
         renderGraph.addPass(
             "SSAO Pass",
             [&](rg::RenderGraphBuilder& builder) {
@@ -798,4 +821,5 @@ void Application::render()
             }
         }
     }
+    this->prevViewProj = viewProj;
 }

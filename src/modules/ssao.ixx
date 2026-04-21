@@ -13,26 +13,21 @@ export import common;
 
 export class SsaoRenderer
 {
-   public:
+public:
     // Settings
     bool enabled = true;
     float radius = 0.5f;
     float bias = 0.025f;
     int kernelSize = 32;
 
-    // Exposed to Application for normal pre-pass setup
-    Microsoft::WRL::ComPtr<ID3D12Resource> normalRT;
-
-    D3D12_CPU_DESCRIPTOR_HANDLE normalRtvCpu() const;
     D3D12_CPU_DESCRIPTOR_HANDLE ssaoRtvCpu() const;
     D3D12_CPU_DESCRIPTOR_HANDLE blurRtvCpu() const;
 
-    // depthBuffer: main depth/stencil resource (R32G8X24_TYPELESS)
-    // sceneSrvHeap: place SSAO output SRV at sceneSrvHeap[ssaoSlot]
     void createResources(
         ID3D12Device2* device,
         uint32_t width,
         uint32_t height,
+        ID3D12Resource* normalBuffer,
         ID3D12Resource* depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,
@@ -43,13 +38,14 @@ export class SsaoRenderer
         ID3D12Device2* device,
         uint32_t width,
         uint32_t height,
+        ID3D12Resource* normalBuffer,
         ID3D12Resource* depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,
         INT ssaoSlot
     );
 
-    // Run SSAO + blur. normalRT must be in PIXEL_SHADER_RESOURCE state on entry.
+    // Run SSAO + blur. normalBuffer must be in PIXEL_SHADER_RESOURCE state on entry.
     void render(
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const mat4& view,
@@ -65,7 +61,7 @@ export class SsaoRenderer
         D3D12_RESOURCE_STATES after
     );
 
-   private:
+private:
     Microsoft::WRL::ComPtr<ID3D12Resource> ssaoRT;
     Microsoft::WRL::ComPtr<ID3D12Resource> ssaoBlurRT;
     Microsoft::WRL::ComPtr<ID3D12Resource> noiseTexture;
@@ -75,9 +71,8 @@ export class SsaoRenderer
     Microsoft::WRL::ComPtr<ID3D12Resource> cbvBuffer;
     void* cbvMapped = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;  // [0]=normalRT [1]=ssaoRT [2]=blurRT
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
-        srvHeap;  // [0]=normal [1]=depth [2]=noise [3]=ssao
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;  // [0]=ssaoRT [1]=blurRT
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;  // [0]=normal [1]=depth [2]=noise [3]=ssao
     UINT rtvDescSize = 0;
     UINT srvDescSize = 0;
 
@@ -92,6 +87,7 @@ export class SsaoRenderer
         ID3D12Device2* device,
         uint32_t width,
         uint32_t height,
+        ID3D12Resource* normalBuffer,
         ID3D12Resource* depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,

@@ -12,6 +12,11 @@ struct Transform
     mat4 world;
 };
 
+struct PrevTransform
+{
+    mat4 world;
+};
+
 // Animation state for orbiting entities
 struct Animated
 {
@@ -43,6 +48,7 @@ struct PointLight
 struct MeshRef
 {
     uint32_t vertexOffset{ 0 };
+    uint32_t vertexCount{ 0 };
     uint32_t indexOffset{ 0 };
     uint32_t indexCount{ 0 };
     int materialIndex{ 0 };
@@ -59,6 +65,11 @@ struct InstanceGroup
     std::vector<float> roughnessOverrides;         // empty = use material value
     std::vector<float> metallicOverrides;          // empty = use material value
     std::vector<float> emissiveStrengthOverrides;  // empty = use material value
+};
+
+struct PrevInstanceGroup
+{
+    std::vector<mat4> transforms;
 };
 
 // Tag: marks the procedurally-generated terrain entity

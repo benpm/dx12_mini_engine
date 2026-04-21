@@ -464,6 +464,27 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
 void Application::update()
 {
     PROFILE_ZONE();
+
+    // Store previous transforms for motion vectors
+    scene.ecsWorld.query<const Transform, PrevTransform>().each(
+        [](const Transform& tf, PrevTransform& ptf) { ptf.world = tf.world; }
+    );
+    scene.ecsWorld.query<const InstanceGroup, PrevInstanceGroup>().each(
+        [](const InstanceGroup& ig, PrevInstanceGroup& pig) { pig.transforms = ig.transforms; }
+    );
+
+    // Ensure new entities have previous transforms
+    scene.ecsWorld.query<const Transform>().each([](flecs::entity e, const Transform& tf) {
+        if (!e.has<PrevTransform>()) {
+            e.set<PrevTransform>({ tf.world });
+        }
+    });
+    scene.ecsWorld.query<const InstanceGroup>().each([](flecs::entity e, const InstanceGroup& ig) {
+        if (!e.has<PrevInstanceGroup>()) {
+            e.set<PrevInstanceGroup>({ ig.transforms });
+        }
+    });
+
     scene.retireCompletedUploads(cmdQueue);
 
     if (pendingFullscreenChange) {
@@ -617,6 +638,7 @@ void Application::update()
         if (sceneChanged) {
             try {
                 createScenePSO();
+                createGBufferPSO();
                 auto vsData = shaderCompiler.data(sceneVSIdx);
                 D3D12_SHADER_BYTECODE vs =
                     vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
@@ -936,6 +958,9 @@ void Application::update()
             }
         });
     }
+
+    scene.updateTLAS(device.Get(), cmdQueue, curBackBufIdx);
+    scene.updateLightBuffer(device.Get(), cmdQueue);
 }
 
 // ---------------------------------------------------------------------------

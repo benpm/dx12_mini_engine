@@ -151,7 +151,7 @@ void GizmoState::init(Scene& scene, ID3D12Device2* device, CommandQueue& cmdQueu
     // Upload arrow mesh
     auto cmdList = cmdQueue.getCmdList();
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> temps;
-    arrowMeshRef = scene.appendToMegaBuffers(cmdList, verts, indices, materialIndices[0], temps);
+    arrowMeshRef = scene.appendToMegaBuffers(device, cmdQueue, cmdList, verts, indices, materialIndices[0], temps);
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     scene.trackUploadBatch(fv, std::move(temps));
 

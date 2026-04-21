@@ -21,6 +21,7 @@ module;
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
+#include "gbuffer_ps_cso.h"
 #include "grid_ps_cso.h"
 #include "grid_vs_cso.h"
 #include "normal_ps_cso.h"
@@ -375,14 +376,15 @@ bool Application::loadContent()
         scene.materials.push_back(terrainMat);
         int terrainMatIdx = static_cast<int>(scene.materials.size()) - 1;
 
-        MeshRef terrainMesh =
-            scene.appendToMegaBuffers(cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps);
+        MeshRef meshRef = scene.appendToMegaBuffers(
+            device.Get(), cmdQueue, cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps
+        );
         uint64_t fv = cmdQueue.execCmdList(cmdList);
         scene.trackUploadBatch(fv, std::move(temps));
 
         Transform tf;
         tf.world = translate(0.0f, tp.positionY, 0.0f);
-        scene.ecsWorld.entity().set(tf).set(terrainMesh).add<Pickable>().add<TerrainEntity>();
+        scene.ecsWorld.entity().set(tf).set(meshRef).add<Pickable>().add<TerrainEntity>();
         spdlog::info(
             "Terrain: {}x{} grid, {} verts, {} tris", tp.gridSize, tp.gridSize, terrainVerts.size(),
             terrainIndices.size() / 3
@@ -528,6 +530,7 @@ bool Application::loadContent()
         bloomCompIdx = shaderCompiler.watch("bloom_composite_ps.hlsl", "ps_6_0");
         gridVSIdx = shaderCompiler.watch("grid_vs.hlsl", "vs_6_0");
         gridPSIdx = shaderCompiler.watch("grid_ps.hlsl", "ps_6_0");
+        shaderCompiler.watch("gbuffer_ps.hlsl", "ps_6_0");
     }
 
     // Spawn animated point light entities
@@ -553,14 +556,17 @@ bool Application::loadContent()
     picker.createResources(device, clientWidth, clientHeight, rootSignature);
     gizmo.init(scene, device.Get(), cmdQueue);
 
+    gbuffer.createResources(device.Get(), clientWidth, clientHeight);
+
     this->contentLoaded = true;
     this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
     bloom.createResources(device.Get(), clientWidth, clientHeight);
     ssao.createResources(
-        device.Get(), clientWidth, clientHeight, depthBuffer.Get(), scene.sceneSrvHeap.Get(),
-        scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotSsao)
+        device.Get(), clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal].Get(),
+        depthBuffer.Get(), scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
+        static_cast<INT>(app_slots::srvSlotSsao)
     );
-    createNormalPSO();
+    createGBufferPSO();
 
 #ifdef TRACY_ENABLE
     // Only create GPU context if the queue supports timestamp queries.
@@ -577,7 +583,7 @@ bool Application::loadContent()
     return true;
 }
 
-void Application::createNormalPSO()
+void Application::createGBufferPSO()
 {
     D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
@@ -592,17 +598,20 @@ void Application::createNormalPSO()
     psoDesc.pRootSignature = this->rootSignature.Get();
     psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
     psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-    psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_normal_ps, sizeof(g_normal_ps));
+    psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_gbuffer_ps, sizeof(g_gbuffer_ps));
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.NumRenderTargets = 4;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;  // Normal
+    psoDesc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM;  // Albedo
+    psoDesc.RTVFormats[2] = DXGI_FORMAT_R8G8_UNORM;      // Material
+    psoDesc.RTVFormats[3] = DXGI_FORMAT_R16G16_FLOAT;    // Motion
     psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     psoDesc.SampleDesc = { 1, 0 };
-    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->normalPSO)));
+    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->gbufferPSO)));
 }
 
 void Application::onResize(uint32_t width, uint32_t height)
@@ -646,11 +655,13 @@ void Application::onResize(uint32_t width, uint32_t height)
             0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
+        gbuffer.resize(device.Get(), clientWidth, clientHeight);
         bloom.resize(device.Get(), clientWidth, clientHeight);
         picker.resize(device, clientWidth, clientHeight);
         ssao.resize(
-            device.Get(), clientWidth, clientHeight, depthBuffer.Get(), scene.sceneSrvHeap.Get(),
-            scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
+            device.Get(), clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal].Get(),
+            depthBuffer.Get(), scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
+            static_cast<INT>(Scene::nBuffers + 2)
         );
         this->flush();
     }

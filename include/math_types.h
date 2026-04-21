@@ -180,6 +180,11 @@ inline mat4 rotateAxis(const vec3& axis, float angle)
     return mat4(XMMatrixRotationAxis(XMVectorSet(axis.x, axis.y, axis.z, 0), angle));
 }
 
+inline mat4 transpose(const mat4& m)
+{
+    return mat4(XMMatrixTranspose(m.load()));
+}
+
 // ---------------------------------------------------------------------------
 // Vector functions
 // ---------------------------------------------------------------------------

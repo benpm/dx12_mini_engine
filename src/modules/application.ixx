@@ -37,6 +37,7 @@ export import outline;
 export import gizmo;
 export import render_graph;
 export import lua_scripting;
+export import gbuffer;
 
 // Global application data and state
 export namespace app_slots
@@ -106,6 +107,7 @@ export class Application
 
     // Subsystems
     Scene scene;
+    GBuffer gbuffer;
     BloomRenderer bloom;
     BillboardRenderer billboards;
     ImGuiLayer imguiLayer;
@@ -125,7 +127,7 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> normalPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> gbufferPSO;
 
     // Infinite grid
     Microsoft::WRL::ComPtr<ID3D12RootSignature> gridRootSig;
@@ -138,6 +140,7 @@ export class Application
     D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
     float fov = 55.0f;
     mat4 matModel;
+    mat4 prevViewProj;
     bool contentLoaded = false;
 
     // Cubemap reflections
@@ -282,6 +285,6 @@ export class Application
     bool loadContent();
     void onResize(uint32_t width, uint32_t height);
     void createScenePSO();
-    void createNormalPSO();
+    void createGBufferPSO();
     void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
 };

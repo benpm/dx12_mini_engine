@@ -5,6 +5,7 @@ module;
 #include <Windows.h>
 #include <wrl.h>
 #include <cstdint>
+#include <map>
 #include <random>
 #include <string>
 #include <vector>
@@ -44,6 +45,17 @@ export struct VertexPBR
 };
 
 // ---------------------------------------------------------------------------
+// Light data for Raytracing / ReSTIR
+// ---------------------------------------------------------------------------
+export struct LightData
+{
+    vec3 position;
+    float intensity;
+    vec3 color;
+    float radius;
+};
+
+// ---------------------------------------------------------------------------
 // Per-draw data (stored in a StructuredBuffer, indexed by drawIndex)
 // ---------------------------------------------------------------------------
 export struct PerFrameCB
@@ -66,12 +78,14 @@ export struct PerFrameCB
 export struct PerPassCB
 {
     mat4 viewProj;
+    mat4 prevViewProj;
     vec4 cameraPos;
 };
 
 export struct PerObjectData
 {
     mat4 model;
+    mat4 prevModel;
     vec4 albedo;
     float roughness;
     float metallic;
@@ -88,6 +102,7 @@ export class Scene
    public:
     static constexpr uint8_t nBuffers = 3;
     static constexpr uint32_t maxDrawsPerFrame = 16384;
+    static constexpr uint32_t maxPassesPerFrame = 16;
 
     flecs::world ecsWorld;
     std::vector<Material> materials;
@@ -116,9 +131,9 @@ export class Scene
     ComPtr<ID3D12Resource> megaIB;
     D3D12_VERTEX_BUFFER_VIEW megaVBV{};
     D3D12_INDEX_BUFFER_VIEW megaIBV{};
-    uint32_t megaVBCapacity = 0;
+    uint32_t megaVBCapacity = 1024 * 1024;      // 1M verts
     uint32_t megaVBUsed = 0;
-    uint32_t megaIBCapacity = 0;
+    uint32_t megaIBCapacity = 4 * 1024 * 1024;  // 4M indices
     uint32_t megaIBUsed = 0;
 
     ComPtr<ID3D12Resource> perObjectBuffer[nBuffers];
@@ -130,6 +145,21 @@ export class Scene
 
     ComPtr<ID3D12DescriptorHeap> sceneSrvHeap;
     UINT sceneSrvDescSize = 0;
+
+    // Light Buffer for Raytracing/ReSTIR
+    ComPtr<ID3D12Resource> lightBuffer;
+    uint32_t activeLightCount = 0;
+    static constexpr uint32_t maxLightsRRT = 1024;
+
+    // Raytracing Acceleration Structures
+    ComPtr<ID3D12Resource> tlasBuffer;
+    ComPtr<ID3D12Resource> tlasScratch;
+    ComPtr<ID3D12Resource> tlasInstances;
+    struct BlasEntry
+    {
+        ComPtr<ID3D12Resource> buffer;
+    };
+    std::map<uint64_t, BlasEntry> blasMap;  // key: (vertexOffset << 32) | indexOffset
 
     std::vector<DrawCmd> drawCmds;
     std::vector<flecs::entity> drawIndexToEntity;
@@ -146,10 +176,13 @@ export class Scene
     std::vector<PendingUploadBatch> pendingUploads;
 
     void populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel);
+    void updateLightBuffer(ID3D12Device2* device, CommandQueue& cmdQueue);
 
     void createMegaBuffers(ID3D12Device2* device);
     void createDrawDataBuffers(ID3D12Device2* device);
     MeshRef appendToMegaBuffers(
+        ID3D12Device2* device,
+        CommandQueue& cmdQueue,
         ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const std::vector<VertexPBR>& vertices,
         const std::vector<uint32_t>& indices,
@@ -166,4 +199,7 @@ export class Scene
         bool append = false
     );
     void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool includeCompanion = true);
+
+    void updateTLAS(ID3D12Device2* device, CommandQueue& cmdQueue, uint32_t curBackBufIdx);
+    void buildBlasForMesh(ID3D12Device2* device, CommandQueue& cmdQueue, MeshRef& mesh);
 };

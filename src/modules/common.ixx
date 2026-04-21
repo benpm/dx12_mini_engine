@@ -75,10 +75,12 @@ export inline void chkDX(
 )
 {
     if (FAILED(hr)) {
-        spdlog::error(
+        auto msg = fmt::format(
             "{} failed with HRESULT {} at {}:{} in {}", context, formatHRESULT(hr),
             location.file_name(), location.line(), location.function_name()
         );
+        spdlog::error("{}", msg);
+        throw std::runtime_error(msg);
     }
 }
 

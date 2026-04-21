@@ -23,6 +23,7 @@ cbuffer PerFrame : register(b0)
 cbuffer PerPass : register(b1)
 {
     matrix ViewProj;
+    matrix PrevViewProj;
     float4 CameraPos;
 };
 
@@ -34,6 +35,7 @@ cbuffer DrawIndex : register(b2)
 struct PerObjectData
 {
     matrix Model;
+    matrix PrevModel;
     float4 Albedo;
     float Roughness;
     float Metallic;
@@ -50,6 +52,7 @@ struct VertexOut
     float3 WorldPos : POSITION;
     float2 UV : TEXCOORD0;
     uint DrawIndex : BLENDINDICES0;
+    float4 PrevClipPos : TEXCOORD1;
     float4 Position : SV_Position;
 };
 
@@ -60,6 +63,10 @@ VertexOut main(VertexIn IN, uint instanceID : SV_InstanceID)
     float4 worldPos = mul(objData.Model, float4(IN.Position, 1.0f));
     OUT.WorldPos = worldPos.xyz;
     OUT.Position = mul(ViewProj, worldPos);
+
+    float4 prevWorldPos = mul(objData.PrevModel, float4(IN.Position, 1.0f));
+    OUT.PrevClipPos = mul(PrevViewProj, prevWorldPos);
+
     // Normal to world space (assumes uniform scale; use inverse-transpose for non-uniform)
     OUT.Normal = normalize(mul((float3x3)objData.Model, IN.Normal));
     OUT.UV = IN.UV;

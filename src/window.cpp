@@ -161,7 +161,7 @@ static ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
 
             if ((dxgiAdapterDesc1.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
                 SUCCEEDED(D3D12CreateDevice(
-                    dxgiAdapter1.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr
+                    dxgiAdapter1.Get(), D3D_FEATURE_LEVEL_12_2, __uuidof(ID3D12Device), nullptr
                 )) &&
                 dxgiAdapterDesc1.DedicatedVideoMemory > maxDedicatedVideoMemory) {
                 maxDedicatedVideoMemory = dxgiAdapterDesc1.DedicatedVideoMemory;
@@ -176,7 +176,26 @@ static ComPtr<IDXGIAdapter4> getAdapter(bool useWarp)
 static ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
 {
     ComPtr<ID3D12Device2> d3d12Device2;
-    chkDX(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3d12Device2)));
+    // Try 12_2 first (required for mesh shaders etc.); fall back to 12_1 (e.g. WARP)
+    if (FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_2, IID_PPV_ARGS(&d3d12Device2)))) {
+        chkDX(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&d3d12Device2)));
+        spdlog::warn("D3D feature level 12_2 not available, using 12_1");
+    }
+
+    // Check DXR 1.1 support (non-fatal: WARP and some adapters don't support it)
+    D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
+    if (SUCCEEDED(d3d12Device2->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5)
+        ))) {
+        if (options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1) {
+            spdlog::info("DXR Tier 1.1 support verified");
+        } else {
+            spdlog::warn("DXR Tier 1.1 not supported — raytracing features disabled");
+        }
+    } else {
+        spdlog::warn("CheckFeatureSupport(OPTIONS5) failed — DXR status unknown");
+    }
+
 #if defined(_DEBUG)
     ComPtr<ID3D12InfoQueue> pInfoQueue;
     if (SUCCEEDED(d3d12Device2.As(&pInfoQueue))) {

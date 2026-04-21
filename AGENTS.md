@@ -90,7 +90,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
 | `camera.ixx` | Re-exports Camera + OrbitCamera from `include/camera_types.h` |
 | `input.ixx` | Button/Key enums, gainput integration, `EditorAction` enum, `HotkeyBindings` struct, key name lookup |
-| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, Animated, Pickable, MeshRef, InstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
+| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, PrevTransform, Animated, Pickable, MeshRef, InstanceGroup, PrevInstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
 | `gizmo.ixx` | `GizmoState` struct — translation gizmo (3 arrow entities, drag logic) |
 | `billboard.ixx` | `BillboardRenderer` class — point light sprite rendering |
@@ -99,11 +99,13 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `config.ixx` | `ConfigData` struct + load/save/merge config.json via glaze |
 | `lua_scripting.ixx` | `LuaScripting` class + `Scripted` component — Lua 5.4 scripting engine |
 | `scene_file.ixx` | Scene file serialization — load/save JSON scene files via glaze |
-| `ssao.ixx` | `SsaoRenderer` class — normal pre-pass RT, SSAO compute + blur passes |
+| `ssao.ixx` | `SsaoRenderer` class — SSAO compute + blur passes (now reads from GBuffer Normal) |
 | `shadow.ixx` | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO |
 | `outline.ixx` | `OutlineRenderer` class — stencil-based silhouette PSO + render |
 | `render_graph.ixx` | `rg::RenderGraph` class — pass orchestration and automated resource barriers |
 | `logging.ixx` | spdlog setup with custom error sink |
+| `gbuffer.ixx` | `GBuffer` class — 4-target G-Buffer (Normal, Albedo, Material, Motion), RTV+SRV heaps |
+| `restir.ixx` | `ReStirRenderer` class — skeleton for ReSTIR DI (reservoir buffers, root sig; shaders TBD) |
 
 ### Module conventions
 
@@ -153,10 +155,18 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 * `drawIndexToEntity` vector (in Application) maps draw index → flecs entity
 * Methods: `createResources()`, `resize()`, `readPickResult()`, `copyPickedPixel()`
 
+**GBuffer** (`gbuffer.ixx` + `gbuffer.cpp`) — deferred G-Buffer subsystem:
+
+* 4 render targets: Normal (`R8G8B8A8_UNORM`), Albedo (`R8G8B8A8_UNORM`), Material (`R8G8_UNORM`, roughness+metallic), Motion (`R16G16_FLOAT`)
+* Own RTV heap (4) and SRV heap (4); created in `loadContent()`, resized in `onResize()`
+* G-Buffer pass uses `vertex_shader.hlsl` + `gbuffer_ps.hlsl` with 4 MRT outputs
+* `gbufferPSO` owned by Application (created by `createGBufferPSO()` in `setup.cpp`)
+* Motion vectors computed from `PrevViewProj` × `PrevModel` (new `PrevTransform` / `PrevInstanceGroup` ECS components)
+
 **SsaoRenderer** (`ssao.ixx` + `ssao.cpp`) — SSAO subsystem:
 
-* Normal pre-pass RT (`R8G8B8A8_UNORM`, world-space normals), SSAO RT (`R8_UNORM`), blur RT (`R8_UNORM`)
-* Own RTV heap (3) and SRV heap (4: normal, depth, noise, ssaoRT); SSAO output SRV placed in `sceneSrvHeap[nBuffers+2]` for scene pass
+* SSAO RT (`R8_UNORM`), blur RT (`R8_UNORM`); reads normal from GBuffer Normal target
+* Own RTV heap (2) and SRV heap (4: normal, depth, noise, ssaoRT); SSAO output SRV placed in `sceneSrvHeap[nBuffers+2]` for scene pass
 * Hemisphere kernel (32 samples, seed 42), 4×4 `R32G32_FLOAT` random-rotation noise texture (deferred upload on first render)
 * Persistently-mapped CBV upload buffer with view/proj/invProj matrices + kernel + params
 * Methods: `createResources()`, `resize()`, `render()`, `transitionResource()` (public static)
@@ -194,16 +204,17 @@ Application owns subsystem instances: `Scene scene`, `BloomRenderer bloom`, `ImG
 ### Application class (split across 5 files in `src/application/`)
 
 * `application.cpp` — constructor, destructor, `update()`, helpers
-* `render.cpp` — `render()` — shadow, cubemap, normal pre-pass, SSAO, scene, outline, ID, billboards, bloom, imgui, present
+* `render.cpp` — `render()` — shadow, cubemap, G-buffer, SSAO, scene, gizmo, grid, outline, ID, billboards, bloom, imgui, present
 * `ui.cpp` — `renderImGui()` with all ImGui menus, inspector, tooltips
-* `setup.cpp` — `loadContent()`, `createScenePSO()`, `createNormalPSO()`, `createCubemapResources()`, `onResize()`
+* `setup.cpp` — `loadContent()`, `createScenePSO()`, `createGBufferPSO()`, `createCubemapResources()`, `onResize()`
 * `scene.cpp` — `extractSceneData()`, `applySceneData()` — scene file serialization
 
 Thin orchestrator — owns the render loop, swap chain, scene PSO, and input:
 
 * **Swap chain**: triple-buffered, `R8G8B8A8_UNORM`.
-* **Root signature**: 6 root params — \[0\] SRV table (t0, structured buffer), \[1\] 1 root constant (`drawIndex`, b0), \[2\] SRV table (t1, shadow map), \[3\] SRV table (t2, cubemap), \[4\] 4 root constants (b1, outline params), \[5\] SRV table (t3, SSAO). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
-* **Scene PSO**: standard rasterization to HDR RT, stencil write. **Shadow PSO**: owned by `ShadowRenderer`, depth-only, front-face culling, depth bias. **Normal PSO**: vertex shader + `normal_ps.hlsl` → `R8G8B8A8_UNORM`. **Outline PSO**: owned by `OutlineRenderer`, extrude verts along normal, stencil test NOT_EQUAL.
+* **Root signature**: 8 root params — \[0\] CBV (b0, PerFrameCB), \[1\] CBV (b1, PerPassCB), \[2\] 1 root constant (b2, drawIndex), \[3\] 4 root constants (b3, outline params), \[4\] SRV table (t0, PerObjectData), \[5\] SRV table (t1, shadow map), \[6\] SRV table (t2, cubemap), \[7\] SRV table (t3, SSAO). Static samplers: s0 (shadow comparison PCF), s1 (cubemap linear).
+* **Scene PSO**: standard rasterization to HDR RT (`R11G11B10_FLOAT`), stencil write. **G-Buffer PSO** (`gbufferPSO`): vertex_shader.hlsl + gbuffer_ps.hlsl → 4 MRTs (Normal/Albedo/Material/Motion). **Shadow PSO**: owned by `ShadowRenderer`, depth-only, front-face culling, depth bias. **Outline PSO**: owned by `OutlineRenderer`, extrude verts along normal, stencil test NOT_EQUAL.
+* **Per-frame data split**: `PerFrameCB` (lights, shadows, fog — ~512 bytes aligned, triple-buffered root CBV at b0), `PerPassCB` (viewProj, prevViewProj, cameraPos — 256-byte slots, array of 16 per frame at b1), `PerObjectData` (model, prevModel, material — structured buffer at t0). `PerPassCB` slots: 0=main, 1=shadow, 2-7=cubemap faces, 8=G-buffer, 9=ID, 10=grid.
 * **Vertex format**: `VertexPBR` — position (float3), normal (float3), UV (float2).
 * Delegates to subsystems: `scene.*`, `bloom.*`, `imguiLayer.*`, `ssao.*`, `shadow.*`, `outline.*`.
 * **Shader hot reload**: polls `.hlsl` timestamps every 0.5s in `update()`, launches DXC as an async subprocess. Compilation is non-blocking — `poll()` checks for process completion each frame. Once bytecode is ready, PSOs are recreated. Scene PSO via `createScenePSO()`, shadow PSO via `shadow.reloadPSO()`, outline PSO via `outline.reloadPSO()`, bloom PSOs via `bloom.reloadPipelines()`. Enabled automatically when `DXC_PATH` and `SHADER_SRC_DIR` are set (CMake provides both). **Robust**: if DXC compilation fails, old bytecode is preserved. If PSO recreation throws, the exception is caught and the previous PSO stays active — only initial load failures are fatal.
@@ -219,8 +230,8 @@ update()  →  render()
               └─ RenderGraph::execute()
                   ├─ Shadow pass      (depth-only to 2048² shadow map)
                   ├─ Cubemap pass     (6-face env map, non-reflective only)
-                  ├─ Normal pre-pass  (world normals → R8G8B8A8 normalRT)
-                  ├─ SSAO pass        (depth → PSR, hemisphere sampling → R8 ssaoRT)
+                  ├─ G-Buffer pass    (Normal/Albedo/Material/Motion → 4 MRTs, motion vectors)
+                  ├─ SSAO pass        (reads GBuffer Normal+depth → R8 ssaoRT)
                   ├─ Scene pass       (HDR RT, samples shadow+cubemap+SSAO)
                   ├─ Gizmo pass       (translation arrows, depth-cleared, renders on top)
                   ├─ Grid pass        (infinite Y=0 grid, alpha-blended, depth-tested)
