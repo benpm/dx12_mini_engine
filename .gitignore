@@ -4,3 +4,5 @@ log.txt
 .cache
 imgui.ini
 config.json
+resources/external_scenes
+*.txt

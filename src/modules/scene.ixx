@@ -1,6 +1,7 @@
 module;
 
 #include <d3d12.h>
+#include <DirectXCollision.h>
 #include <flecs.h>
 #include <Windows.h>
 #include <wrl.h>
@@ -175,7 +176,12 @@ export class Scene
     };
     std::vector<PendingUploadBatch> pendingUploads;
 
-    void populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel);
+    void populateDrawCommands(
+        uint32_t curBackBufIdx,
+        const mat4& matModel,
+        const vec3& cameraPos,
+        const DirectX::BoundingFrustum& frustum
+    );
     void updateLightBuffer(ID3D12Device2* device, CommandQueue& cmdQueue);
 
     void createMegaBuffers(ID3D12Device2* device);

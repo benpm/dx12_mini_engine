@@ -5,6 +5,7 @@ module;
 #endif
 
 #include <d3d12.h>
+#include <DirectXCollision.h>
 #include <DirectXMath.h>
 #include <flecs.h>
 #include <spdlog/spdlog.h>
@@ -14,8 +15,8 @@ module;
 #include <wrl.h>
 #include <algorithm>
 #include <cassert>
-#include <filesystem>
-#include <random>
+#include <cmath>
+#include <map>
 #include <string>
 #include <vector>
 #include "d3dx12_clean.h"
@@ -24,6 +25,8 @@ module;
 module scene;
 
 using Microsoft::WRL::ComPtr;
+using namespace DirectX;
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,7 +46,12 @@ static void fillPerObject(PerObjectData& pod, const Material& mat, const vec4& a
 // Scene::populateDrawCommands
 // ---------------------------------------------------------------------------
 
-void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
+void Scene::populateDrawCommands(
+    uint32_t curBackBufIdx,
+    const mat4& matModel,
+    const vec3& cameraPos,
+    const DirectX::BoundingFrustum& frustum
+)
 {
     drawCmds.clear();
     drawIndexToEntity.clear();
@@ -52,9 +60,25 @@ void Scene::populateDrawCommands(uint32_t curBackBufIdx, const mat4& matModel)
     uint32_t drawIdx = 0;
     PerObjectData* objectMapped = this->perObjectMapped[curBackBufIdx];
 
-    // Regular entities
-    drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& mesh) {
+    // Regular entities with MeshRef (LodMesh overrides mesh selection if present)
+    drawQuery.each([&](flecs::entity e, const Transform& tf, const MeshRef& meshRef) {
         assert(drawIdx < Scene::maxDrawsPerFrame / 3);
+
+        MeshRef mesh = meshRef;
+        if (auto lodPtr = e.try_get<LodMesh>(); lodPtr && !lodPtr->levels.empty()) {
+            vec3 pos(tf.world._41, tf.world._42, tf.world._43);
+            float d2 = (pos.x - cameraPos.x) * (pos.x - cameraPos.x) +
+                       (pos.y - cameraPos.y) * (pos.y - cameraPos.y) +
+                       (pos.z - cameraPos.z) * (pos.z - cameraPos.z);
+            mesh = lodPtr->levels.back().mesh;
+            for (const auto& level : lodPtr->levels) {
+                if (d2 < level.distanceThreshold * level.distanceThreshold) {
+                    mesh = level.mesh;
+                    break;
+                }
+            }
+        }
+
         const Material& mat = materials[mesh.materialIndex];
 
         PerObjectData& pod = objectMapped[drawIdx];
@@ -398,15 +422,21 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
 
     for (const auto& shape : shapes) {
         for (const auto& index : shape.mesh.indices) {
-            VertexPBR v;
-            v.position = { attrib.vertices[3 * index.vertex_index + 0],
-                           attrib.vertices[3 * index.vertex_index + 1],
-                           attrib.vertices[3 * index.vertex_index + 2] };
-            v.normal = { attrib.normals[3 * index.normal_index + 0],
-                         attrib.normals[3 * index.normal_index + 1],
-                         attrib.normals[3 * index.normal_index + 2] };
-            v.uv = { attrib.texcoords[2 * index.texcoord_index + 0],
-                     1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
+            VertexPBR v{};
+            if (index.vertex_index >= 0 && 3 * index.vertex_index + 2 < attrib.vertices.size()) {
+                v.position = { attrib.vertices[3 * index.vertex_index + 0],
+                               attrib.vertices[3 * index.vertex_index + 1],
+                               attrib.vertices[3 * index.vertex_index + 2] };
+            }
+            if (index.normal_index >= 0 && 3 * index.normal_index + 2 < attrib.normals.size()) {
+                v.normal = { attrib.normals[3 * index.normal_index + 0],
+                             attrib.normals[3 * index.normal_index + 1],
+                             attrib.normals[3 * index.normal_index + 2] };
+            }
+            if (index.texcoord_index >= 0 && 2 * index.texcoord_index + 1 < attrib.texcoords.size()) {
+                v.uv = { attrib.texcoords[2 * index.texcoord_index + 0],
+                         1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
+            }
             verts.push_back(v);
             indices.push_back((uint32_t)indices.size());
         }
@@ -445,12 +475,18 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
     spawnableMeshRefs.push_back(meshRef);
     spawnableMeshNames.push_back("Teapot");
 
+    // Rough bounding sphere for teapot (radius ~2.5 centered near origin)
+    BoundingVolume teapotBV;
+    teapotBV.sphere.center = { 0, 1.25f, 0 };
+    teapotBV.sphere.radius = 2.5f;
+
     // Central teapot: mirror
     MeshRef mirrorRef = meshRef;
     mirrorRef.materialIndex = base + 2;
     ecsWorld.entity("CentralTeapot")
         .set(Transform{ scale(1.5f, 1.5f, 1.5f) * translate(0, 0, 0) })
         .set(mirrorRef)
+        .set(teapotBV)
         .add<Pickable>();
 
     // Non-reflective companion so reflections have content
@@ -460,6 +496,7 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
         ecsWorld.entity("CompanionTeapot")
             .set(Transform{ translate(5, 0, 0) })
             .set(companionRef)
+            .set(teapotBV)
             .add<Pickable>();
     }
 
@@ -591,10 +628,34 @@ bool Scene::loadGltf(
                                    : gMesh.name
             );
 
+            // Calculate bounding sphere for the mesh
+            vec3 minP(1e30f), maxP(-1e30f);
+            for (const auto& v : verts) {
+                minP.x = std::min(minP.x, v.position.x);
+                minP.y = std::min(minP.y, v.position.y);
+                minP.z = std::min(minP.z, v.position.z);
+                maxP.x = std::max(maxP.x, v.position.x);
+                maxP.y = std::max(maxP.y, v.position.y);
+                maxP.z = std::max(maxP.z, v.position.z);
+            }
+            vec3 center = (minP + maxP) * 0.5f;
+            float maxDist2 = 0.0f;
+            for (const auto& v : verts) {
+                vec3 d = v.position - center;
+                maxDist2 = std::max(maxDist2, dot(d, d));
+            }
+            BoundingVolume bv;
+            bv.sphere.center = center;
+            bv.sphere.radius = std::sqrt(maxDist2);
+
             // Instantiate
             Transform tf;
             tf.world = mat4{};
-            ecsWorld.entity().set(tf).set(meshRef).add<Pickable>();
+            ecsWorld.entity()
+                .set(tf)
+                .set(meshRef)
+                .set(bv)
+                .add<Pickable>();
         }
     }
 

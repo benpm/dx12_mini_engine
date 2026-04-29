@@ -90,9 +90,9 @@ struct vec4 : XMFLOAT4
 };
 
 // ---------------------------------------------------------------------------
-// mat4 — 16-byte aligned, binary-compatible with XMMATRIX for GPU upload
+// mat4 — binary-compatible with XMMATRIX for GPU upload
 // ---------------------------------------------------------------------------
-struct alignas(16) mat4 : XMFLOAT4X4
+struct mat4 : XMFLOAT4X4
 {
     mat4() : XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1) {}
 
@@ -218,3 +218,12 @@ inline float length(const vec2& v)
 {
     return std::sqrt(dot(v, v));
 }
+
+// ---------------------------------------------------------------------------
+// Bounding volumes
+// ---------------------------------------------------------------------------
+struct BoundingSphere
+{
+    vec3 center;
+    float radius;
+};

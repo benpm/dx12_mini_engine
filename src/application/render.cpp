@@ -5,6 +5,7 @@ module;
 #endif
 
 #include <d3d12.h>
+#include <DirectXCollision.h>
 #include <DirectXMath.h>
 #include <dxgi1_6.h>
 #include <flecs.h>
@@ -41,7 +42,6 @@ void Application::render()
         PROFILE_ZONE_NAMED("Frame Wait");
         this->cmdQueue.waitForFenceVal(frameReadyFence);
     }
-
     // Read back picked entity from previous frame if the copy's fence has completed.
     {
         PROFILE_ZONE_NAMED("Picker Readback Poll");
@@ -100,8 +100,14 @@ void Application::render()
         lightViewProj = shadow.computeLightViewProj(dirLightDir);
     }
 
+    // Construct frustum for culling
+    DirectX::BoundingFrustum frustum;
+    DirectX::BoundingFrustum::CreateFromMatrix(frustum, this->cam.proj().load());
+    XMMATRIX invView = XMMatrixInverse(nullptr, this->cam.view().load());
+    frustum.Transform(frustum, invView);
+
     // --- Fill structured buffer (scene + shadow draw data) ---
-    scene.populateDrawCommands(curBackBufIdx, this->matModel);
+    scene.populateDrawCommands(curBackBufIdx, this->matModel, cameraPos.xyz(), frustum);
     this->lastFrameObjectCount = scene.totalSlots;
 
     // Build filtered draw command list (excludes gizmo arrows)
@@ -392,10 +398,10 @@ void Application::render()
             PROFILE_ZONE_NAMED("G-Buffer Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");
 
-            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[] = {
-                gbuffer.getRtv(GBuffer::Normal), gbuffer.getRtv(GBuffer::Albedo),
-                gbuffer.getRtv(GBuffer::Material), gbuffer.getRtv(GBuffer::Motion)
-            };
+            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[] = { gbuffer.getRtv(GBuffer::Normal),
+                                                   gbuffer.getRtv(GBuffer::Albedo),
+                                                   gbuffer.getRtv(GBuffer::Material),
+                                                   gbuffer.getRtv(GBuffer::Motion) };
             auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
 
             FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };

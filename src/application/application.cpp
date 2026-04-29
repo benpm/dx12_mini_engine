@@ -27,6 +27,7 @@ module;
 #include "icons.h"
 #include "profiling.h"
 #include "resource.h"
+#include "vertex_shader_cso.h"
 
 module application;
 
@@ -473,6 +474,7 @@ void Application::update()
         [](const InstanceGroup& ig, PrevInstanceGroup& pig) { pig.transforms = ig.transforms; }
     );
 
+    scene.ecsWorld.defer_begin();
     // Ensure new entities have previous transforms
     scene.ecsWorld.query<const Transform>().each([](flecs::entity e, const Transform& tf) {
         if (!e.has<PrevTransform>()) {
@@ -484,6 +486,7 @@ void Application::update()
             e.set<PrevInstanceGroup>({ ig.transforms });
         }
     });
+    scene.ecsWorld.defer_end();
 
     scene.retireCompletedUploads(cmdQueue);
 
@@ -503,6 +506,7 @@ void Application::update()
         recentFrameHead = 0;
         recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
     }
+
     if (!pendingGltfPath.empty()) {
         std::string path = std::move(pendingGltfPath);
         pendingGltfPath.clear();
@@ -516,7 +520,6 @@ void Application::update()
         }
     }
 
-    // Deferred scene file load/save
     if (!pendingSceneLoad.empty()) {
         std::string path = std::move(pendingSceneLoad);
         pendingSceneLoad.clear();
@@ -587,7 +590,6 @@ void Application::update()
 
     static std::chrono::high_resolution_clock clock;
     static auto t0 = clock.now();
-
     auto t1 = clock.now();
     auto deltaTime = t1 - t0;
     t0 = t1;
@@ -642,7 +644,7 @@ void Application::update()
                 auto vsData = shaderCompiler.data(sceneVSIdx);
                 D3D12_SHADER_BYTECODE vs =
                     vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                           : D3D12_SHADER_BYTECODE{};
+                           : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
                 shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (scene): {}", e.what());
@@ -756,8 +758,7 @@ void Application::update()
     }
 
     // Create material test grids (once, on first frame with meshes loaded)
-    if (!runtimeConfig.singleTeapotMode && scene.ecsWorld.count<InstanceGroup>() == 0 &&
-        !scene.spawnableMeshRefs.empty()) {
+    if (false) {
         constexpr int G = 5;
         constexpr float spacing = 2.4f;
         constexpr float objScale = 0.45f;
@@ -808,6 +809,7 @@ void Application::update()
 
         for (int g = 0; g < numGrids; ++g) {
             const GridDef& def = defs[g];
+
             InstanceGroup group;
             group.mesh = scene.spawnableMeshRefs[def.meshIdx];
             group.mesh.materialIndex = def.matIdx;
@@ -829,6 +831,7 @@ void Application::update()
                         group.emissiveStrengthOverrides.push_back(varParam * 2.0f);
                     } else {
                         group.metallicOverrides.push_back(varParam);
+                        group.emissiveStrengthOverrides.push_back(0.0f);
                     }
 
                     anim.positions.push_back({ px, 0.0f, pz });
@@ -959,7 +962,6 @@ void Application::update()
         });
     }
 
-    scene.updateTLAS(device.Get(), cmdQueue, curBackBufIdx);
     scene.updateLightBuffer(device.Get(), cmdQueue);
 }
 

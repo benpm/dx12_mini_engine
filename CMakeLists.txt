@@ -145,6 +145,30 @@ FetchContent_Declare(
     GIT_TAG v0.13.1
 )
 FetchContent_MakeAvailable(tracy)
+
+# Download Sponza GLB from KhronosGroup sample assets
+set(SPONZA_URL "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/Sponza/glTF-Binary/Sponza.glb")
+set(SPONZA_DEST "${CMAKE_CURRENT_SOURCE_DIR}/resources/external_scenes/Sponza/Sponza.glb")
+
+if(NOT EXISTS ${SPONZA_DEST})
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/external_scenes/Sponza")
+    message(STATUS "Downloading Sponza GLB from ${SPONZA_URL}...")
+    file(DOWNLOAD ${SPONZA_URL} ${SPONZA_DEST} SHOW_PROGRESS)
+endif()
+
+# Additional assets
+function(download_asset NAME URL)
+    set(DEST "${CMAKE_CURRENT_SOURCE_DIR}/resources/external_scenes/${NAME}/${NAME}.glb")
+    if(NOT EXISTS ${DEST})
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/external_scenes/${NAME}")
+        message(STATUS "Downloading ${NAME} GLB from ${URL}...")
+        file(DOWNLOAD ${URL} ${DEST} SHOW_PROGRESS)
+    endif()
+endfunction()
+
+download_asset("DamagedHelmet" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb")
+download_asset("SciFiHelmet" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/SciFiHelmet/glTF-Binary/SciFiHelmet.glb")
+download_asset("Corset" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/Corset/glTF-Binary/Corset.glb")
 set_target_properties(TracyClient PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )

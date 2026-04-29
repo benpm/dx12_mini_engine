@@ -15,19 +15,20 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [ ] Make grid lines not appear in front of geometry when that geometry is selected ![alt text](image.png)
-- [ ] Outlines no longer work (probably related to above issue)
-- [ ] Get the [sponza scene](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) from the internet and load it. Download the files using FetchContent at configure time, putting it into an external_scenes directory in resources. Compress the  
-- [ ] Implement Level of Detail (LOD)
-  - Generate simplified meshes for multiple levels of detail depending on triangle count for each asset
-  - Depending on distance from camera, replace models with their respective simplified versions
-- [ ] Download and use some assets from [glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets), making sure they load correctly. Download them using CMake, so don't add them directly to the repo, rather download them during build time using CMake
 - [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
+  - [x] Frustum Culling (CPU-side bounding sphere)
+  - [ ] Occlusion Culling (Hi-Z or Hardware Queries)
 
 ---
 
 ## Completed
 
+- [x] Make grid lines not appear in front of geometry when that geometry is selected (Moved Gizmo pass after Grid/Outline passes)
+- [x] Outlines no longer work (Fixed by moving Gizmo pass, which was clearing stencil)
+- [x] Get the [sponza scene](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) from the internet and load it (Downloaded GLB to resources/external_scenes/Sponza)
+- [x] Implement Level of Detail (LOD)
+  - [x] Added `LodMesh` component for distance-based mesh selection
+- [x] Download and use some assets from [glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) (DamagedHelmet, SciFiHelmet, Corset downloaded via CMake)
 - [x] Fix no-arg startup Flecs invalid-entity assert by reinitializing gizmo after scene clear/reload paths; documented troubleshooting checklist in README.md and AGENTS.md.
 
 - [x] **Editor Action Icons:** Material Icons font (`MaterialIcons-Regular.ttf`) merged into ImGui fonts. 34 icons from [MUI Material Icons](https://mui.com/material-ui/material-icons/) as 64x64 PNGs in `resources/icons/`. Icons on all 16 menu bar menus, 8 action buttons, 2 window titlebars. Icon assignments configurable via `config.json` `icons` map (key → Material Icon name). `include/icons.h` provides codepoint constants and lookup functions.

@@ -35,6 +35,12 @@ struct Pickable
 {
 };
 
+// Bounding volume for culling
+struct BoundingVolume
+{
+    BoundingSphere sphere;
+};
+
 // Animated point light (position computed from center + amp * sin(freq * t))
 struct PointLight
 {
@@ -54,6 +60,17 @@ struct MeshRef
     int materialIndex{ 0 };
     // Per-entity albedo override; w==0 means "use material albedo"
     vec4 albedoOverride{ 0.0f, 0.0f, 0.0f, 0.0f };
+};
+
+// Level of Detail: selects a mesh based on distance from camera
+struct LodMesh
+{
+    struct Level
+    {
+        MeshRef mesh;
+        float distanceThreshold;
+    };
+    std::vector<Level> levels;  // sorted by distance ascending
 };
 
 // GPU-instanced group: many instances of a single mesh drawn in one call

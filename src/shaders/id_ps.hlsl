@@ -4,6 +4,7 @@ struct PSInput
     float3 WorldPos : POSITION;
     float2 UV : TEXCOORD0;
     uint DrawIndex : BLENDINDICES0;
+    float4 PrevClipPos : TEXCOORD1;
     float4 Position : SV_Position;
 };
 

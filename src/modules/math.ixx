@@ -20,3 +20,5 @@ export using ::length;
 export using ::normalize;
 export using ::cross;
 export using ::transpose;
+
+export using ::BoundingSphere;

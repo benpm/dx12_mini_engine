@@ -120,21 +120,19 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         // triggered by ShowWindow is handled correctly by onResize().
         Window::get()->inMessageLoop = true;
         if (!hideWindow) {
-            ::ShowWindow(Window::get()->hWnd, SW_SHOW);
+            ::ShowWindow(Window::get()->hWnd, nCmdShow);
         }
 
         MSG msg = {};
+        spdlog::info("Entering main loop...");
         while (msg.message != WM_QUIT) {
             if (::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE) != 0) {
-                if (msg.message == WM_QUIT) {
-                    break;
-                }
                 ::TranslateMessage(&msg);
                 ::DispatchMessage(&msg);
                 inputManager.HandleMessage(msg);
             } else {
                 if (Window::get()->doExit) {
-                    spdlog::debug("exit requested");
+                    spdlog::info("Exit requested from Window");
                     ::PostQuitMessage(0);
                     Window::get()->doExit = false;
                     break;
@@ -145,6 +143,7 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
                 app.render();
             }
         }
+        spdlog::info("Main loop exited");
     } catch (const std::exception& e) {
         spdlog::warn("Fatal exception: {}", e.what());
         exitCode = -1;

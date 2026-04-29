@@ -90,7 +90,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |
 | `camera.ixx` | Re-exports Camera + OrbitCamera from `include/camera_types.h` |
 | `input.ixx` | Button/Key enums, gainput integration, `EditorAction` enum, `HotkeyBindings` struct, key name lookup |
-| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, PrevTransform, Animated, Pickable, MeshRef, InstanceGroup, PrevInstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
+| `ecs_components.ixx` | Re-exports ECS components from `include/ecs_types.h` (Transform, PrevTransform, Animated, Pickable, LodMesh, BoundingVolume, MeshRef, InstanceGroup, PrevInstanceGroup, InstanceAnimation, TerrainEntity, PointLight, GizmoArrow, GizmoAxis) |
 | `shader_hotreload.ixx` | `ShaderCompiler` class — watches HLSL files, recompiles via DXC at runtime |
 | `gizmo.ixx` | `GizmoState` struct — translation gizmo (3 arrow entities, drag logic) |
 | `billboard.ixx` | `BillboardRenderer` class — point light sprite rendering |
@@ -233,11 +233,11 @@ update()  →  render()
                   ├─ G-Buffer pass    (Normal/Albedo/Material/Motion → 4 MRTs, motion vectors)
                   ├─ SSAO pass        (reads GBuffer Normal+depth → R8 ssaoRT)
                   ├─ Scene pass       (HDR RT, samples shadow+cubemap+SSAO)
-                  ├─ Gizmo pass       (translation arrows, depth-cleared, renders on top)
                   ├─ Grid pass        (infinite Y=0 grid, alpha-blended, depth-tested)
                   ├─ Outline pass     (silhouette for hovered/selected)
                   ├─ ID pass          (R32_UINT RT, entity index per pixel)
                   ├─ Billboards pass  (light sprite rendering)
+                  ├─ Gizmo pass       (translation arrows, renders on top)
                   ├─ Bloom pass       (Prefilter → Downsample → Upsample → Composite)
                   ├─ ImGui pass       (UI overlay)
                   └─ Present pass     (Transition backbuffer to PRESENT state)
@@ -506,6 +506,14 @@ glTF matrices are column-major. When loading into `XMMATRIX` (row-major), transp
 ### startFullscreen config
 
 `ConfigData::startFullscreen` (default `false`) replaces any hardcoded `setFullscreen(true)` in the constructor. Applied in `applyConfig()` via `pendingFullscreenChange`/`pendingFullscreenValue` to go through the deferred fullscreen path.
+
+### Depth buffer must be created in loadContent
+
+`resizeDepthBuffer()` is called from `onResize()`, which only fires when `isInitialized == true` and the window receives `WM_SIZE`. For hidden-window test scenes (`runtime.hideWindow = true`), `ShowWindow` is skipped so `WM_SIZE` never fires — `depthBuffer` stays null and all passes that import it (G-Buffer, Scene, Gizmo) will crash. **Fix**: call `resizeDepthBuffer(clientWidth, clientHeight)` at the end of `loadContent()`, after the DSV heap is created. `onResize()` will call it again when the window is actually shown, which is safe (it just reallocates).
+
+### LOD selection in populateDrawCommands
+
+`LodMesh` component is checked inline inside the `drawQuery.each()` lambda using `e.try_get<LodMesh>()`. The active `MeshRef` is overridden based on squared distance to camera. LOD levels are sorted ascending by `distanceThreshold`; the first level whose threshold exceeds the camera distance is selected, otherwise the last (most distant) level is used. Frustum culling via `DirectX::BoundingFrustum::Contains` uses the entity's `BoundingVolume::sphere` when present; without it, culling is skipped for that entity.
 
 
 ---

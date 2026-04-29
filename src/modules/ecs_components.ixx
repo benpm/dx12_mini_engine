@@ -10,6 +10,8 @@ export using ::Transform;
 export using ::PrevTransform;
 export using ::Animated;
 export using ::Pickable;
+export using ::LodMesh;
+export using ::BoundingVolume;
 export using ::MeshRef;
 export using ::InstanceGroup;
 export using ::PrevInstanceGroup;

@@ -16,6 +16,8 @@ module;
 #include <string>
 #include <vector>
 #include "scene_data.h"
+#include "vertex_shader_cso.h"
+#include "d3dx12_clean.h"
 
 module application;
 
@@ -256,13 +258,16 @@ void Application::applySceneData(const SceneFileData& d)
     // Rebuild GPU resources if needed
     if (contentLoaded) {
         if (shadowRasterChanged) {
+            spdlog::info("Reloading shadow PSO...");
             auto vsData = shaderCompiler.data(sceneVSIdx);
             D3D12_SHADER_BYTECODE vs =
                 vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                       : D3D12_SHADER_BYTECODE{};
+                       : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
             shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
+            spdlog::info("Shadow PSO reloaded.");
         }
         if (cubemapResChanged) {
+            spdlog::info("Recreating cubemap resources...");
             createCubemapResources();
         }
     }

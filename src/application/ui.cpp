@@ -444,10 +444,12 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
             int pointLightCount = 0;
             int pickableCount = 0;
             scene.ecsWorld.each([&](flecs::entity) { entityCount++; });
-            scene.drawQuery.each([&](const Transform&, const MeshRef&) {
-                transformCount++;
-                meshRefCount++;
-            });
+            scene.ecsWorld.query_builder<const Transform, const MeshRef>().build().each(
+                [&](const Transform&, const MeshRef&) {
+                    transformCount++;
+                    meshRefCount++;
+                }
+            );
             scene.animQuery.each([&](const Transform&, const Animated&) { animatedCount++; });
             scene.instanceQuery.each([&](const Transform&, const InstanceGroup&) {
                 instanceGroupCount++;
