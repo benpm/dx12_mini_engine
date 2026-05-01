@@ -65,5 +65,6 @@ using ::gfx::IQueue;
 using ::gfx::ISwapChain;
 
 using ::gfx::createDevice;
+using ::gfx::wrapNativeCommandList;
 
 }  // export namespace gfx

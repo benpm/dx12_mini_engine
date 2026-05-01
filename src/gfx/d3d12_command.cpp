@@ -335,3 +335,17 @@ void CommandList::copyTextureToBuffer(gfx::BufferHandle dst, uint64_t dOff, gfx:
 }
 
 }  // namespace gfxd3d12
+
+namespace gfx
+{
+std::unique_ptr<ICommandList> wrapNativeCommandList(IDevice* dev, void* nativeList)
+{
+    if (!dev || !nativeList) return nullptr;
+    if (dev->backend() != BackendKind::D3D12) {
+        throw std::runtime_error("wrapNativeCommandList: backend mismatch");
+    }
+    auto* d3dDev = static_cast<gfxd3d12::Device*>(dev);
+    auto* d3dList = static_cast<ID3D12GraphicsCommandList2*>(nativeList);
+    return std::make_unique<gfxd3d12::CommandList>(d3dDev, d3dList);
+}
+}  // namespace gfx

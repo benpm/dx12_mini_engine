@@ -12,6 +12,7 @@ module;
 export module render_graph;
 
 import common;
+export import gfx;
 
 namespace rg
 {
@@ -51,8 +52,12 @@ namespace rg
         virtual ID3D12Resource* getResource(ResourceHandle handle) = 0;
     };
 
+    // Pass execute callback. The first argument is a backend-agnostic
+    // gfx::ICommandList wrapper around the native list executing the graph;
+    // pass `cmd.nativeHandle()` for D3D12-direct work that hasn't been
+    // migrated yet.
     export using PassExecuteCallback =
-        std::function<void(ID3D12GraphicsCommandList2*, RenderGraphBuilder&)>;
+        std::function<void(gfx::ICommandList&, RenderGraphBuilder&)>;
 
     export class RenderGraph
     {
@@ -78,7 +83,7 @@ namespace rg
             PassExecuteCallback execute
         );
 
-        void execute(ID3D12GraphicsCommandList2* cmdList);
+        void execute(gfx::ICommandList& cmd);
 
         // External resources (like backbuffer, main depth)
         ResourceHandle importTexture(

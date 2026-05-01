@@ -75,8 +75,13 @@ namespace rg
         passes.push_back(std::move(pass));
     }
 
-    void RenderGraph::execute(ID3D12GraphicsCommandList2* cmdList)
+    void RenderGraph::execute(gfx::ICommandList& cmd)
     {
+        // For now the graph still emits ResourceBarrier directly via the
+        // native pointer. Migration of the internal barrier emission to
+        // cmd.barrier() happens once the imported resources are themselves
+        // gfx::TextureHandles (P12+).
+        auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmd.nativeHandle());
         for (auto& pass : passes) {
             // Handle transitions
             auto& barriers = pass.barriersScratch;
@@ -116,7 +121,7 @@ namespace rg
 
             // Execute pass
             BuilderImpl builder(*this, pass);
-            pass.execute(cmdList, builder);
+            pass.execute(cmd, builder);
         }
     }
 

@@ -230,8 +230,9 @@ void Application::render()
                 );
             },
             [&, shadowPassAddr = getPassCBAddress(1)](
-                ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+                gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
             ) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Shadow Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Shadow");
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -255,7 +256,8 @@ void Application::render()
                 );
                 builder.readTexture(hShadowMap);
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Cubemap Pass");
 
                 uint32_t cubemapBaseIdx =
@@ -402,8 +404,9 @@ void Application::render()
             builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
         },
         [&, gbufferPassAddr = getPassCBAddress(8)](
-            ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+            gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
         ) {
+            auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
             PROFILE_ZONE_NAMED("G-Buffer Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");
 
@@ -445,7 +448,8 @@ void Application::render()
                 builder.readTexture(hNormalRT);
                 builder.readTexture(hDepthBuffer);
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("SSAO Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: SSAO");
                 ssao.render(cmd, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
@@ -467,7 +471,8 @@ void Application::render()
             builder.readTexture(hCubemap);
             // SSAO blur RT is handled internally by SSAO for now, but we read it in shader
         },
-        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+        [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+            auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
             PROFILE_ZONE_NAMED("Scene Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Scene");
             // Clear to black — Rayleigh sky fills background in composite pass
@@ -530,8 +535,9 @@ void Application::render()
                 );
             },
             [&, scenePassAddr = getPassCBAddress(0)](
-                ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+                gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
             ) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Gizmo Pass");
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
@@ -605,7 +611,8 @@ void Application::render()
                 );
                 builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 cmd->SetPipelineState(gridPSO.Get());
@@ -632,7 +639,8 @@ void Application::render()
                 );
                 builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Outline Pass");
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -673,8 +681,9 @@ void Application::render()
                 idPass->cameraPos = cameraPos;
             },
             [&, idPassAddr = getPassCBAddress(9)](
-                ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder
+                gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
             ) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("ID Pass");
                 auto idRtv = picker.getRTV();
                 auto idDsv = picker.getDSV();
@@ -715,7 +724,8 @@ void Application::render()
                 );
                 builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Billboards Pass");
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -739,7 +749,8 @@ void Application::render()
                              )
             );
         },
-        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+        [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+            auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
             PROFILE_ZONE_NAMED("Bloom Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Bloom");
 
@@ -781,7 +792,8 @@ void Application::render()
                                  )
                 );
             },
-            [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+            [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("ImGui Pass");
                 this->renderImGui(cmd);
             }
@@ -794,13 +806,19 @@ void Application::render()
         [&](rg::RenderGraphBuilder& builder) {
             builder.readTexture(hBackBuffer, D3D12_RESOURCE_STATE_PRESENT);
         },
-        [&](ID3D12GraphicsCommandList2* cmd, rg::RenderGraphBuilder& builder) {
+        [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
+            (void)cmdRef;
             // Just for transition
         }
     );
 
     // Execute the graph
-    renderGraph.execute(cmdList.Get());
+    {
+        // Wrap the legacy ID3D12GraphicsCommandList2 in a gfx::ICommandList
+        // adapter so the render graph can speak the abstract interface.
+        auto cmdAdapter = gfx::wrapNativeCommandList(gfxDevice.get(), cmdList.Get());
+        renderGraph.execute(*cmdAdapter);
+    }
 
     this->lastFrameVertexCount = currentVertexCount;
     this->lastFrameDrawCalls = currentDrawCalls;

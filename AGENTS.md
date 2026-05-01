@@ -140,7 +140,9 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **Migration status (2026-05-01):**
 - P0 ✅ — gfx skeleton + D3D12 backend stubs landed.
 - P1 ✅ — `Application` owns `gfx::IDevice` + `gfx::ISwapChain`; `Window` no longer creates the device. Legacy `device`/`swapChain` ComPtrs are refcounted aliases of the gfx-owned natives so subsystem APIs that still take `ID3D12Device2*` keep working through P2-P13.
-- P2-P14 — pending. See plan file.
+- P3 ✅ — `rg::RenderGraph` callbacks take `gfx::ICommandList&` instead of `ID3D12GraphicsCommandList2*`. Pass lambdas extract the native pointer via `cmdRef.nativeHandle()`. The graph wraps the legacy `CommandQueue`-allocated raw list via `gfx::wrapNativeCommandList` so the engine doesn't yet need to dissolve `CommandQueue` into `gfx::IQueue`.
+- P2 — postponed until subsystem migration is further along (high-risk shader rewrite touches every PSO).
+- P4-P14 — pending. See plan file.
 
 **Bindless model**: a single global SRV/UAV heap (default 65k descriptors) and a single sampler heap; `IDevice::bindlessSrvIndex(handle)` returns the slot. Bindless root signature: `[16 root constants b0][CBV b1][CBV b2][SRV unbounded table][sampler unbounded table]`.
 

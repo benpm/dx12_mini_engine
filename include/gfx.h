@@ -180,4 +180,15 @@ class IDevice
 // this factory will switch on BackendKind.
 std::unique_ptr<IDevice> createDevice(BackendKind kind, const DeviceDesc& desc);
 
+// Wrap an externally-owned native command list (e.g. one allocated by the
+// legacy CommandQueue) in a gfx::ICommandList interface. The wrapper does NOT
+// take ownership of the native list — the caller remains responsible for its
+// lifetime, reset(), Close(), and submission. Used during incremental
+// migration so the render graph and subsystems can speak gfx::ICommandList
+// without the engine first dissolving CommandQueue. Removed once subsystem
+// migration completes.
+//
+// `nativeList` is an `ID3D12GraphicsCommandList2*` for the D3D12 backend.
+std::unique_ptr<ICommandList> wrapNativeCommandList(IDevice* dev, void* nativeList);
+
 }  // namespace gfx
