@@ -101,9 +101,9 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
     try {
         spdlog::info("Initializing window...");
+        Window::get()->useWarp = useWarp;
         Window::get()->initialize(
-            hInstance, "D3D12 Experiment", config.windowWidth, config.windowHeight, nCmdShow,
-            useWarp
+            hInstance, "D3D12 Experiment", config.windowWidth, config.windowHeight, nCmdShow
         );
         spdlog::info("Creating Application...");
         Application app;

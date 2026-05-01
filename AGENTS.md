@@ -82,7 +82,8 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 |----|----|
 | `math.ixx` | Re-exports math types from `include/math_types.h` |
 | `common.ixx` | `chkDX()` + Win32/HRESULT formatting helpers, `_deg` literals, pi constants. Re-exports `math` |
-| `window.ixx` | Singleton HWND + D3D12Device2 creation, adapter selection, callback-based render loop |
+| `window.ixx` | Singleton HWND + tearing detection. Device creation has moved to the `gfx` abstraction (see below). |
+| `gfx.ixx` | Backend-agnostic graphics abstraction (`gfx::IDevice`, `IQueue`, `ISwapChain`, `ICommandList`). Thin re-export of `include/gfx.h` for `import gfx;` clients. D3D12 backend is in `src/gfx/*.cpp`. |
 | `application.ixx` | Main Application class — orchestrates subsystems, render loop, input, UI |
 | `scene.ixx` | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading |
 | `bloom.ixx` | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs |
@@ -120,6 +121,32 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 * `include/d3dx12_clean.h` wraps `<directx/d3dx12.h>` (from DirectX-Headers vcpkg) with Clang warning suppression
 * `include/icons.h` defines Material Icons codepoints (`IconCP::*`), `iconUtf8()`, `iconCodepointFromName()`, `iconStr()` — included by `application.ixx`, `imgui_layer.cpp`, `application.cpp`
 * **Application public API is minimal** — only `update()`, `render()`, `runtimeConfig`, `cam`, `inputMap`, `keyboardID`, `applySceneData()`, `extractSceneData()` are public
+
+### Graphics abstraction (`gfx::`)
+
+The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API in `include/gfx.h` + `include/gfx_types.h` (re-exported via `src/modules/gfx.ixx`). The D3D12 backend lives in `src/gfx/`:
+
+| File | Purpose |
+|----|----|
+| `include/gfx_types.h` | POD types: handles (`TextureHandle`, `BufferHandle`, ...), enums (`Format`, `ResourceState`, ...), descriptor structs (`TextureDesc`, `GraphicsPipelineDesc`, ...), `Capabilities`. |
+| `include/gfx.h` | `IDevice`, `IQueue`, `ISwapChain`, `ICommandList` interfaces + `gfx::createDevice` factory. Plain header — usable from both module and non-module TUs. |
+| `src/modules/gfx.ixx` | Thin re-export wrapper for `import gfx;` clients. |
+| `src/gfx/d3d12_internal.h` | Private internal header for the D3D12 backend split: `Device`/`Queue`/`CommandList`/`SwapChain` class declarations, `BindlessHeap`, format/state conversion helpers. |
+| `src/gfx/d3d12_backend.cpp` | `Device` class + `gfx::createDevice` factory. |
+| `src/gfx/d3d12_command.cpp` | `Queue` + `CommandList` + `BindlessHeap` impl. |
+| `src/gfx/d3d12_swapchain.cpp` | `SwapChain` impl. |
+| `tests/gfx_tests.cpp` | Doctest smoke tests (WARP device, buffer/texture creation, fence sync, mock backend). |
+
+**Migration status (2026-05-01):**
+- P0 ✅ — gfx skeleton + D3D12 backend stubs landed.
+- P1 ✅ — `Application` owns `gfx::IDevice` + `gfx::ISwapChain`; `Window` no longer creates the device. Legacy `device`/`swapChain` ComPtrs are refcounted aliases of the gfx-owned natives so subsystem APIs that still take `ID3D12Device2*` keep working through P2-P13.
+- P2-P14 — pending. See plan file.
+
+**Bindless model**: a single global SRV/UAV heap (default 65k descriptors) and a single sampler heap; `IDevice::bindlessSrvIndex(handle)` returns the slot. Bindless root signature: `[16 root constants b0][CBV b1][CBV b2][SRV unbounded table][sampler unbounded table]`.
+
+**Capability gating**: `caps.raytracing`/`caps.meshShaders` queried at device init. RT calls (`createAccelStruct`, `traceRays`) throw on unsupported devices.
+
+**Escape hatch**: `IDevice::nativeHandle()` returns `ID3D12Device2*` (etc.). To be removed at P14 once subsystem migration completes.
 
 ### Subsystem architecture
 

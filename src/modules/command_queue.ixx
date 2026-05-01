@@ -19,6 +19,14 @@ export class CommandQueue
 
     CommandQueue() = default;
     CommandQueue(ComPtr<ID3D12Device2> device, D3D12_COMMAND_LIST_TYPE type);
+    // Adopt an existing ID3D12CommandQueue (e.g. one owned by gfx::IDevice). The
+    // queue itself is shared; this CommandQueue still owns its own fence and
+    // allocator/list pools.
+    CommandQueue(
+        ComPtr<ID3D12Device2> device,
+        ComPtr<ID3D12CommandQueue> existingQueue,
+        D3D12_COMMAND_LIST_TYPE type
+    );
 
     ComPtr<ID3D12GraphicsCommandList2> getCmdList();
     uint64_t execCmdList(ComPtr<ID3D12GraphicsCommandList2> cmdList);

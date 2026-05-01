@@ -5,6 +5,7 @@ module;
 #include <wrl.h>
 #include <cassert>
 #include <cstdint>
+#include <utility>
 
 module command_queue;
 
@@ -23,6 +24,19 @@ CommandQueue::CommandQueue(ComPtr<ID3D12Device2> device, D3D12_COMMAND_LIST_TYPE
     chkDX(device->CreateFence(this->fenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&this->fence)));
     this->fenceEvent = ::CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
+    assert(this->fenceEvent && "Failed to create fence event handle.");
+}
+
+CommandQueue::CommandQueue(
+    ComPtr<ID3D12Device2> device,
+    ComPtr<ID3D12CommandQueue> existingQueue,
+    D3D12_COMMAND_LIST_TYPE type
+)
+    : device(device), fenceValue(0), type(type)
+{
+    this->queue = std::move(existingQueue);
+    chkDX(device->CreateFence(this->fenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&this->fence)));
+    this->fenceEvent = ::CreateEvent(nullptr, FALSE, FALSE, nullptr);
     assert(this->fenceEvent && "Failed to create fence event handle.");
 }
 

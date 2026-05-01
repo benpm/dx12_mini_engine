@@ -95,17 +95,30 @@ static vec4 hslToLinear(float hue, float sat, float light)
 // ---------------------------------------------------------------------------
 
 Application::Application()
-    : inputMap(inputManager, "input_map"), renderGraph(Window::get()->device.Get())
+    : inputMap(inputManager, "input_map"),
+      // gfx device must exist before renderGraph captures the native pointer.
+      gfxDevice(([] {
+          auto* w = Window::get();
+          gfx::DeviceDesc dd{};
+          dd.useWarp = w->useWarp;
+#if defined(_DEBUG)
+          dd.enableDebugLayer = ::IsDebuggerPresent() != 0;
+#endif
+          return gfx::createDevice(gfx::BackendKind::D3D12, dd);
+      })()),
+      renderGraph(static_cast<ID3D12Device2*>(gfxDevice->nativeHandle()))
 {
     spdlog::info("Application constructor start");
 
-    // Populate from Window singleton (replaces old registerApp)
     auto* win = Window::get();
     this->hWnd = win->hWnd;
-    this->device = win->device;
     this->tearingSupported = win->tearingSupported;
     this->clientWidth = win->width;
     this->clientHeight = win->height;
+
+    // Cache the native ID3D12Device2 pointer for legacy subsystems. The gfx
+    // device retains ownership; ComPtr here just keeps a refcounted ref alive.
+    this->device = static_cast<ID3D12Device2*>(this->gfxDevice->nativeHandle());
 
     // Register callbacks so WndProc can drive the render loop without importing application
     win->callbackCtx = this;
@@ -130,13 +143,29 @@ Application::Application()
         0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
     );
 
-    spdlog::info("Creating CommandQueue");
-    this->cmdQueue = CommandQueue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    spdlog::info("Creating CommandQueue (adopting gfx queue)");
+    {
+        auto* gfxQueueNative =
+            static_cast<ID3D12CommandQueue*>(this->gfxDevice->graphicsQueue()->nativeHandle());
+        this->cmdQueue = CommandQueue(
+            this->device, ComPtr<ID3D12CommandQueue>(gfxQueueNative),
+            D3D12_COMMAND_LIST_TYPE_DIRECT
+        );
+    }
 
-    spdlog::info("Creating SwapChain");
-    this->swapChain = this->createSwapChain();
-
-    this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
+    spdlog::info("Creating SwapChain via gfx");
+    {
+        gfx::SwapChainDesc sd{};
+        sd.nativeWindowHandle = this->hWnd;
+        sd.width = this->clientWidth;
+        sd.height = this->clientHeight;
+        sd.bufferCount = this->nBuffers;
+        sd.format = gfx::Format::RGBA8Unorm;
+        sd.allowTearing = this->tearingSupported;
+        this->gfxSwapChain = this->gfxDevice->createSwapChain(sd);
+    }
+    this->swapChain = static_cast<IDXGISwapChain4*>(this->gfxSwapChain->nativeHandle());
+    this->curBackBufIdx = this->gfxSwapChain->currentIndex();
 
     spdlog::info("Creating rtvHeap");
     this->rtvHeap = this->createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, this->nBuffers);
@@ -398,39 +427,6 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
 // ---------------------------------------------------------------------------
 // Swap chain / descriptor heaps
 // ---------------------------------------------------------------------------
-
-ComPtr<IDXGISwapChain4> Application::createSwapChain()
-{
-    ComPtr<IDXGISwapChain4> dxgiSwapChain4;
-    ComPtr<IDXGIFactory4> dxgiFactory4;
-    UINT createFactoryFlags = 0;
-#if defined(_DEBUG)
-    createFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
-#endif
-    chkDX(CreateDXGIFactory2(createFactoryFlags, IID_PPV_ARGS(&dxgiFactory4)));
-
-    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-    swapChainDesc.Width = this->clientWidth;
-    swapChainDesc.Height = this->clientHeight;
-    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapChainDesc.Stereo = FALSE;
-    swapChainDesc.SampleDesc = { 1, 0 };
-    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.BufferCount = this->nBuffers;
-    swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-    swapChainDesc.Flags = this->tearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
-
-    ComPtr<IDXGISwapChain1> swapChain1;
-    chkDX(dxgiFactory4->CreateSwapChainForHwnd(
-        this->cmdQueue.queue.Get(), this->hWnd, &swapChainDesc, nullptr, nullptr, &swapChain1
-    ));
-    chkDX(dxgiFactory4->MakeWindowAssociation(this->hWnd, DXGI_MWA_NO_ALT_ENTER));
-    chkDX(swapChain1.As(&dxgiSwapChain4));
-    this->curBackBufIdx = dxgiSwapChain4->GetCurrentBackBufferIndex();
-    return dxgiSwapChain4;
-}
 
 ComPtr<ID3D12DescriptorHeap>
 Application::createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors)

@@ -812,10 +812,9 @@ void Application::render()
     // all GPU zones in the queue, ensuring Collect() reads valid timestamp data.
     PROFILE_GPU_NEW_FRAME(g_tracyD3d12Ctx);
 
-    UINT syncInterval = (this->vsync && !this->runtimeConfig.skipImGui) ? 1 : 0;
-    UINT presentFlags = (this->tearingSupported && !this->vsync) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    chkDX(this->swapChain->Present(syncInterval, presentFlags));
-    this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
+    const bool presentVsync = this->vsync && !this->runtimeConfig.skipImGui;
+    this->gfxSwapChain->present(presentVsync);
+    this->curBackBufIdx = this->gfxSwapChain->currentIndex();
     PROFILE_FRAME_MARK;
 
     if (this->runtimeConfig.screenshotFrame > 0) {

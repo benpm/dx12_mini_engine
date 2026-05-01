@@ -430,13 +430,8 @@ void Application::onResize(uint32_t width, uint32_t height)
         for (int i = 0; i < this->nBuffers; ++i) {
             this->backBuffers[i].Reset();
         }
-        DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
-        chkDX(this->swapChain->GetDesc(&swapChainDesc));
-        chkDX(this->swapChain->ResizeBuffers(
-            this->nBuffers, this->clientWidth, this->clientHeight, swapChainDesc.BufferDesc.Format,
-            swapChainDesc.Flags
-        ));
-        this->curBackBufIdx = this->swapChain->GetCurrentBackBufferIndex();
+        this->gfxSwapChain->resize(this->clientWidth, this->clientHeight);
+        this->curBackBufIdx = this->gfxSwapChain->currentIndex();
         this->updateRenderTargetViews(this->rtvHeap);
         this->viewport = CD3DX12_VIEWPORT(
             0.0f, 0.0f, static_cast<float>(this->clientWidth),

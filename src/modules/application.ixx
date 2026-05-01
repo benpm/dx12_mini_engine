@@ -38,6 +38,7 @@ export import gizmo;
 export import render_graph;
 export import lua_scripting;
 export import gbuffer;
+export import gfx;
 
 // Global application data and state
 export namespace app_slots
@@ -95,6 +96,12 @@ export class Application
     std::unordered_set<MouseButton> pressedMouseButtons;
     vec2 mousePos;
     vec2 mouseDelta;
+    // gfx abstraction owns device + swap chain (P1). Legacy ComPtr fields below
+    // are obtained via the gfx native handles and remain in place during
+    // P2-P13 subsystem migration so existing subsystem signatures keep working.
+    std::unique_ptr<gfx::IDevice> gfxDevice;
+    std::unique_ptr<gfx::ISwapChain> gfxSwapChain;
+
     Microsoft::WRL::ComPtr<ID3D12Device2> device;
     CommandQueue cmdQueue;
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain;
@@ -276,7 +283,6 @@ export class Application
         FLOAT depth = 1.0f
     );
     void resizeDepthBuffer(uint32_t width, uint32_t height);
-    Microsoft::WRL::ComPtr<IDXGISwapChain4> createSwapChain();
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
     createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors);
     void updateRenderTargetViews(Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap);

@@ -238,6 +238,9 @@ add_executable(main
     src/gbuffer.cpp
     src/lua_scripting.cpp
     src/lua_scripting_impl.cpp
+    src/gfx/d3d12_backend.cpp
+    src/gfx/d3d12_command.cpp
+    src/gfx/d3d12_swapchain.cpp
     resources.rc
 )
 target_sources(main
@@ -270,6 +273,7 @@ target_sources(main
     src/modules/lua_scripting.ixx
     src/modules/application.ixx
     src/modules/window.ixx
+    src/modules/gfx.ixx
 )
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
@@ -470,4 +474,41 @@ if(BUILD_TESTING)
         target_compile_options(lua_scripting_tests PRIVATE -Wall)
     endif()
     doctest_discover_tests(lua_scripting_tests)
+
+    # gfx abstraction smoke tests (D3D12 backend on WARP)
+    add_executable(gfx_tests
+        tests/gfx_tests.cpp
+        src/gfx/d3d12_backend.cpp
+        src/gfx/d3d12_command.cpp
+        src/gfx/d3d12_swapchain.cpp
+    )
+    target_compile_features(gfx_tests PRIVATE cxx_std_23)
+    set_target_properties(gfx_tests PROPERTIES CXX_SCAN_FOR_MODULES ON)
+    target_include_directories(gfx_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_sources(gfx_tests
+        PRIVATE
+        FILE_SET cxx_modules TYPE CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/modules
+        FILES
+        src/modules/math.ixx
+        src/modules/common.ixx
+        src/modules/gfx.ixx
+    )
+    target_link_libraries(gfx_tests PRIVATE
+        doctest::doctest
+        spdlog::spdlog
+        Microsoft::DirectXTK12
+        Microsoft::DirectX-Headers
+        d3d12.lib dxgi.lib dxguid.lib
+    )
+    target_compile_definitions(gfx_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+        target_compile_options(gfx_tests PRIVATE
+            -Wall -Wno-c++98-compat -fcolor-diagnostics
+            $<$<CONFIG:Debug>:-O0 -g>
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+        )
+    endif()
+    doctest_discover_tests(gfx_tests)
 endif()

@@ -1,8 +1,6 @@
 module;
 
-#include <d3d12.h>
 #include <Windows.h>
-#include <wrl.h>
 #include <cstdint>
 #include <string>
 
@@ -10,15 +8,13 @@ export module window;
 
 import common;
 
-using Microsoft::WRL::ComPtr;
-
 export class Window
 {
    public:
-    ComPtr<ID3D12Device2> device;
     HWND hWnd = nullptr;
     RECT windowRect{};
     bool tearingSupported = false;
+    bool useWarp = false;  // GPU adapter preference; consumed by Application's gfx device init.
     uint32_t width = 0, height = 0;
     bool doExit = false;
 
@@ -34,8 +30,7 @@ export class Window
         const std::string& title,
         uint32_t width,
         uint32_t height,
-        int nCmdShow,
-        bool useWarp = false
+        int nCmdShow
     );
 
     static Window* get()

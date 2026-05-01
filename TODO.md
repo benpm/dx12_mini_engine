@@ -15,6 +15,8 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
+- [ ] Create a complete abstraction over all D3D12 / DirectX
+- [ ] Use flecs
 - [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
   - [x] Frustum Culling (CPU-side bounding sphere)
   - [ ] Occlusion Culling (Hi-Z or Hardware Queries)
