@@ -141,8 +141,25 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - P0 ✅ — gfx skeleton + D3D12 backend stubs landed.
 - P1 ✅ — `Application` owns `gfx::IDevice` + `gfx::ISwapChain`; `Window` no longer creates the device. Legacy `device`/`swapChain` ComPtrs are refcounted aliases of the gfx-owned natives so subsystem APIs that still take `ID3D12Device2*` keep working through P2-P13.
 - P3 ✅ — `rg::RenderGraph` callbacks take `gfx::ICommandList&` instead of `ID3D12GraphicsCommandList2*`. Pass lambdas extract the native pointer via `cmdRef.nativeHandle()`. The graph wraps the legacy `CommandQueue`-allocated raw list via `gfx::wrapNativeCommandList` so the engine doesn't yet need to dissolve `CommandQueue` into `gfx::IQueue`.
-- P2 — postponed until subsystem migration is further along (high-risk shader rewrite touches every PSO).
-- P4-P14 — pending. See plan file.
+- P4 ✅ — `GBuffer::createResources/resize/transition` take `gfx::IDevice&` / `gfx::ICommandList&`.
+- P5 ✅ — `ShadowRenderer::createResources/reloadPSO/render` take gfx types.
+- P6 ✅ — `SsaoRenderer::createResources/resize/render/transitionResource` take gfx types.
+- P7 ✅ — `BloomRenderer::createResources/resize/render/reloadPipelines` take gfx types. PSO build extracted to a file-static helper.
+- P8 ✅ — `OutlineRenderer::createResources/reloadPSO/render` take gfx types.
+- P9 ✅ — `ObjectPicker::createResources/resize/copyPickedPixel` take gfx types.
+- P10 ✅ — `BillboardRenderer::init/render` take gfx types. `ImGuiLayer::init` takes `gfx::IDevice&`.
+- P11 — pending; folds into P12 because `GizmoState::init` calls `Scene::loadTeapot` etc. which still take `ID3D12Device2*` + `CommandQueue&`.
+- P2 (bindless shader rewrite) — postponed; high-risk and orthogonal to subsystem signature migration.
+- P12-P14 — pending. See plan file.
+
+**What still leaks D3D12 in subsystems (all deferred to P12+):**
+- `ComPtr<ID3D12Resource>` data members for owned textures/buffers.
+- `ComPtr<ID3D12DescriptorHeap>` data members + `D3D12_CPU/GPU_DESCRIPTOR_HANDLE` accessor returns.
+- Root signatures, PSOs, and shader bytecode passed as `ID3D12RootSignature*` / `D3D12_SHADER_BYTECODE`.
+- `D3D12_RESOURCE_STATES` on transition/barrier-emitting methods.
+- `D3D12_VERTEX_BUFFER_VIEW` / `D3D12_INDEX_BUFFER_VIEW` parameters.
+
+These all migrate together when imported textures become `gfx::TextureHandle`s and the bindless model lands.
 
 **Bindless model**: a single global SRV/UAV heap (default 65k descriptors) and a single sampler heap; `IDevice::bindlessSrvIndex(handle)` returns the slot. Bindless root signature: `[16 root constants b0][CBV b1][CBV b2][SRV unbounded table][sampler unbounded table]`.
 
