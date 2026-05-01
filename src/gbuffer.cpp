@@ -8,14 +8,16 @@ module gbuffer;
 
 using Microsoft::WRL::ComPtr;
 
-void GBuffer::createResources(ID3D12Device2* device, uint32_t width, uint32_t height)
+void GBuffer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = nativeDev(dev);
     createHeaps(device);
     createTextures(device, width, height);
 }
 
-void GBuffer::resize(ID3D12Device2* device, uint32_t width, uint32_t height)
+void GBuffer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = nativeDev(dev);
     for (int i = 0; i < Count; ++i) {
         resources[i].Reset();
     }
@@ -44,11 +46,12 @@ D3D12_GPU_DESCRIPTOR_HANDLE GBuffer::getSrv(TextureType type) const
 }
 
 void GBuffer::transition(
-    ID3D12GraphicsCommandList2* cmd,
+    gfx::ICommandList& cmdRef,
     D3D12_RESOURCE_STATES before,
     D3D12_RESOURCE_STATES after
 )
 {
+    auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     D3D12_RESOURCE_BARRIER barriers[Count];
     for (int i = 0; i < Count; ++i) {
         barriers[i] = CD3DX12_RESOURCE_BARRIER::Transition(resources[i].Get(), before, after);

@@ -286,7 +286,7 @@ bool Application::loadContent()
         device.Get(), rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
         { g_outline_ps, sizeof(g_outline_ps) }
     );
-    gbuffer.createResources(device.Get(), clientWidth, clientHeight);
+    gbuffer.createResources(*gfxDevice, clientWidth, clientHeight);
     picker.createResources(device.Get(), clientWidth, clientHeight, rootSignature);
 
     billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
@@ -441,7 +441,7 @@ void Application::onResize(uint32_t width, uint32_t height)
             0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
-        gbuffer.resize(device.Get(), clientWidth, height);
+        gbuffer.resize(*gfxDevice, clientWidth, height);
         bloom.resize(device.Get(), clientWidth, height);
         picker.resize(device, clientWidth, height);
         ssao.resize(

@@ -9,6 +9,7 @@ module;
 export module gbuffer;
 
 export import common;
+export import gfx;
 
 export class GBuffer
 {
@@ -24,15 +25,17 @@ export class GBuffer
 
     Microsoft::WRL::ComPtr<ID3D12Resource> resources[Count];
 
-    void createResources(ID3D12Device2* device, uint32_t width, uint32_t height);
-    void resize(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
+    void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     D3D12_CPU_DESCRIPTOR_HANDLE getRtv(TextureType type) const;
     D3D12_CPU_DESCRIPTOR_HANDLE getSrvCpu(TextureType type) const;
     D3D12_GPU_DESCRIPTOR_HANDLE getSrv(TextureType type) const;
 
+    // before/after stay as D3D12_RESOURCE_STATES until the imported textures
+    // are themselves gfx::TextureHandles (P12+).
     void transition(
-        ID3D12GraphicsCommandList2* cmd,
+        gfx::ICommandList& cmdRef,
         D3D12_RESOURCE_STATES before,
         D3D12_RESOURCE_STATES after
     );
@@ -45,4 +48,9 @@ export class GBuffer
    private:
     void createHeaps(ID3D12Device2* device);
     void createTextures(ID3D12Device2* device, uint32_t width, uint32_t height);
+
+    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
+    {
+        return static_cast<ID3D12Device2*>(dev.nativeHandle());
+    }
 };
