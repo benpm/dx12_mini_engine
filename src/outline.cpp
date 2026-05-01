@@ -23,22 +23,23 @@ static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
 };
 
 void OutlineRenderer::createResources(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
     D3D12_SHADER_BYTECODE vs,
     D3D12_SHADER_BYTECODE ps
 )
 {
-    reloadPSO(device, rootSig, vs, ps);
+    reloadPSO(dev, rootSig, vs, ps);
 }
 
 void OutlineRenderer::reloadPSO(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
     D3D12_SHADER_BYTECODE vs,
     D3D12_SHADER_BYTECODE ps
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
         vs = CD3DX12_SHADER_BYTECODE(g_outline_vs, sizeof(g_outline_vs));
     }
@@ -76,7 +77,7 @@ void OutlineRenderer::reloadPSO(
 }
 
 void OutlineRenderer::render(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
+    gfx::ICommandList& cmdRef,
     const OutlineRenderContext& ctx,
     const std::vector<DrawCmd>& drawCmds,
     const std::vector<flecs::entity>& drawIndexToEntity,
@@ -84,6 +85,7 @@ void OutlineRenderer::render(
     flecs::entity selectedEntity
 )
 {
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     cmdList->SetPipelineState(pso.Get());
     cmdList->SetGraphicsRootSignature(ctx.rootSig);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

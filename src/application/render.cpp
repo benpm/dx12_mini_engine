@@ -640,7 +640,6 @@ void Application::render()
                 builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
-                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Outline Pass");
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -663,7 +662,7 @@ void Application::render()
                 outlineCtx.scissorRect = &this->scissorRect;
 
                 outline.render(
-                    cmd, outlineCtx, scene.drawCmds, scene.drawIndexToEntity, outlineHovered,
+                    cmdRef, outlineCtx, scene.drawCmds, scene.drawIndexToEntity, outlineHovered,
                     selectedEntity
                 );
             }
@@ -708,7 +707,7 @@ void Application::render()
                     );
                 }
                 picker.copyPickedPixel(
-                    cmd, static_cast<uint32_t>(mousePos.x), static_cast<uint32_t>(mousePos.y)
+                    cmdRef, static_cast<uint32_t>(mousePos.x), static_cast<uint32_t>(mousePos.y)
                 );
             }
         );
@@ -732,7 +731,7 @@ void Application::render()
                 cmd->RSSetViewports(1, &this->viewport);
                 cmd->RSSetScissorRects(1, &this->scissorRect);
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-                billboards.render(cmd, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
+                billboards.render(cmdRef, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
             }
         );
     }

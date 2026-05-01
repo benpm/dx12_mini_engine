@@ -14,12 +14,13 @@ module object_picking;
 using Microsoft::WRL::ComPtr;
 
 void ObjectPicker::createResources(
-    ComPtr<ID3D12Device2> device,
+    gfx::IDevice& dev,
     uint32_t width,
     uint32_t height,
     ComPtr<ID3D12RootSignature> rootSig
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     width_ = width;
     height_ = height;
 
@@ -126,8 +127,9 @@ void ObjectPicker::createResources(
     }
 }
 
-void ObjectPicker::resize(ComPtr<ID3D12Device2> device, uint32_t width, uint32_t height)
+void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     if (width == 0 || height == 0 || (width == width_ && height == height_)) {
         return;
     }
@@ -191,11 +193,12 @@ D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getDSV() const
 }
 
 void ObjectPicker::copyPickedPixel(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
+    gfx::ICommandList& cmdRef,
     uint32_t x,
     uint32_t y
 )
 {
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     if (x >= width_ || y >= height_) {
         return;
     }

@@ -87,12 +87,13 @@ void ImGuiLayer::styleColorsDracula()
 
 void ImGuiLayer::init(
     HWND hwnd,
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12CommandQueue* queue,
     UINT frameCount,
     DXGI_FORMAT rtvFormat
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;

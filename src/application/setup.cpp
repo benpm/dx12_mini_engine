@@ -283,13 +283,13 @@ bool Application::loadContent()
     );
     bloom.createResources(*gfxDevice, clientWidth, clientHeight);
     outline.createResources(
-        device.Get(), rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
+        *gfxDevice, rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
         { g_outline_ps, sizeof(g_outline_ps) }
     );
     gbuffer.createResources(*gfxDevice, clientWidth, clientHeight);
-    picker.createResources(device.Get(), clientWidth, clientHeight, rootSignature);
+    picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature);
 
-    billboards.init(device.Get(), cmdQueue.queue.Get(), L"resources/icons/light.png");
+    billboards.init(*gfxDevice, cmdQueue.queue.Get(), L"resources/icons/light.png");
     gizmo.init(scene, device.Get(), cmdQueue);
 
     resizeDepthBuffer(clientWidth, clientHeight);
@@ -443,7 +443,7 @@ void Application::onResize(uint32_t width, uint32_t height)
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         gbuffer.resize(*gfxDevice, clientWidth, height);
         bloom.resize(*gfxDevice, clientWidth, height);
-        picker.resize(device, clientWidth, height);
+        picker.resize(*gfxDevice, clientWidth, height);
         ssao.resize(
             *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal].Get(),
             depthBuffer.Get(), scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,

@@ -9,6 +9,7 @@ export module billboard;
 
 import common;
 export import math;
+export import gfx;
 
 export struct BillboardInstance
 {
@@ -34,10 +35,10 @@ export class BillboardRenderer
     uint32_t instanceCount = 0;
     float spriteSize = 0.35f;
 
-    void init(ID3D12Device2* device, ID3D12CommandQueue* queue, const wchar_t* texturePath);
+    void init(gfx::IDevice& dev, ID3D12CommandQueue* queue, const wchar_t* texturePath);
     void updateInstances(const vec4* lightPos, const vec4* lightColor, uint32_t count);
     void render(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         const mat4& viewProj,
         const vec3& cameraPos
     );

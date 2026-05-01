@@ -31,11 +31,12 @@ namespace
 }  // namespace
 
 void BillboardRenderer::init(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12CommandQueue* queue,
     const wchar_t* texturePath
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
     if (FAILED(device->CheckFeatureSupport(
@@ -203,11 +204,12 @@ void BillboardRenderer::updateInstances(
 }
 
 void BillboardRenderer::render(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
+    gfx::ICommandList& cmdRef,
     const mat4& viewProj,
     const vec3& cameraPos
 )
 {
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     if (instanceCount == 0) {
         return;
     }

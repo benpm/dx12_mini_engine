@@ -212,7 +212,7 @@ Application::Application()
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
-        hWnd, device.Get(), cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
+        hWnd, *gfxDevice, cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
     );
 
     // Fullscreen applied later via applyConfig (after message loop starts).
@@ -656,7 +656,7 @@ void Application::update()
                 D3D12_SHADER_BYTECODE ps =
                     psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
                            : D3D12_SHADER_BYTECODE{};
-                outline.reloadPSO(device.Get(), rootSignature.Get(), vs, ps);
+                outline.reloadPSO(*gfxDevice, rootSignature.Get(), vs, ps);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (outline): {}", e.what());
             }

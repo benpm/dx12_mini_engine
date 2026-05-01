@@ -12,6 +12,7 @@ export module outline;
 export import scene;
 export import ecs_components;
 export import common;
+export import gfx;
 
 export struct OutlineRenderContext
 {
@@ -35,21 +36,21 @@ export class OutlineRenderer
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
 
     void createResources(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         ID3D12RootSignature* rootSig,
         D3D12_SHADER_BYTECODE vs,
         D3D12_SHADER_BYTECODE ps
     );
 
     void reloadPSO(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         ID3D12RootSignature* rootSig,
         D3D12_SHADER_BYTECODE vs,
         D3D12_SHADER_BYTECODE ps
     );
 
     void render(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         const OutlineRenderContext& ctx,
         const std::vector<DrawCmd>& drawCmds,
         const std::vector<flecs::entity>& drawIndexToEntity,

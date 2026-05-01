@@ -8,6 +8,7 @@ module;
 export module imgui_layer;
 
 import common;
+export import gfx;
 
 using Microsoft::WRL::ComPtr;
 
@@ -23,7 +24,7 @@ export class ImGuiLayer
 
     void init(
         HWND hwnd,
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         ID3D12CommandQueue* queue,
         UINT frameCount,
         DXGI_FORMAT rtvFormat

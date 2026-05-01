@@ -9,6 +9,7 @@ module;
 export module object_picking;
 
 import common;
+export import gfx;
 
 using Microsoft::WRL::ComPtr;
 
@@ -18,12 +19,12 @@ export class ObjectPicker
     static constexpr uint32_t readbackRingSize = 3;
 
     void createResources(
-        ComPtr<ID3D12Device2> device,
+        gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
         ComPtr<ID3D12RootSignature> rootSig
     );
-    void resize(ComPtr<ID3D12Device2> device, uint32_t width, uint32_t height);
+    void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     // Read back the result from a previously submitted copy once its fence is complete.
     void readPickResult(uint64_t completedFenceValue);
@@ -32,7 +33,7 @@ export class ObjectPicker
     void setPendingReadbackFence(uint64_t fenceValue);
 
     // Copy the pixel at (x, y) from the ID RT to the readback buffer
-    void copyPickedPixel(ComPtr<ID3D12GraphicsCommandList2> cmdList, uint32_t x, uint32_t y);
+    void copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32_t y);
 
     D3D12_CPU_DESCRIPTOR_HANDLE getRTV() const;
     D3D12_CPU_DESCRIPTOR_HANDLE getDSV() const;
