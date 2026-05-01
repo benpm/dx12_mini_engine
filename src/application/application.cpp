@@ -676,7 +676,7 @@ void Application::update()
                              : D3D12_SHADER_BYTECODE{};
                 };
                 bloom.reloadPipelines(
-                    device.Get(), bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx),
+                    *gfxDevice, bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx),
                     bc(bloomUpIdx), bc(bloomCompIdx)
                 );
             } catch (const std::exception& e) {

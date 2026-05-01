@@ -281,7 +281,7 @@ bool Application::loadContent()
         CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader)), scene.sceneSrvHeap.Get(),
         scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotShadow)
     );
-    bloom.createResources(device.Get(), clientWidth, clientHeight);
+    bloom.createResources(*gfxDevice, clientWidth, clientHeight);
     outline.createResources(
         device.Get(), rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
         { g_outline_ps, sizeof(g_outline_ps) }
@@ -442,7 +442,7 @@ void Application::onResize(uint32_t width, uint32_t height)
         );
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         gbuffer.resize(*gfxDevice, clientWidth, height);
-        bloom.resize(device.Get(), clientWidth, height);
+        bloom.resize(*gfxDevice, clientWidth, height);
         picker.resize(device, clientWidth, height);
         ssao.resize(
             *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal].Get(),

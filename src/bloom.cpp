@@ -12,6 +12,20 @@ module bloom;
 
 using Microsoft::WRL::ComPtr;
 
+static void reloadBloomPipelinesNative(
+    ID3D12Device2* device,
+    ID3D12RootSignature* rootSig,
+    D3D12_SHADER_BYTECODE fullscreenVS,
+    D3D12_SHADER_BYTECODE prefilterPS,
+    D3D12_SHADER_BYTECODE downsamplePS,
+    D3D12_SHADER_BYTECODE upsamplePS,
+    D3D12_SHADER_BYTECODE compositePS,
+    ComPtr<ID3D12PipelineState>& outPrefilter,
+    ComPtr<ID3D12PipelineState>& outDownsample,
+    ComPtr<ID3D12PipelineState>& outUpsample,
+    ComPtr<ID3D12PipelineState>& outComposite
+);
+
 static void transitionResource(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     ComPtr<ID3D12Resource> resource,
@@ -155,21 +169,26 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
         ));
     }
 
-    reloadPipelines(device, {}, {}, {}, {}, {});
+    reloadBloomPipelinesNative(
+        device, bloomRootSignature.Get(), {}, {}, {}, {}, {}, prefilterPSO, downsamplePSO,
+        upsamplePSO, compositePSO
+    );
 }
 
 // ---------------------------------------------------------------------------
 // BloomRenderer::createResources / resize
 // ---------------------------------------------------------------------------
 
-void BloomRenderer::createResources(ID3D12Device2* device, uint32_t width, uint32_t height)
+void BloomRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = nativeDev(dev);
     createPipelines(device);
     createTexturesAndHeaps(device, width, height);
 }
 
-void BloomRenderer::resize(ID3D12Device2* device, uint32_t width, uint32_t height)
+void BloomRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = nativeDev(dev);
     hdrRenderTarget.Reset();
     for (auto& m : bloomMips) {
         m.Reset();
@@ -183,13 +202,18 @@ void BloomRenderer::resize(ID3D12Device2* device, uint32_t width, uint32_t heigh
 // BloomRenderer::reloadPipelines
 // ---------------------------------------------------------------------------
 
-void BloomRenderer::reloadPipelines(
+static void reloadBloomPipelinesNative(
     ID3D12Device2* device,
+    ID3D12RootSignature* rootSig,
     D3D12_SHADER_BYTECODE fullscreenVS,
     D3D12_SHADER_BYTECODE prefilterPS,
     D3D12_SHADER_BYTECODE downsamplePS,
     D3D12_SHADER_BYTECODE upsamplePS,
-    D3D12_SHADER_BYTECODE compositePS
+    D3D12_SHADER_BYTECODE compositePS,
+    ComPtr<ID3D12PipelineState>& outPrefilter,
+    ComPtr<ID3D12PipelineState>& outDownsample,
+    ComPtr<ID3D12PipelineState>& outUpsample,
+    ComPtr<ID3D12PipelineState>& outComposite
 )
 {
     auto resolve = [](D3D12_SHADER_BYTECODE bc, const BYTE* def, size_t defSize) {
@@ -204,7 +228,7 @@ void BloomRenderer::reloadPipelines(
     auto createPSO = [&](D3D12_SHADER_BYTECODE ps, DXGI_FORMAT rtFormat,
                          bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-        desc.pRootSignature = bloomRootSignature.Get();
+        desc.pRootSignature = rootSig;
         desc.VS = vs;
         desc.PS = ps;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
@@ -232,10 +256,25 @@ void BloomRenderer::reloadPipelines(
     };
 
     const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
-    prefilterPSO = createPSO(pre, hdrFormat, false);
-    downsamplePSO = createPSO(down, hdrFormat, false);
-    upsamplePSO = createPSO(up, hdrFormat, true);
-    compositePSO = createPSO(comp, DXGI_FORMAT_R8G8B8A8_UNORM, false);
+    outPrefilter = createPSO(pre, hdrFormat, false);
+    outDownsample = createPSO(down, hdrFormat, false);
+    outUpsample = createPSO(up, hdrFormat, true);
+    outComposite = createPSO(comp, DXGI_FORMAT_R8G8B8A8_UNORM, false);
+}
+
+void BloomRenderer::reloadPipelines(
+    gfx::IDevice& dev,
+    D3D12_SHADER_BYTECODE fullscreenVS,
+    D3D12_SHADER_BYTECODE prefilterPS,
+    D3D12_SHADER_BYTECODE downsamplePS,
+    D3D12_SHADER_BYTECODE upsamplePS,
+    D3D12_SHADER_BYTECODE compositePS
+)
+{
+    reloadBloomPipelinesNative(
+        nativeDev(dev), bloomRootSignature.Get(), fullscreenVS, prefilterPS, downsamplePS,
+        upsamplePS, compositePS, prefilterPSO, downsamplePSO, upsamplePSO, compositePSO
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +282,7 @@ void BloomRenderer::reloadPipelines(
 // ---------------------------------------------------------------------------
 
 void BloomRenderer::render(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
+    gfx::ICommandList& cmdRef,
     ComPtr<ID3D12Resource> backBuffer,
     D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
     uint32_t width,
@@ -254,6 +293,7 @@ void BloomRenderer::render(
     const SkyParams& sky
 )
 {
+    auto* cmdList = nativeCmd(cmdRef);
     ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());

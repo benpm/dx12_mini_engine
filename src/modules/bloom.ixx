@@ -8,6 +8,7 @@ module;
 export module bloom;
 
 import common;
+export import gfx;
 
 using Microsoft::WRL::ComPtr;
 
@@ -31,10 +32,10 @@ export class BloomRenderer
     ComPtr<ID3D12PipelineState> compositePSO;
 
     // Creates textures, heaps, root sig, and all four PSOs
-    void createResources(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     // Re-creates textures and heaps at new size (PSOs unchanged)
-    void resize(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     // Runs the full bloom + composite pass.
     // backBuffer must be in PRESENT state on entry; leaves it in RENDER_TARGET state.
@@ -49,7 +50,7 @@ export class BloomRenderer
     };
 
     void render(
-        ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         ComPtr<ID3D12Resource> backBuffer,
         D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
         uint32_t width,
@@ -62,7 +63,7 @@ export class BloomRenderer
 
     // Recreate PSOs with new shader bytecodes. Null bytecodes fall back to embedded defaults.
     void reloadPipelines(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         D3D12_SHADER_BYTECODE fullscreenVS,
         D3D12_SHADER_BYTECODE prefilterPS,
         D3D12_SHADER_BYTECODE downsamplePS,
@@ -73,4 +74,13 @@ export class BloomRenderer
    private:
     void createTexturesAndHeaps(ID3D12Device2* device, uint32_t width, uint32_t height);
     void createPipelines(ID3D12Device2* device);
+
+    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
+    {
+        return static_cast<ID3D12Device2*>(dev.nativeHandle());
+    }
+    static ID3D12GraphicsCommandList2* nativeCmd(gfx::ICommandList& cmdRef)
+    {
+        return static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
+    }
 };

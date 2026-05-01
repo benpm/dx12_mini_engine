@@ -774,7 +774,7 @@ void Application::render()
                 rtvDescSize
             );
             bloom.render(
-                cmd, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
+                cmdRef, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
                 bloomIntensity, tonemapMode, skyParams
             );
         }
