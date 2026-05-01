@@ -263,7 +263,7 @@ void Application::applySceneData(const SceneFileData& d)
             D3D12_SHADER_BYTECODE vs =
                 vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
                        : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-            shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
+            shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
             spdlog::info("Shadow PSO reloaded.");
         }
         if (cubemapResChanged) {

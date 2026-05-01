@@ -239,7 +239,7 @@ void Application::render()
                 bindPerFrameAndPass(cmd, shadowPassAddr);
 
                 shadow.render(
-                    cmd, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
+                    cmdRef, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
                     scene.sceneSrvDescSize, curBackBufIdx, sceneDrawCmds, 0
                 );
             }

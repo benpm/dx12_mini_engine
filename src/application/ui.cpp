@@ -393,7 +393,7 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
         D3D12_SHADER_BYTECODE vs =
             vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
                    : D3D12_SHADER_BYTECODE{};
-        shadow.reloadPSO(device.Get(), rootSignature.Get(), vs);
+        shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
     }
 
     if (showMetrics) {

@@ -277,7 +277,7 @@ bool Application::loadContent()
     createCubemapResources();
 
     shadow.createResources(
-        device.Get(), rootSignature.Get(),
+        *gfxDevice, rootSignature.Get(),
         CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader)), scene.sceneSrvHeap.Get(),
         scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotShadow)
     );

@@ -24,19 +24,8 @@ static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 };
 
-static void transitionRes(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    ID3D12Resource* resource,
-    D3D12_RESOURCE_STATES before,
-    D3D12_RESOURCE_STATES after
-)
-{
-    auto b = CD3DX12_RESOURCE_BARRIER::Transition(resource, before, after);
-    cmdList->ResourceBarrier(1, &b);
-}
-
 void ShadowRenderer::createResources(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
     D3D12_SHADER_BYTECODE vs,
     ID3D12DescriptorHeap* sceneSrvHeap,
@@ -44,6 +33,7 @@ void ShadowRenderer::createResources(
     INT shadowSrvSlot
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     // Shadow depth texture (R32_TYPELESS / D32_FLOAT)
     {
         D3D12_CLEAR_VALUE clearVal = {};
@@ -88,15 +78,16 @@ void ShadowRenderer::createResources(
         device->CreateShaderResourceView(shadowMap.Get(), &srvDesc, srvHandle);
     }
 
-    reloadPSO(device, rootSig, vs);
+    reloadPSO(dev, rootSig, vs);
 }
 
 void ShadowRenderer::reloadPSO(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
     D3D12_SHADER_BYTECODE vs
 )
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     // Fall back to embedded CSO if no hot-reload data
     if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
         vs = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
@@ -152,7 +143,7 @@ mat4 ShadowRenderer::computeLightViewProj(vec3 dirLightDir) const
 }
 
 void ShadowRenderer::render(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
+    gfx::ICommandList& cmdRef,
     const D3D12_VERTEX_BUFFER_VIEW& vbv,
     const D3D12_INDEX_BUFFER_VIEW& ibv,
     ID3D12DescriptorHeap* sceneSrvHeap,
@@ -162,6 +153,7 @@ void ShadowRenderer::render(
     uint32_t totalSlots
 )
 {
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     auto shadowDsv = dsvHeap->GetCPUDescriptorHandleForHeapStart();
     cmdList->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 

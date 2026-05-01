@@ -10,6 +10,7 @@ export module shadow;
 
 export import scene;
 export import common;
+export import gfx;
 
 export class ShadowRenderer
 {
@@ -33,7 +34,7 @@ export class ShadowRenderer
 
     // sceneSrvHeap: shadow SRV placed at sceneSrvHeap[shadowSrvSlot]
     void createResources(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         ID3D12RootSignature* rootSig,
         D3D12_SHADER_BYTECODE vs,
         ID3D12DescriptorHeap* sceneSrvHeap,
@@ -41,14 +42,14 @@ export class ShadowRenderer
         INT shadowSrvSlot
     );
 
-    void reloadPSO(ID3D12Device2* device, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
+    void reloadPSO(gfx::IDevice& dev, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
 
     // Compute the light view-proj matrix from the current config.
     // dirLightDir is the direction FROM the light (as stored in Application::dirLightDir).
     mat4 computeLightViewProj(vec3 dirLightDir) const;
 
     void render(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         const D3D12_VERTEX_BUFFER_VIEW& vbv,
         const D3D12_INDEX_BUFFER_VIEW& ibv,
         ID3D12DescriptorHeap* sceneSrvHeap,
