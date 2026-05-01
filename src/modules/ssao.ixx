@@ -10,6 +10,7 @@ export module ssao;
 
 export import math;
 export import common;
+export import gfx;
 
 export class SsaoRenderer
 {
@@ -24,7 +25,7 @@ export class SsaoRenderer
     D3D12_CPU_DESCRIPTOR_HANDLE blurRtvCpu() const;
 
     void createResources(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
         ID3D12Resource* normalBuffer,
@@ -35,7 +36,7 @@ export class SsaoRenderer
     );
 
     void resize(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
         ID3D12Resource* normalBuffer,
@@ -47,7 +48,7 @@ export class SsaoRenderer
 
     // Run SSAO + blur. normalBuffer must be in PIXEL_SHADER_RESOURCE state on entry.
     void render(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         const mat4& view,
         const mat4& proj,
         uint32_t width,
@@ -55,7 +56,7 @@ export class SsaoRenderer
     );
 
     static void transitionResource(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
+        gfx::ICommandList& cmdRef,
         ID3D12Resource* resource,
         D3D12_RESOURCE_STATES before,
         D3D12_RESOURCE_STATES after
@@ -94,4 +95,13 @@ export class SsaoRenderer
         UINT sceneSrvDescSize,
         INT ssaoSlot
     );
+
+    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
+    {
+        return static_cast<ID3D12Device2*>(dev.nativeHandle());
+    }
+    static ID3D12GraphicsCommandList2* nativeCmd(gfx::ICommandList& cmdRef)
+    {
+        return static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
+    }
 };

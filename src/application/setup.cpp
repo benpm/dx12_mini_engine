@@ -294,7 +294,7 @@ bool Application::loadContent()
 
     resizeDepthBuffer(clientWidth, clientHeight);
     ssao.createResources(
-        device.Get(), clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal].Get(),
+        *gfxDevice, clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal].Get(),
         depthBuffer.Get(), scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
         static_cast<INT>(app_slots::srvSlotSsao)
     );
@@ -445,7 +445,7 @@ void Application::onResize(uint32_t width, uint32_t height)
         bloom.resize(device.Get(), clientWidth, height);
         picker.resize(device, clientWidth, height);
         ssao.resize(
-            device.Get(), clientWidth, height, gbuffer.resources[GBuffer::Normal].Get(),
+            *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal].Get(),
             depthBuffer.Get(), scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize,
             static_cast<INT>(Scene::nBuffers + 2)
         );

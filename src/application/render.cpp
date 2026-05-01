@@ -452,7 +452,7 @@ void Application::render()
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("SSAO Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: SSAO");
-                ssao.render(cmd, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
+                ssao.render(cmdRef, this->cam.view(), this->cam.proj(), clientWidth, clientHeight);
             }
         );
     }
