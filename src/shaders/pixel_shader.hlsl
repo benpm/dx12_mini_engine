@@ -36,6 +36,7 @@ cbuffer PerPass : register(b1)
 struct PerObjectData
 {
     matrix Model;
+    matrix PrevModel;
     float4 Albedo;
     float Roughness;
     float Metallic;
@@ -193,6 +194,3 @@ float4 main(PixelIn IN) : SV_Target
 
     return float4(color, objData.Albedo.a);
 }
-
-
-

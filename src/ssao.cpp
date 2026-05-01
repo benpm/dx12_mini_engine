@@ -312,7 +312,9 @@ void SsaoRenderer::createResources(
         device->CreateShaderResourceView(noiseTexture.Get(), &srvDesc, noiseSrv);
     }
 
-    createRTs(device, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot);
+    createRTs(
+        device, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
+    );
 }
 
 void SsaoRenderer::resize(
@@ -326,7 +328,9 @@ void SsaoRenderer::resize(
     INT ssaoSlot
 )
 {
-    createRTs(device, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot);
+    createRTs(
+        device, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
+    );
 }
 
 void SsaoRenderer::render(
@@ -337,7 +341,9 @@ void SsaoRenderer::render(
     uint32_t height
 )
 {
-    if (!enabled) return;
+    if (!enabled) {
+        return;
+    }
 
     if (noisePendingUpload) {
         D3D12_TEXTURE_COPY_LOCATION src = {};
@@ -349,7 +355,10 @@ void SsaoRenderer::render(
         dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         dst.SubresourceIndex = 0;
         cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-        transitionResource(cmdList, noiseTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        transitionResource(
+            cmdList, noiseTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
         noisePendingUpload = false;
     }
 
@@ -357,7 +366,8 @@ void SsaoRenderer::render(
         SsaoCBData* cb = static_cast<SsaoCBData*>(cbvMapped);
         memcpy(&cb->view, &view, sizeof(XMFLOAT4X4));
         memcpy(&cb->proj, &proj, sizeof(XMFLOAT4X4));
-        XMMATRIX invProjM = XMMatrixInverse(nullptr, XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&proj)));
+        XMMATRIX invProjM =
+            XMMatrixInverse(nullptr, XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&proj)));
         XMStoreFloat4x4(&cb->invProj, invProjM);
         memcpy(cb->samples, kernel, sizeof(kernel));
         cb->radius = radius;
@@ -371,7 +381,10 @@ void SsaoRenderer::render(
     D3D12_RECT sr = { 0, 0, (LONG)width, (LONG)height };
 
     {
-        transitionResource(cmdList, ssaoRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        transitionResource(
+            cmdList, ssaoRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
         auto rtv = ssaoRtvCpu();
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
@@ -386,11 +399,17 @@ void SsaoRenderer::render(
         cmdList->SetGraphicsRootDescriptorTable(0, srvHeap->GetGPUDescriptorHandleForHeapStart());
         cmdList->SetGraphicsRootConstantBufferView(1, cbvBuffer->GetGPUVirtualAddress());
         cmdList->DrawInstanced(3, 1, 0, 0);
-        transitionResource(cmdList, ssaoRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        transitionResource(
+            cmdList, ssaoRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
     }
 
     {
-        transitionResource(cmdList, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        transitionResource(
+            cmdList, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
         auto rtv = blurRtvCpu();
         cmdList->SetPipelineState(blurPSO.Get());
         cmdList->SetGraphicsRootSignature(blurRootSig.Get());
@@ -399,9 +418,14 @@ void SsaoRenderer::render(
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
         cmdList->SetDescriptorHeaps(1, heaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrv(srvHeap->GetGPUDescriptorHandleForHeapStart(), 3, srvDescSize);
+        CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrv(
+            srvHeap->GetGPUDescriptorHandleForHeapStart(), 3, srvDescSize
+        );
         cmdList->SetGraphicsRootDescriptorTable(0, ssaoSrv);
         cmdList->DrawInstanced(3, 1, 0, 0);
-        transitionResource(cmdList, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        transitionResource(
+            cmdList, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        );
     }
 }

@@ -132,7 +132,7 @@ export class Scene
     ComPtr<ID3D12Resource> megaIB;
     D3D12_VERTEX_BUFFER_VIEW megaVBV{};
     D3D12_INDEX_BUFFER_VIEW megaIBV{};
-    uint32_t megaVBCapacity = 1024 * 1024;      // 1M verts
+    uint32_t megaVBCapacity = 1024 * 1024;  // 1M verts
     uint32_t megaVBUsed = 0;
     uint32_t megaIBCapacity = 4 * 1024 * 1024;  // 4M indices
     uint32_t megaIBUsed = 0;

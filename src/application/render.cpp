@@ -269,7 +269,16 @@ void Application::render()
                 }
                 uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
                 if (nonReflCount == 0) {
-                    return;
+                    // Fallback: capture reflective geometry too so the cubemap is not empty.
+                    for (uint32_t i = 0; i < scene.totalSlots; ++i) {
+                        if (!(i < scene.isGizmoDraw.size() && scene.isGizmoDraw[i])) {
+                            nonReflectiveIndices.push_back(i);
+                        }
+                    }
+                    nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
+                    if (nonReflCount == 0) {
+                        return;
+                    }
                 }
 
                 // Build 6 cubemap face view-projection matrices (LH, 90° FOV)

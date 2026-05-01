@@ -177,8 +177,12 @@ static ComPtr<ID3D12Device2> createDevice(ComPtr<IDXGIAdapter4> adapter)
 {
     ComPtr<ID3D12Device2> d3d12Device2;
     // Try 12_2 first (required for mesh shaders etc.); fall back to 12_1 (e.g. WARP)
-    if (FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_2, IID_PPV_ARGS(&d3d12Device2)))) {
-        chkDX(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&d3d12Device2)));
+    if (FAILED(
+            D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_2, IID_PPV_ARGS(&d3d12Device2))
+        )) {
+        chkDX(
+            D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&d3d12Device2))
+        );
         spdlog::warn("D3D feature level 12_2 not available, using 12_1");
     }
 

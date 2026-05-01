@@ -3,6 +3,19 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
+    "inputs": [
+        {
+            "id": "scene",
+            "type": "pickString",
+            "description": "Select a scene to launch",
+            "options": [
+                "default",
+                "empty",
+                "test"
+            ],
+            "default": "default"
+        }
+    ],
     "configurations": [
         {
             "name": "LLDB Debug",

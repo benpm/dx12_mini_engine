@@ -27,7 +27,6 @@ module scene;
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -389,12 +388,18 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
 {
     auto loadRes = [](int resId) -> std::string {
         HRSRC hRes = FindResource(nullptr, MAKEINTRESOURCE(resId), RT_RCDATA);
-        if (!hRes) return "";
+        if (!hRes) {
+            return "";
+        }
         HGLOBAL hMem = LoadResource(nullptr, hRes);
-        if (!hMem) return "";
+        if (!hMem) {
+            return "";
+        }
         DWORD size = SizeofResource(nullptr, hRes);
         void* data = LockResource(hMem);
-        if (!data) return "";
+        if (!data) {
+            return "";
+        }
         return std::string(static_cast<const char*>(data), size);
     };
 
@@ -433,7 +438,8 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
                              attrib.normals[3 * index.normal_index + 1],
                              attrib.normals[3 * index.normal_index + 2] };
             }
-            if (index.texcoord_index >= 0 && 2 * index.texcoord_index + 1 < attrib.texcoords.size()) {
+            if (index.texcoord_index >= 0 &&
+                2 * index.texcoord_index + 1 < attrib.texcoords.size()) {
                 v.uv = { attrib.texcoords[2 * index.texcoord_index + 0],
                          1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
             }
@@ -455,7 +461,7 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
     metal.metallic = 1.0f;
 
     mirror.name = "TeapotMirror";
-    mirror.albedo = { 0.0f, 0.0f, 0.0f, 1.0f };
+    mirror.albedo = { 0.9f, 0.9f, 0.9f, 1.0f };
     mirror.roughness = 0.02f;
     mirror.metallic = 1.0f;
     mirror.reflective = true;
@@ -651,11 +657,7 @@ bool Scene::loadGltf(
             // Instantiate
             Transform tf;
             tf.world = mat4{};
-            ecsWorld.entity()
-                .set(tf)
-                .set(meshRef)
-                .set(bv)
-                .add<Pickable>();
+            ecsWorld.entity().set(tf).set(meshRef).set(bv).add<Pickable>();
         }
     }
 

@@ -15,9 +15,9 @@ module;
 #include <cmath>
 #include <string>
 #include <vector>
+#include "d3dx12_clean.h"
 #include "scene_data.h"
 #include "vertex_shader_cso.h"
-#include "d3dx12_clean.h"
 
 module application;
 

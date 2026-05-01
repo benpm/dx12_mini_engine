@@ -13,7 +13,7 @@ export import common;
 
 export class SsaoRenderer
 {
-public:
+   public:
     // Settings
     bool enabled = true;
     float radius = 0.5f;
@@ -61,7 +61,7 @@ public:
         D3D12_RESOURCE_STATES after
     );
 
-private:
+   private:
     Microsoft::WRL::ComPtr<ID3D12Resource> ssaoRT;
     Microsoft::WRL::ComPtr<ID3D12Resource> ssaoBlurRT;
     Microsoft::WRL::ComPtr<ID3D12Resource> noiseTexture;
@@ -72,7 +72,8 @@ private:
     void* cbvMapped = nullptr;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;  // [0]=ssaoRT [1]=blurRT
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;  // [0]=normal [1]=depth [2]=noise [3]=ssao
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
+        srvHeap;  // [0]=normal [1]=depth [2]=noise [3]=ssao
     UINT rtvDescSize = 0;
     UINT srvDescSize = 0;
 
