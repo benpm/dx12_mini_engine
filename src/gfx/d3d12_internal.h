@@ -551,6 +551,16 @@ namespace gfxd3d12
         std::unique_ptr<gfx::ISwapChain> createSwapChain(const gfx::SwapChainDesc& desc) override;
         void retireCompletedResources() override;
         void* nativeHandle() override { return d3dDevice.Get(); }
+        void* nativeResource(gfx::TextureHandle h) override
+        {
+            auto* r = getTexture(h);
+            return r ? r->resource.Get() : nullptr;
+        }
+        void* nativeResource(gfx::BufferHandle h) override
+        {
+            auto* r = getBuffer(h);
+            return r ? r->resource.Get() : nullptr;
+        }
 
         // Internal accessors used by Queue/CommandList/SwapChain.
         ID3D12Device2* d3d() { return d3dDevice.Get(); }

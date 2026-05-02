@@ -135,6 +135,8 @@ class MockDevice final : public IDevice
     std::unique_ptr<ISwapChain> createSwapChain(const SwapChainDesc&) override { return nullptr; }
     void retireCompletedResources() override {}
     void* nativeHandle() override { return nullptr; }
+    void* nativeResource(TextureHandle) override { return nullptr; }
+    void* nativeResource(BufferHandle) override { return nullptr; }
 };
 
 TEST_CASE("gfx: IDevice interface is virtual (mock backend slots in)")

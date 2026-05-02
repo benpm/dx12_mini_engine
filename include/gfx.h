@@ -203,6 +203,14 @@ namespace gfx
         virtual void retireCompletedResources() = 0;
 
         virtual void* nativeHandle() = 0;
+
+        // Per-resource native escape hatches: returns the underlying
+        // ID3D12Resource* on the D3D12 backend. Engine subsystems use these
+        // during migration when they still need to call backend-specific
+        // APIs (CreateDepthStencilView, custom-format SRVs, etc.) on a
+        // gfx-owned resource. Removed at P14.
+        virtual void* nativeResource(TextureHandle h) = 0;
+        virtual void* nativeResource(BufferHandle h) = 0;
     };
 
     // Factory entry point. Returns the D3D12 backend on Windows. The Vulkan/Metal
