@@ -332,7 +332,8 @@ bool Application::loadContent()
 
     resizeDepthBuffer(clientWidth, clientHeight);
     ssao.createResources(
-        *gfxDevice, clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal].Get(),
+        *gfxDevice, clientWidth, clientHeight,
+        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Normal])),
         static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer)),
         scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotSsao)
     );
@@ -527,7 +528,10 @@ void Application::onResize(uint32_t width, uint32_t height)
         bloom.resize(*gfxDevice, clientWidth, height);
         picker.resize(*gfxDevice, clientWidth, height);
         ssao.resize(
-            *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal].Get(),
+            *gfxDevice, clientWidth, height,
+            static_cast<ID3D12Resource*>(
+                gfxDevice->nativeResource(gbuffer.resources[GBuffer::Normal])
+            ),
             static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer)),
             scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
         );

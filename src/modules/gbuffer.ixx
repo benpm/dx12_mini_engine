@@ -23,10 +23,11 @@ export class GBuffer
         Count
     };
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> resources[Count];
+    gfx::TextureHandle resources[Count];
 
     void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
     void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
+    ~GBuffer();
 
     D3D12_CPU_DESCRIPTOR_HANDLE getRtv(TextureType type) const;
     D3D12_CPU_DESCRIPTOR_HANDLE getSrvCpu(TextureType type) const;
@@ -47,10 +48,12 @@ export class GBuffer
 
    private:
     void createHeaps(ID3D12Device2* device);
-    void createTextures(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void createTextures(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     static ID3D12Device2* nativeDev(gfx::IDevice& dev)
     {
         return static_cast<ID3D12Device2*>(dev.nativeHandle());
     }
+
+    gfx::IDevice* devForDestroy = nullptr;
 };

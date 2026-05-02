@@ -207,16 +207,26 @@ void Application::render()
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     auto hNormalRT = renderGraph.importTexture(
-        "NormalRT", gbuffer.resources[GBuffer::Normal].Get(), D3D12_RESOURCE_STATE_COMMON
+        "NormalRT",
+        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Normal])),
+        D3D12_RESOURCE_STATE_COMMON
     );
     auto hAlbedoRT = renderGraph.importTexture(
-        "AlbedoRT", gbuffer.resources[GBuffer::Albedo].Get(), D3D12_RESOURCE_STATE_COMMON
+        "AlbedoRT",
+        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Albedo])),
+        D3D12_RESOURCE_STATE_COMMON
     );
     auto hMaterialRT = renderGraph.importTexture(
-        "MaterialRT", gbuffer.resources[GBuffer::Material].Get(), D3D12_RESOURCE_STATE_COMMON
+        "MaterialRT",
+        static_cast<ID3D12Resource*>(
+            gfxDevice->nativeResource(gbuffer.resources[GBuffer::Material])
+        ),
+        D3D12_RESOURCE_STATE_COMMON
     );
     auto hMotionRT = renderGraph.importTexture(
-        "MotionRT", gbuffer.resources[GBuffer::Motion].Get(), D3D12_RESOURCE_STATE_COMMON
+        "MotionRT",
+        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Motion])),
+        D3D12_RESOURCE_STATE_COMMON
     );
     auto hHdrRT = renderGraph.importTexture(
         "HdrRT", bloom.hdrRenderTarget.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
