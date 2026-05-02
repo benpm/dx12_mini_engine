@@ -22,6 +22,21 @@ static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 };
 
+OutlineRenderer::~OutlineRenderer()
+{
+    if (devForDestroy) {
+        if (pso.isValid()) {
+            devForDestroy->destroy(pso);
+        }
+        if (vsHandle.isValid()) {
+            devForDestroy->destroy(vsHandle);
+        }
+        if (psHandle.isValid()) {
+            devForDestroy->destroy(psHandle);
+        }
+    }
+}
+
 void OutlineRenderer::createResources(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
@@ -39,7 +54,17 @@ void OutlineRenderer::reloadPSO(
     D3D12_SHADER_BYTECODE ps
 )
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
+    devForDestroy = &dev;
+    if (pso.isValid()) {
+        dev.destroy(pso);
+    }
+    if (vsHandle.isValid()) {
+        dev.destroy(vsHandle);
+    }
+    if (psHandle.isValid()) {
+        dev.destroy(psHandle);
+    }
+
     if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
         vs = CD3DX12_SHADER_BYTECODE(g_outline_vs, sizeof(g_outline_vs));
     }
@@ -47,33 +72,47 @@ void OutlineRenderer::reloadPSO(
         ps = CD3DX12_SHADER_BYTECODE(g_outline_ps, sizeof(g_outline_ps));
     }
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = rootSig;
-    psoDesc.InputLayout = { g_inputLayout, _countof(g_inputLayout) };
-    psoDesc.VS = vs;
-    psoDesc.PS = ps;
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    gfx::ShaderDesc vsDesc{};
+    vsDesc.stage = gfx::ShaderStage::Vertex;
+    vsDesc.bytecode = vs.pShaderBytecode;
+    vsDesc.bytecodeSize = vs.BytecodeLength;
+    vsDesc.debugName = "outline_vs";
+    vsHandle = dev.createShader(vsDesc);
 
-    D3D12_DEPTH_STENCIL_DESC dsDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    dsDesc.StencilEnable = TRUE;
-    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NOT_EQUAL;
-    dsDesc.BackFace = dsDesc.FrontFace;
-    psoDesc.DepthStencilState = dsDesc;
+    gfx::ShaderDesc psDesc{};
+    psDesc.stage = gfx::ShaderStage::Pixel;
+    psDesc.bytecode = ps.pShaderBytecode;
+    psDesc.bytecodeSize = ps.BytecodeLength;
+    psDesc.debugName = "outline_ps";
+    psHandle = dev.createShader(psDesc);
 
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-    psoDesc.SampleDesc = { 1, 0 };
+    static constexpr gfx::VertexAttribute attrs[] = {
+        { "POSITION", 0, gfx::Format::RGB32Float, 0 },
+        { "NORMAL", 0, gfx::Format::RGB32Float, 12 },
+        { "TEXCOORD", 0, gfx::Format::RG32Float, 24 },
+    };
 
-    chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+    gfx::GraphicsPipelineDesc gd{};
+    gd.vs = vsHandle;
+    gd.ps = psHandle;
+    gd.vertexAttributes = attrs;
+    gd.vertexStride = 32;
+    gd.topology = gfx::PrimitiveTopology::TriangleList;
+    gd.rasterizer.cull = gfx::CullMode::None;
+    gd.numRenderTargets = 1;
+    gd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
+    gd.depthStencilFormat = gfx::Format::D32FloatS8X24Uint;
+    gd.depthStencil.depthEnable = true;
+    gd.depthStencil.depthWrite = false;
+    gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    gd.depthStencil.stencilEnable = true;
+    gd.depthStencil.stencilCompare = gfx::CompareOp::NotEqual;
+    gd.depthStencil.stencilFail = gfx::StencilOp::Keep;
+    gd.depthStencil.stencilDepthFail = gfx::StencilOp::Keep;
+    gd.depthStencil.stencilPass = gfx::StencilOp::Keep;
+    gd.nativeRootSignatureOverride = rootSig;
+    gd.debugName = "outline_pso";
+    pso = dev.createGraphicsPipeline(gd);
 }
 
 void OutlineRenderer::render(
@@ -86,7 +125,7 @@ void OutlineRenderer::render(
 )
 {
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-    cmdList->SetPipelineState(pso.Get());
+    cmdRef.bindPipeline(pso);
     cmdList->SetGraphicsRootSignature(ctx.rootSig);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmdList->RSSetViewports(1, ctx.viewport);

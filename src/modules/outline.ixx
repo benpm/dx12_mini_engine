@@ -33,7 +33,12 @@ export struct OutlineRenderContext
 export class OutlineRenderer
 {
    public:
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
+    gfx::PipelineHandle pso{};
+    gfx::ShaderHandle vsHandle{};
+    gfx::ShaderHandle psHandle{};
+    // Track the device used for create so destroy can call back into it.
+    gfx::IDevice* devForDestroy = nullptr;
+    ~OutlineRenderer();
 
     void createResources(
         gfx::IDevice& dev,
