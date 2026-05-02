@@ -138,11 +138,11 @@ export class Scene
     uint32_t megaIBCapacity = 4 * 1024 * 1024;  // 4M indices
     uint32_t megaIBUsed = 0;
 
-    ComPtr<ID3D12Resource> perObjectBuffer[nBuffers];
+    gfx::BufferHandle perObjectBuffer[nBuffers];
     PerObjectData* perObjectMapped[nBuffers]{};
-    ComPtr<ID3D12Resource> perFrameBuffer[nBuffers];
+    gfx::BufferHandle perFrameBuffer[nBuffers];
     PerFrameCB* perFrameMapped[nBuffers]{};
-    ComPtr<ID3D12Resource> perPassBuffer[nBuffers];
+    gfx::BufferHandle perPassBuffer[nBuffers];
     PerPassCB* perPassMapped[nBuffers]{};
 
     ComPtr<ID3D12DescriptorHeap> sceneSrvHeap;

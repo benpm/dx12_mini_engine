@@ -227,14 +227,16 @@ void Scene::createDrawDataBuffers(gfx::IDevice& dev)
     chkDX(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&sceneSrvHeap)));
 
     for (int i = 0; i < nBuffers; ++i) {
+        // Per-object structured buffer (Upload heap, persistently mapped).
         size_t byteSize = maxDrawsPerFrame * sizeof(PerObjectData);
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&perObjectBuffer[i])
-        ));
-        chkDX(perObjectBuffer[i]->Map(0, nullptr, (void**)&perObjectMapped[i]));
+        {
+            gfx::BufferDesc bd{};
+            bd.size = byteSize;
+            bd.usage = gfx::BufferUsage::Upload;
+            bd.debugName = "scene_perObject";
+            perObjectBuffer[i] = dev.createBuffer(bd);
+            perObjectMapped[i] = static_cast<PerObjectData*>(dev.map(perObjectBuffer[i]));
+        }
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -247,26 +249,30 @@ void Scene::createDrawDataBuffers(gfx::IDevice& dev)
         CD3DX12_CPU_DESCRIPTOR_HANDLE hSrv(
             sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), i, cbvSrvSize
         );
-        device->CreateShaderResourceView(perObjectBuffer[i].Get(), &srvDesc, hSrv);
+        auto* objectRes = static_cast<ID3D12Resource*>(dev.nativeResource(perObjectBuffer[i]));
+        device->CreateShaderResourceView(objectRes, &srvDesc, hSrv);
 
         // Per-frame CB (aligned to 256-byte boundary as required by CBV)
         const uint64_t perFrameSize = (sizeof(PerFrameCB) + 255) & ~255;
-        const CD3DX12_RESOURCE_DESC cbDesc = CD3DX12_RESOURCE_DESC::Buffer(perFrameSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &cbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&perFrameBuffer[i])
-        ));
-        chkDX(perFrameBuffer[i]->Map(0, nullptr, (void**)&perFrameMapped[i]));
+        {
+            gfx::BufferDesc bd{};
+            bd.size = perFrameSize;
+            bd.usage = gfx::BufferUsage::Upload;
+            bd.debugName = "scene_perFrame";
+            perFrameBuffer[i] = dev.createBuffer(bd);
+            perFrameMapped[i] = static_cast<PerFrameCB*>(dev.map(perFrameBuffer[i]));
+        }
 
         // Per-pass CBs (array of maxPassesPerFrame slots of 256 bytes)
         const uint64_t passStride = (sizeof(PerPassCB) + 255) & ~255;
-        const CD3DX12_RESOURCE_DESC pbDesc =
-            CD3DX12_RESOURCE_DESC::Buffer(maxPassesPerFrame * passStride);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &pbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&perPassBuffer[i])
-        ));
-        chkDX(perPassBuffer[i]->Map(0, nullptr, (void**)&perPassMapped[i]));
+        {
+            gfx::BufferDesc bd{};
+            bd.size = maxPassesPerFrame * passStride;
+            bd.usage = gfx::BufferUsage::Upload;
+            bd.debugName = "scene_perPass";
+            perPassBuffer[i] = dev.createBuffer(bd);
+            perPassMapped[i] = static_cast<PerPassCB*>(dev.map(perPassBuffer[i]));
+        }
     }
 }
 

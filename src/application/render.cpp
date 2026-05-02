@@ -130,7 +130,10 @@ void Application::render()
         return reinterpret_cast<PerPassCB*>(base + passIdx * passCBStride);
     };
     auto getPassCBAddress = [&](uint32_t passIdx) {
-        return scene.perPassBuffer[curBackBufIdx]->GetGPUVirtualAddress() + passIdx * passCBStride;
+        auto* res = static_cast<ID3D12Resource*>(
+            gfxDevice->nativeResource(scene.perPassBuffer[curBackBufIdx])
+        );
+        return res->GetGPUVirtualAddress() + passIdx * passCBStride;
     };
 
     auto bindSharedGeometry = [&](ID3D12GraphicsCommandList2* cmd) {
@@ -154,7 +157,10 @@ void Application::render()
 
     auto bindPerFrameAndPass = [&](ID3D12GraphicsCommandList2* cmd,
                                    D3D12_GPU_VIRTUAL_ADDRESS perPassAddr) {
-        auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+        auto* perFrameRes = static_cast<ID3D12Resource*>(
+            gfxDevice->nativeResource(scene.perFrameBuffer[curBackBufIdx])
+        );
+        auto perFrameAddr = perFrameRes->GetGPUVirtualAddress();
         cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerFrameCB, perFrameAddr);
         cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerPassCB, perPassAddr);
     };
@@ -339,7 +345,11 @@ void Application::render()
                 bindSharedGeometry(cmd);
                 bindSceneHeapAndObjects(cmd);
 
-                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                auto perFrameAddr =
+                    static_cast<ID3D12Resource*>(
+                        gfxDevice->nativeResource(scene.perFrameBuffer[curBackBufIdx])
+                    )
+                        ->GetGPUVirtualAddress();
                 cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerFrameCB, perFrameAddr);
 
                 CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
@@ -646,7 +656,11 @@ void Application::render()
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
 
-                auto perFrameAddr = scene.perFrameBuffer[curBackBufIdx]->GetGPUVirtualAddress();
+                auto perFrameAddr =
+                    static_cast<ID3D12Resource*>(
+                        gfxDevice->nativeResource(scene.perFrameBuffer[curBackBufIdx])
+                    )
+                        ->GetGPUVirtualAddress();
                 auto perPassAddr = getPassCBAddress(0);
 
                 OutlineRenderContext outlineCtx{};
