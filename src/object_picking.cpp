@@ -192,11 +192,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getDSV() const
     return dsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
-void ObjectPicker::copyPickedPixel(
-    gfx::ICommandList& cmdRef,
-    uint32_t x,
-    uint32_t y
-)
+void ObjectPicker::copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32_t y)
 {
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     if (x >= width_ || y >= height_) {

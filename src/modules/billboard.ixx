@@ -37,9 +37,5 @@ export class BillboardRenderer
 
     void init(gfx::IDevice& dev, ID3D12CommandQueue* queue, const wchar_t* texturePath);
     void updateInstances(const vec4* lightPos, const vec4* lightColor, uint32_t count);
-    void render(
-        gfx::ICommandList& cmdRef,
-        const mat4& viewProj,
-        const vec3& cameraPos
-    );
+    void render(gfx::ICommandList& cmdRef, const mat4& viewProj, const vec3& cameraPos);
 };

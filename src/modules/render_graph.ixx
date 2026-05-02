@@ -56,8 +56,7 @@ namespace rg
     // gfx::ICommandList wrapper around the native list executing the graph;
     // pass `cmd.nativeHandle()` for D3D12-direct work that hasn't been
     // migrated yet.
-    export using PassExecuteCallback =
-        std::function<void(gfx::ICommandList&, RenderGraphBuilder&)>;
+    export using PassExecuteCallback = std::function<void(gfx::ICommandList&, RenderGraphBuilder&)>;
 
     export class RenderGraph
     {

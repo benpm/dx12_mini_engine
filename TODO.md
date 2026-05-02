@@ -15,7 +15,23 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [ ] Create a complete abstraction over all D3D12 / DirectX
+- [ ] Add native file dialogs for choosing scripts and loading scenes in the gui. Also, split the gui
+- [ ] Create a complete abstraction over all D3D12 / DirectX (gfx layer in `include/gfx.h`, `src/gfx/`, plan in `~/.claude/plans/write-an-api-abstraction-synchronous-wand.md`)
+  - [x] P0: Land gfx skeleton + D3D12 backend stubs
+  - [x] P1: Migrate device + swap chain into `gfx::IDevice` / `gfx::ISwapChain`
+  - [x] P3: Render graph callbacks take `gfx::ICommandList&`
+  - [x] P4: GBuffer signatures use gfx types
+  - [x] P5: ShadowRenderer signatures use gfx types
+  - [x] P6: SsaoRenderer signatures use gfx types
+  - [x] P7: BloomRenderer signatures use gfx types
+  - [x] P8: OutlineRenderer signatures use gfx types
+  - [x] P9: ObjectPicker signatures use gfx types
+  - [x] P10: BillboardRenderer + ImGuiLayer signatures use gfx types
+  - [ ] P12: Migrate Scene mega-buffers, per-frame CBs, GizmoState init, BLAS/TLAS into gfx; dissolve `CommandQueue` into `gfx::IQueue`
+  - [ ] P11: GizmoState init takes gfx types (folds into P12)
+  - [ ] P13: Application core (depthBuffer, dsvHeap, scene + grid PSOs, cubemap heaps) on gfx
+  - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, orthogonal)
+  - [ ] P14: Cleanup — verify no `ID3D12*` outside `src/gfx/`, remove `nativeHandle()` escape hatches
 - [ ] Use flecs
 - [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
   - [x] Frustum Culling (CPU-side bounding sphere)

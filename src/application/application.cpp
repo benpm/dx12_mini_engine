@@ -148,8 +148,7 @@ Application::Application()
         auto* gfxQueueNative =
             static_cast<ID3D12CommandQueue*>(this->gfxDevice->graphicsQueue()->nativeHandle());
         this->cmdQueue = CommandQueue(
-            this->device, ComPtr<ID3D12CommandQueue>(gfxQueueNative),
-            D3D12_COMMAND_LIST_TYPE_DIRECT
+            this->device, ComPtr<ID3D12CommandQueue>(gfxQueueNative), D3D12_COMMAND_LIST_TYPE_DIRECT
         );
     }
 
@@ -676,8 +675,8 @@ void Application::update()
                              : D3D12_SHADER_BYTECODE{};
                 };
                 bloom.reloadPipelines(
-                    *gfxDevice, bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx),
-                    bc(bloomUpIdx), bc(bloomCompIdx)
+                    *gfxDevice, bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx), bc(bloomUpIdx),
+                    bc(bloomCompIdx)
                 );
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (bloom): {}", e.what());

@@ -403,9 +403,8 @@ void Application::render()
             builder.writeRenderTarget(hMotionRT, gbuffer.getRtv(GBuffer::Motion));
             builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
         },
-        [&, gbufferPassAddr = getPassCBAddress(8)](
-            gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
-        ) {
+        [&, gbufferPassAddr =
+                getPassCBAddress(8)](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
             auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
             PROFILE_ZONE_NAMED("G-Buffer Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");

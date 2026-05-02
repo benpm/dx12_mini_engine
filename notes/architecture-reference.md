@@ -75,7 +75,8 @@ Typical pass order:
 - `shadow.ixx`: shadow map renderer/configuration
 - `ssao.ixx`: SSAO renderer/configuration
 - `terrain.ixx`: terrain generation API
-- `window.ixx`: Window singleton, D3D12 device setup
+- `window.ixx`: Window singleton (HWND only — device creation is in `gfx::IDevice`)
+- `gfx.ixx`: backend-agnostic graphics abstraction (re-exports `include/gfx.h`)
 
 ## Application Split (`src/application`)
 
