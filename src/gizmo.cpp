@@ -8,7 +8,6 @@ module;
 #include <DirectXMath.h>
 #include <flecs.h>
 #include <spdlog/spdlog.h>
-#include <wrl.h>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -149,13 +148,7 @@ void GizmoState::init(Scene& scene, gfx::IDevice& dev, CommandQueue& cmdQueue)
     }
 
     // Upload arrow mesh
-    auto cmdList = cmdQueue.getCmdList();
-    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> temps;
-    arrowMeshRef = scene.appendToMegaBuffers(
-        dev, cmdQueue, cmdList, verts, indices, materialIndices[0], temps
-    );
-    uint64_t fv = cmdQueue.execCmdList(cmdList);
-    scene.trackUploadBatch(fv, std::move(temps));
+    arrowMeshRef = scene.appendToMegaBuffers(dev, cmdQueue, verts, indices, materialIndices[0]);
 
     // Create 3 arrow entities
     for (int i = 0; i < 3; ++i) {

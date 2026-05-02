@@ -535,8 +535,6 @@ void Application::update()
     });
     scene.ecsWorld.defer_end();
 
-    scene.retireCompletedUploads(cmdQueue);
-
     if (pendingFullscreenChange) {
         const bool targetFullscreen = pendingFullscreenValue;
         pendingFullscreenChange = false;

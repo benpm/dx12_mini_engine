@@ -283,57 +283,23 @@ void Scene::createDrawDataBuffers(gfx::IDevice& dev)
 MeshRef Scene::appendToMegaBuffers(
     gfx::IDevice& dev,
     CommandQueue& cmdQueue,
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
     const std::vector<VertexPBR>& vertices,
     const std::vector<uint32_t>& indices,
-    int materialIdx,
-    std::vector<ComPtr<ID3D12Resource>>& temps
+    int materialIdx
 )
 {
-    auto* device = nativeDev(dev);
     uint32_t numVerts = static_cast<uint32_t>(vertices.size());
     uint32_t numIndices = static_cast<uint32_t>(indices.size());
 
     assert(megaVBUsed + numVerts <= megaVBCapacity && "Mega VB capacity exceeded");
     assert(megaIBUsed + numIndices <= megaIBCapacity && "Mega IB capacity exceeded");
 
-    {
-        size_t byteSize = numVerts * sizeof(VertexPBR);
-        size_t dstOffset = megaVBUsed * sizeof(VertexPBR);
-        ComPtr<ID3D12Resource> upload;
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&upload)
-        ));
-        void* mapped = nullptr;
-        chkDX(upload->Map(0, nullptr, &mapped));
-        memcpy(mapped, vertices.data(), byteSize);
-        upload->Unmap(0, nullptr);
-        auto* megaVBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaVB));
-        cmdList->CopyBufferRegion(megaVBRes, dstOffset, upload.Get(), 0, byteSize);
-        temps.push_back(std::move(upload));
-    }
-
-    {
-        size_t byteSize = numIndices * sizeof(uint32_t);
-        size_t dstOffset = megaIBUsed * sizeof(uint32_t);
-        ComPtr<ID3D12Resource> upload;
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&upload)
-        ));
-        void* mapped = nullptr;
-        chkDX(upload->Map(0, nullptr, &mapped));
-        memcpy(mapped, indices.data(), byteSize);
-        upload->Unmap(0, nullptr);
-        auto* megaIBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaIB));
-        cmdList->CopyBufferRegion(megaIBRes, dstOffset, upload.Get(), 0, byteSize);
-        temps.push_back(std::move(upload));
-    }
+    dev.uploadBuffer(
+        megaVB, vertices.data(), numVerts * sizeof(VertexPBR), megaVBUsed * sizeof(VertexPBR)
+    );
+    dev.uploadBuffer(
+        megaIB, indices.data(), numIndices * sizeof(uint32_t), megaIBUsed * sizeof(uint32_t)
+    );
 
     MeshRef ref;
     ref.vertexOffset = megaVBUsed;
@@ -357,7 +323,6 @@ MeshRef Scene::appendToMegaBuffers(
 void Scene::clearScene(CommandQueue& cmdQueue)
 {
     cmdQueue.flush();
-    pendingUploads.clear();
     materials.clear();
     selectedMaterialIdx = 0;
     for (auto& pi : presetIdx) {
@@ -375,19 +340,6 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     tlasBuffer.Reset();
     tlasScratch.Reset();
     tlasInstances.Reset();
-}
-
-void Scene::retireCompletedUploads(const CommandQueue& cmdQueue)
-{
-    const uint64_t completed = cmdQueue.completedFenceValue();
-    std::erase_if(pendingUploads, [completed](const auto& batch) {
-        return completed >= batch.fenceValue;
-    });
-}
-
-void Scene::trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resource>>&& temps)
-{
-    pendingUploads.push_back({ fenceValue, std::move(temps) });
 }
 
 // ---------------------------------------------------------------------------
@@ -480,14 +432,11 @@ void Scene::loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCo
     materials.push_back(metal);
     materials.push_back(mirror);
 
-    auto cmdList = cmdQueue.getCmdList();
-    std::vector<ComPtr<ID3D12Resource>> temps;
-
     presetIdx[static_cast<int>(MaterialPreset::Diffuse)] = base;
     presetIdx[static_cast<int>(MaterialPreset::Metal)] = base + 1;
     presetIdx[static_cast<int>(MaterialPreset::Mirror)] = base + 2;
 
-    MeshRef meshRef = appendToMegaBuffers(dev, cmdQueue, cmdList, verts, indices, base, temps);
+    MeshRef meshRef = appendToMegaBuffers(dev, cmdQueue, verts, indices, base);
     spawnableMeshRefs.push_back(meshRef);
     spawnableMeshNames.push_back("Teapot");
 
@@ -515,9 +464,6 @@ void Scene::loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCo
             .set(teapotBV)
             .add<Pickable>();
     }
-
-    uint64_t fv = cmdQueue.execCmdList(cmdList);
-    trackUploadBatch(fv, std::move(temps));
 }
 
 // ---------------------------------------------------------------------------
@@ -565,9 +511,6 @@ bool Scene::loadGltf(
         mat.emissiveStrength = 1.0f;  // tinygltf uses factor directly, could scale here
         materials.push_back(mat);
     }
-
-    auto cmdList = cmdQueue.getCmdList();
-    std::vector<ComPtr<ID3D12Resource>> uploadTemps;
 
     for (const auto& gMesh : model.meshes) {
         for (const auto& prim : gMesh.primitives) {
@@ -636,8 +579,7 @@ bool Scene::loadGltf(
             }
 
             int matIdx = (prim.material >= 0) ? materialBaseIdx + prim.material : 0;
-            MeshRef meshRef =
-                appendToMegaBuffers(dev, cmdQueue, cmdList, verts, indices, matIdx, uploadTemps);
+            MeshRef meshRef = appendToMegaBuffers(dev, cmdQueue, verts, indices, matIdx);
             spawnableMeshRefs.push_back(meshRef);
             spawnableMeshNames.push_back(
                 gMesh.name.empty() ? "GLB mesh " + std::to_string(spawnableMeshNames.size())
@@ -670,9 +612,6 @@ bool Scene::loadGltf(
             ecsWorld.entity().set(tf).set(meshRef).set(bv).add<Pickable>();
         }
     }
-
-    uint64_t fv = cmdQueue.execCmdList(cmdList);
-    trackUploadBatch(fv, std::move(uploadTemps));
 
     spdlog::info(
         "Loaded GLB: {} entity(ies), {} material(s)", ecsWorld.count<MeshRef>(), materials.size()
@@ -759,8 +698,7 @@ void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef&
     cmdList->ResourceBarrier(1, &barrier);
 
     uint64_t fv = cmdQueue.execCmdList(cmdList);
-    std::vector<ComPtr<ID3D12Resource>> temps = { scratch };
-    trackUploadBatch(fv, std::move(temps));
+    cmdQueue.waitForFenceVal(fv);  // scratch must stay alive until build completes
 
     blasMap[key] = { blas };
     spdlog::debug("Built BLAS for mesh at vertexOffset {}", mesh.vertexOffset);

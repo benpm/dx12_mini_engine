@@ -208,8 +208,6 @@ bool Application::loadContent()
     std::vector<uint32_t> terrainIndices;
     generateTerrain(tp, terrainVerts, terrainIndices);
 
-    auto cmdList = cmdQueue.getCmdList();
-    std::vector<ComPtr<ID3D12Resource>> temps;
     {
         Material terrainMat;
         terrainMat.name = "Terrain";
@@ -220,15 +218,13 @@ bool Application::loadContent()
         int terrainMatIdx = static_cast<int>(scene.materials.size()) - 1;
 
         MeshRef meshRef = scene.appendToMegaBuffers(
-            *gfxDevice, cmdQueue, cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps
+            *gfxDevice, cmdQueue, terrainVerts, terrainIndices, terrainMatIdx
         );
 
         Transform tf;
         tf.world = translate(0, tp.positionY, 0);
         scene.ecsWorld.entity().set(tf).set(meshRef).add<TerrainEntity>();
     }
-    uint64_t fv = cmdQueue.execCmdList(cmdList);
-    scene.trackUploadBatch(fv, std::move(temps));
 
     {
         D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};

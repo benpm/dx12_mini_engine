@@ -170,13 +170,6 @@ export class Scene
     bool anyReflective = false;
     vec3 reflectivePos{};
 
-    struct PendingUploadBatch
-    {
-        uint64_t fenceValue = 0;
-        std::vector<ComPtr<ID3D12Resource>> resources;
-    };
-    std::vector<PendingUploadBatch> pendingUploads;
-
     void populateDrawCommands(
         uint32_t curBackBufIdx,
         const mat4& matModel,
@@ -190,15 +183,11 @@ export class Scene
     MeshRef appendToMegaBuffers(
         gfx::IDevice& dev,
         CommandQueue& cmdQueue,
-        ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const std::vector<VertexPBR>& vertices,
         const std::vector<uint32_t>& indices,
-        int materialIdx,
-        std::vector<ComPtr<ID3D12Resource>>& temps
+        int materialIdx
     );
     void clearScene(CommandQueue& cmdQueue);
-    void retireCompletedUploads(const CommandQueue& cmdQueue);
-    void trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resource>>&& temps);
     bool loadGltf(
         const std::string& path,
         gfx::IDevice& dev,
