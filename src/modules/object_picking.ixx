@@ -38,25 +38,31 @@ export class ObjectPicker
     D3D12_CPU_DESCRIPTOR_HANDLE getRTV() const;
     D3D12_CPU_DESCRIPTOR_HANDLE getDSV() const;
 
-    ComPtr<ID3D12PipelineState> pso;
+    gfx::PipelineHandle pso{};
 
     static constexpr uint32_t invalidID = UINT32_MAX;
     uint32_t pickedIndex = invalidID;
 
+    ~ObjectPicker();
+
    private:
     struct ReadbackSlot
     {
-        ComPtr<ID3D12Resource> buffer;
+        gfx::BufferHandle buffer{};
         bool pendingRead = false;
         uint64_t fenceValue = 0;
     };
 
-    ComPtr<ID3D12Resource> idRT;
-    ComPtr<ID3D12Resource> depthBuffer;
+    gfx::TextureHandle idRT{};
+    gfx::TextureHandle depthBuffer{};
     ComPtr<ID3D12DescriptorHeap> rtvHeap;
     ComPtr<ID3D12DescriptorHeap> dsvHeap;
     ReadbackSlot readbackSlots[readbackRingSize];
     uint32_t writeSlot = 0;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+
+    gfx::IDevice* devForDestroy = nullptr;
+    gfx::ShaderHandle vsHandle{};
+    gfx::ShaderHandle psHandle{};
 };

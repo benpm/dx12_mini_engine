@@ -13,6 +13,32 @@ module object_picking;
 
 using Microsoft::WRL::ComPtr;
 
+ObjectPicker::~ObjectPicker()
+{
+    if (devForDestroy) {
+        if (idRT.isValid()) {
+            devForDestroy->destroy(idRT);
+        }
+        if (depthBuffer.isValid()) {
+            devForDestroy->destroy(depthBuffer);
+        }
+        if (pso.isValid()) {
+            devForDestroy->destroy(pso);
+        }
+        if (vsHandle.isValid()) {
+            devForDestroy->destroy(vsHandle);
+        }
+        if (psHandle.isValid()) {
+            devForDestroy->destroy(psHandle);
+        }
+        for (auto& slot : readbackSlots) {
+            if (slot.buffer.isValid()) {
+                devForDestroy->destroy(slot.buffer);
+            }
+        }
+    }
+}
+
 void ObjectPicker::createResources(
     gfx::IDevice& dev,
     uint32_t width,
@@ -20,40 +46,40 @@ void ObjectPicker::createResources(
     ComPtr<ID3D12RootSignature> rootSig
 )
 {
+    devForDestroy = &dev;
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     width_ = width;
     height_ = height;
 
     // --- ID render target (R32_UINT) ---
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = DXGI_FORMAT_R32_UINT;
-        clearVal.Color[0] = static_cast<float>(invalidID);  // Clear to max uint
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R32_UINT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
-            IID_PPV_ARGS(&idRT)
-        ));
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::R32Uint;
+        td.usage = gfx::TextureUsage::RenderTarget;
+        td.initialState = gfx::ResourceState::RenderTarget;
+        td.useClearValue = true;
+        td.clearColor[0] = static_cast<float>(invalidID);
+        td.debugName = "picker_idRT";
+        idRT = dev.createTexture(td);
     }
 
     // --- Depth buffer ---
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = DXGI_FORMAT_D32_FLOAT;
-        clearVal.DepthStencil = { 1.0f, 0 };
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_D32_FLOAT, width, height, 1, 1, 1, 0,
-            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-        );
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearVal,
-            IID_PPV_ARGS(&depthBuffer)
-        ));
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::D32Float;
+        td.usage = gfx::TextureUsage::DepthStencil;
+        td.initialState = gfx::ResourceState::DepthWrite;
+        td.useClearValue = true;
+        td.clearDepth = 1.0f;
+        td.debugName = "picker_depth";
+        depthBuffer = dev.createTexture(td);
     }
+    auto* idRes = static_cast<ID3D12Resource*>(dev.nativeResource(idRT));
+    auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
 
     // --- RTV heap ---
     {
@@ -65,7 +91,7 @@ void ObjectPicker::createResources(
         rtvDesc.Format = DXGI_FORMAT_R32_UINT;
         rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
         device->CreateRenderTargetView(
-            idRT.Get(), &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
+            idRes, &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 
@@ -79,56 +105,65 @@ void ObjectPicker::createResources(
         dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
         dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
         device->CreateDepthStencilView(
-            depthBuffer.Get(), &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+            depthRes, &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 
-    // --- Readback buffer (256-byte aligned row pitch for a single R32_UINT pixel) ---
-    {
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_READBACK);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(256);
-        for (auto& slot : readbackSlots) {
-            chkDX(device->CreateCommittedResource(
-                &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                IID_PPV_ARGS(&slot.buffer)
-            ));
-            slot.pendingRead = false;
-            slot.fenceValue = 0;
-        }
-        writeSlot = 0;
+    // --- Readback buffer ring ---
+    for (auto& slot : readbackSlots) {
+        gfx::BufferDesc bd{};
+        bd.size = 256;  // 256-byte aligned for the single-pixel R32_UINT footprint
+        bd.usage = gfx::BufferUsage::Readback;
+        bd.debugName = "picker_readback";
+        slot.buffer = dev.createBuffer(bd);
+        slot.pendingRead = false;
+        slot.fenceValue = 0;
     }
+    writeSlot = 0;
 
     // --- PSO (reuses scene vertex shader, ID pixel shader, R32_UINT target) ---
     {
-        D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        gfx::ShaderDesc vsDesc{};
+        vsDesc.stage = gfx::ShaderStage::Vertex;
+        vsDesc.bytecode = g_vertex_shader;
+        vsDesc.bytecodeSize = sizeof(g_vertex_shader);
+        vsDesc.debugName = "picker_vs";
+        vsHandle = dev.createShader(vsDesc);
+
+        gfx::ShaderDesc psDesc{};
+        psDesc.stage = gfx::ShaderStage::Pixel;
+        psDesc.bytecode = g_id_ps;
+        psDesc.bytecodeSize = sizeof(g_id_ps);
+        psDesc.debugName = "picker_ps";
+        psHandle = dev.createShader(psDesc);
+
+        static constexpr gfx::VertexAttribute attrs[] = {
+            { "POSITION", 0, gfx::Format::RGB32Float, 0 },
+            { "NORMAL", 0, gfx::Format::RGB32Float, 12 },
+            { "TEXCOORD", 0, gfx::Format::RG32Float, 24 },
         };
 
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-        psoDesc.pRootSignature = rootSig.Get();
-        psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-        psoDesc.VS = { g_vertex_shader, sizeof(g_vertex_shader) };
-        psoDesc.PS = { g_id_ps, sizeof(g_id_ps) };
-        psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        psoDesc.SampleMask = UINT_MAX;
-        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R32_UINT;
-        psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        psoDesc.SampleDesc = { 1, 0 };
-        chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+        gfx::GraphicsPipelineDesc gd{};
+        gd.vs = vsHandle;
+        gd.ps = psHandle;
+        gd.vertexAttributes = attrs;
+        gd.vertexStride = 32;
+        gd.topology = gfx::PrimitiveTopology::TriangleList;
+        gd.numRenderTargets = 1;
+        gd.renderTargetFormats[0] = gfx::Format::R32Uint;
+        gd.depthStencilFormat = gfx::Format::D32Float;
+        gd.depthStencil.depthEnable = true;
+        gd.depthStencil.depthWrite = true;
+        gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+        gd.nativeRootSignatureOverride = rootSig.Get();
+        gd.debugName = "picker_pso";
+        pso = dev.createGraphicsPipeline(gd);
     }
 }
 
 void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    devForDestroy = &dev;
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     if (width == 0 || height == 0 || (width == width_ && height == height_)) {
         return;
@@ -137,47 +172,54 @@ void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
     height_ = height;
 
     // Recreate ID RT
+    if (idRT.isValid()) {
+        dev.destroy(idRT);
+    }
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = DXGI_FORMAT_R32_UINT;
-        clearVal.Color[0] = static_cast<float>(invalidID);
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R32_UINT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        idRT.Reset();
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
-            IID_PPV_ARGS(&idRT)
-        ));
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::R32Uint;
+        td.usage = gfx::TextureUsage::RenderTarget;
+        td.initialState = gfx::ResourceState::RenderTarget;
+        td.useClearValue = true;
+        td.clearColor[0] = static_cast<float>(invalidID);
+        td.debugName = "picker_idRT";
+        idRT = dev.createTexture(td);
+    }
+    auto* idRes = static_cast<ID3D12Resource*>(dev.nativeResource(idRT));
+    {
         D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
         rtvDesc.Format = DXGI_FORMAT_R32_UINT;
         rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
         device->CreateRenderTargetView(
-            idRT.Get(), &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
+            idRes, &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 
     // Recreate depth buffer
+    if (depthBuffer.isValid()) {
+        dev.destroy(depthBuffer);
+    }
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = DXGI_FORMAT_D32_FLOAT;
-        clearVal.DepthStencil = { 1.0f, 0 };
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_D32_FLOAT, width, height, 1, 1, 1, 0,
-            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-        );
-        depthBuffer.Reset();
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearVal,
-            IID_PPV_ARGS(&depthBuffer)
-        ));
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::D32Float;
+        td.usage = gfx::TextureUsage::DepthStencil;
+        td.initialState = gfx::ResourceState::DepthWrite;
+        td.useClearValue = true;
+        td.clearDepth = 1.0f;
+        td.debugName = "picker_depth";
+        depthBuffer = dev.createTexture(td);
+    }
+    auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
+    {
         D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
         dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
         dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
         device->CreateDepthStencilView(
-            depthBuffer.Get(), &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+            depthRes, &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 }
@@ -200,21 +242,23 @@ void ObjectPicker::copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32
     }
 
     auto& slot = readbackSlots[writeSlot];
+    auto* idRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(idRT));
+    auto* slotRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(slot.buffer));
 
     // Transition ID RT to COPY_SOURCE
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        idRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE
+        idRes, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE
     );
     cmdList->ResourceBarrier(1, &barrier);
 
     // Copy the single pixel at (x, y)
     D3D12_TEXTURE_COPY_LOCATION src = {};
-    src.pResource = idRT.Get();
+    src.pResource = idRes;
     src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     src.SubresourceIndex = 0;
 
     D3D12_TEXTURE_COPY_LOCATION dst = {};
-    dst.pResource = slot.buffer.Get();
+    dst.pResource = slotRes;
     dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
     dst.PlacedFootprint.Offset = 0;
     dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_UINT;
@@ -228,7 +272,7 @@ void ObjectPicker::copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32
 
     // Transition back to RENDER_TARGET
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        idRT.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET
+        idRes, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET
     );
     cmdList->ResourceBarrier(1, &barrier);
 
@@ -269,12 +313,10 @@ void ObjectPicker::readPickResult(uint64_t completedFenceValue)
     slot.pendingRead = false;
     slot.fenceValue = 0;
 
-    void* data = nullptr;
-    D3D12_RANGE readRange = { 0, sizeof(uint32_t) };
-    if (SUCCEEDED(slot.buffer->Map(0, &readRange, &data))) {
+    void* data = devForDestroy->map(slot.buffer);
+    if (data) {
         pickedIndex = *static_cast<uint32_t*>(data);
-        D3D12_RANGE writeRange = { 0, 0 };
-        slot.buffer->Unmap(0, &writeRange);
+        devForDestroy->unmap(slot.buffer);
     } else {
         pickedIndex = invalidID;
     }

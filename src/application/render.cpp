@@ -718,7 +718,7 @@ void Application::render()
                 cmd->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
                 cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-                cmd->SetPipelineState(picker.pso.Get());
+                cmdRef.bindPipeline(picker.pso);
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
                 bindSharedGeometry(cmd);
                 cmd->OMSetRenderTargets(1, &idRtv, true, &idDsv);
