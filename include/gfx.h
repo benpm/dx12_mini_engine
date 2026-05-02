@@ -145,6 +145,7 @@ namespace gfx
 
         virtual void resize(uint32_t width, uint32_t height) = 0;
         virtual TextureHandle currentBackBuffer() = 0;
+        virtual TextureHandle backBufferAt(uint32_t index) = 0;
         virtual uint32_t currentIndex() const = 0;
         virtual uint32_t bufferCount() const = 0;
         virtual uint32_t width() const = 0;

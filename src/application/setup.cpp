@@ -506,8 +506,11 @@ void Application::onResize(uint32_t width, uint32_t height)
     if (this->isInitialized) {
         this->cmdQueue.flush();
         this->renderGraph.reset();
+        // gfxSwapChain->resize() releases its old back-buffer texture handles
+        // internally before calling ResizeBuffers. Just clear our cached
+        // handles — the new ones come from updateRenderTargetViews below.
         for (int i = 0; i < this->nBuffers; ++i) {
-            this->backBuffers[i].Reset();
+            this->backBuffers[i] = {};
         }
         this->gfxSwapChain->resize(this->clientWidth, this->clientHeight);
         this->curBackBufIdx = this->gfxSwapChain->currentIndex();

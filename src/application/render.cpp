@@ -48,7 +48,8 @@ void Application::render()
         picker.readPickResult(this->cmdQueue.completedFenceValue());
     }
 
-    auto backBuffer = this->backBuffers[this->curBackBufIdx];
+    gfx::TextureHandle backBuffer = this->backBuffers[this->curBackBufIdx];
+    auto* backBufferRes = static_cast<ID3D12Resource*>(this->gfxDevice->nativeResource(backBuffer));
     auto cmdList = this->cmdQueue.getCmdList();
 
     // --- Compute per-frame scene data ---
@@ -196,7 +197,7 @@ void Application::render()
     // --- Render Graph Setup ---
     renderGraph.reset();
     auto hBackBuffer =
-        renderGraph.importTexture("BackBuffer", backBuffer.Get(), D3D12_RESOURCE_STATE_PRESENT);
+        renderGraph.importTexture("BackBuffer", backBufferRes, D3D12_RESOURCE_STATE_PRESENT);
     auto hDepthBuffer = renderGraph.importTexture(
         "MainDepth", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer)),
         D3D12_RESOURCE_STATE_DEPTH_WRITE
@@ -789,7 +790,7 @@ void Application::render()
                 rtvDescSize
             );
             bloom.render(
-                cmdRef, backBuffer, backBufRtv, clientWidth, clientHeight, bloomThreshold,
+                cmdRef, backBufferRes, backBufRtv, clientWidth, clientHeight, bloomThreshold,
                 bloomIntensity, tonemapMode, skyParams
             );
         }
@@ -855,7 +856,7 @@ void Application::render()
         if (this->frameCount == this->runtimeConfig.screenshotFrame) {
             spdlog::info("Saving screenshot and exiting...");
             HRESULT hr = DirectX::SaveWICTextureToFile(
-                this->cmdQueue.queue.Get(), backBuffer.Get(), GUID_ContainerFormatPng,
+                this->cmdQueue.queue.Get(), backBufferRes, GUID_ContainerFormatPng,
                 L"screenshot.png", D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT
             );
             if (FAILED(hr)) {

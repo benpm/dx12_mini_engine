@@ -105,7 +105,7 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12Device2> device;
     CommandQueue cmdQueue;
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain;
-    Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers[nBuffers];
+    gfx::TextureHandle backBuffers[nBuffers];
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
     UINT rtvDescSize;
     UINT curBackBufIdx;

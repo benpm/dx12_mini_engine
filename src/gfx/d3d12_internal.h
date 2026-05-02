@@ -483,6 +483,11 @@ namespace gfxd3d12
 
         void resize(uint32_t w, uint32_t h) override;
         gfx::TextureHandle currentBackBuffer() override;
+        gfx::TextureHandle backBufferAt(uint32_t index) override
+        {
+            return index < backBufferHandles.size() ? backBufferHandles[index]
+                                                    : gfx::TextureHandle{};
+        }
         uint32_t currentIndex() const override;
         uint32_t bufferCount() const override { return bufferCount_; }
         uint32_t width() const override { return width_; }

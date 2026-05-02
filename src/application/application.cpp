@@ -493,10 +493,14 @@ void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descripto
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(descriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
     for (int i = 0; i < this->nBuffers; ++i) {
-        ComPtr<ID3D12Resource> backBuffer;
-        chkDX(this->swapChain->GetBuffer(i, IID_PPV_ARGS(&backBuffer)));
-        this->device->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
-        this->backBuffers[i] = backBuffer;
+        // Pull the back-buffer texture handle from the gfx swap chain (which
+        // owns one set of handles via adoptBackBuffer). The RTV is still
+        // engine-owned (rtvHeap), so create the view via raw D3D12 against
+        // the underlying ID3D12Resource.
+        backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
+        auto* nativeBB =
+            static_cast<ID3D12Resource*>(this->gfxDevice->nativeResource(backBuffers[i]));
+        this->device->CreateRenderTargetView(nativeBB, nullptr, rtvHandle);
         rtvHandle.Offset(static_cast<INT>(rtvDescriptorSize));
     }
 }
