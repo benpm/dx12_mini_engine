@@ -116,10 +116,6 @@ Application::Application()
     this->clientWidth = win->width;
     this->clientHeight = win->height;
 
-    // Cache the native ID3D12Device2 pointer for legacy subsystems. The gfx
-    // device retains ownership; ComPtr here just keeps a refcounted ref alive.
-    this->device = static_cast<ID3D12Device2*>(this->gfxDevice->nativeHandle());
-
     // Register callbacks so WndProc can drive the render loop without importing application
     win->callbackCtx = this;
     win->onPaintFn = [](void* ctx) {
@@ -148,7 +144,8 @@ Application::Application()
         auto* gfxQueueNative =
             static_cast<ID3D12CommandQueue*>(this->gfxDevice->graphicsQueue()->nativeHandle());
         this->cmdQueue = CommandQueue(
-            this->device, ComPtr<ID3D12CommandQueue>(gfxQueueNative), D3D12_COMMAND_LIST_TYPE_DIRECT
+            ComPtr<ID3D12Device2>(static_cast<ID3D12Device2*>(gfxDevice->nativeHandle())),
+            ComPtr<ID3D12CommandQueue>(gfxQueueNative), D3D12_COMMAND_LIST_TYPE_DIRECT
         );
     }
 
@@ -163,12 +160,12 @@ Application::Application()
         sd.allowTearing = this->tearingSupported;
         this->gfxSwapChain = this->gfxDevice->createSwapChain(sd);
     }
-    this->swapChain = static_cast<IDXGISwapChain4*>(this->gfxSwapChain->nativeHandle());
     this->curBackBufIdx = this->gfxSwapChain->currentIndex();
 
     spdlog::info("Creating rtvHeap");
     this->rtvHeap = this->createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, this->nBuffers);
-    this->rtvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    this->rtvDescSize = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle())
+                            ->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     spdlog::info("updateRenderTargetViews");
     this->updateRenderTargetViews(this->rtvHeap);
@@ -466,9 +463,10 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-    device->CreateDepthStencilView(
-        depthRes, &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
-    );
+    static_cast<ID3D12Device2*>(gfxDevice->nativeHandle())
+        ->CreateDepthStencilView(
+            depthRes, &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
+        );
 }
 
 // ---------------------------------------------------------------------------
@@ -478,29 +476,27 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
 ComPtr<ID3D12DescriptorHeap>
 Application::createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors)
 {
+    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
     ComPtr<ID3D12DescriptorHeap> descriptorHeap;
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.NumDescriptors = numDescriptors;
     desc.Type = type;
-    chkDX(this->device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
+    chkDX(d3dDev->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
     return descriptorHeap;
 }
 
 void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descriptorHeap)
 {
+    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
     UINT rtvDescriptorSize =
-        this->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(descriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
     for (int i = 0; i < this->nBuffers; ++i) {
-        // Pull the back-buffer texture handle from the gfx swap chain (which
-        // owns one set of handles via adoptBackBuffer). The RTV is still
-        // engine-owned (rtvHeap), so create the view via raw D3D12 against
-        // the underlying ID3D12Resource.
         backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
         auto* nativeBB =
             static_cast<ID3D12Resource*>(this->gfxDevice->nativeResource(backBuffers[i]));
-        this->device->CreateRenderTargetView(nativeBB, nullptr, rtvHandle);
+        d3dDev->CreateRenderTargetView(nativeBB, nullptr, rtvHandle);
         rtvHandle.Offset(static_cast<INT>(rtvDescriptorSize));
     }
 }

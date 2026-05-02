@@ -130,6 +130,9 @@ class MockDevice final : public IDevice
     uint32_t bindlessUavIndex(TextureHandle) override { return 0; }
     uint32_t bindlessUavIndex(BufferHandle) override { return 0; }
     uint32_t bindlessSamplerIndex(SamplerHandle) override { return 0; }
+    uint64_t srvGpuDescriptorHandle(uint32_t) const override { return 0; }
+    uint32_t createTypedSrv(TextureHandle, Format) override { return 0; }
+    void* srvHeapNative() const override { return nullptr; }
 
     IQueue* graphicsQueue() override { return nullptr; }
     std::unique_ptr<ISwapChain> createSwapChain(const SwapChainDesc&) override { return nullptr; }

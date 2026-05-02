@@ -214,43 +214,21 @@ void Scene::createMegaBuffers(gfx::IDevice& dev)
 
 void Scene::createDrawDataBuffers(gfx::IDevice& dev)
 {
-    auto* device = nativeDev(dev);
     spdlog::info("Scene::createDrawDataBuffers (triple-buffered, {} slots)", maxDrawsPerFrame);
-    UINT cbvSrvSize =
-        device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    sceneSrvDescSize = cbvSrvSize;
-
-    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = nBuffers + 3;  // buffer[0..2], shadow[3], cubemap[4], ssao[5]
-    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    chkDX(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&sceneSrvHeap)));
 
     for (int i = 0; i < nBuffers; ++i) {
         // Per-object structured buffer (Upload heap, persistently mapped).
+        // Registered in the gfx bindless SRV heap via Structured usage.
         size_t byteSize = maxDrawsPerFrame * sizeof(PerObjectData);
         {
             gfx::BufferDesc bd{};
             bd.size = byteSize;
-            bd.usage = gfx::BufferUsage::Upload;
+            bd.usage = gfx::BufferUsage::Upload | gfx::BufferUsage::Structured;
+            bd.structuredStride = sizeof(PerObjectData);
             bd.debugName = "scene_perObject";
             perObjectBuffer[i] = dev.createBuffer(bd);
             perObjectMapped[i] = static_cast<PerObjectData*>(dev.map(perObjectBuffer[i]));
         }
-
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Buffer.NumElements = (UINT)maxDrawsPerFrame;
-        srvDesc.Buffer.StructureByteStride = sizeof(PerObjectData);
-        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-
-        CD3DX12_CPU_DESCRIPTOR_HANDLE hSrv(
-            sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), i, cbvSrvSize
-        );
-        auto* objectRes = static_cast<ID3D12Resource*>(dev.nativeResource(perObjectBuffer[i]));
-        device->CreateShaderResourceView(objectRes, &srvDesc, hSrv);
 
         // Per-frame CB (aligned to 256-byte boundary as required by CBV)
         const uint64_t perFrameSize = (sizeof(PerFrameCB) + 255) & ~255;

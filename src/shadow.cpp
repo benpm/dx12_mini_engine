@@ -42,18 +42,14 @@ ShadowRenderer::~ShadowRenderer()
 void ShadowRenderer::createResources(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE vs,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT srvDescSize,
-    INT shadowSrvSlot
+    D3D12_SHADER_BYTECODE vs
 )
 {
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     devForDestroy = &dev;
 
-    // Shadow depth texture (R32_TYPELESS resource + D32_FLOAT view; sampled
-    // as SRV by the scene pass, so we need a typed SRV format that the
-    // engine creates manually below).
+    // Shadow depth texture (R32_TYPELESS + D32_FLOAT DSV; the caller creates
+    // a typed R32_FLOAT SRV via dev.createTypedSrv() and stores the index).
     {
         gfx::TextureDesc td{};
         td.width = mapSize;
@@ -83,20 +79,6 @@ void ShadowRenderer::createResources(
         device->CreateDepthStencilView(
             shadowRes, &dsvViewDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
         );
-    }
-
-    // SRV in sceneSrvHeap at the given slot (R32_FLOAT — typed view of the
-    // R32_TYPELESS resource).
-    {
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(
-            sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), shadowSrvSlot, srvDescSize
-        );
-        device->CreateShaderResourceView(shadowRes, &srvDesc, srvHandle);
     }
 
     reloadPSO(dev, rootSig, vs);
@@ -185,9 +167,8 @@ void ShadowRenderer::render(
     gfx::ICommandList& cmdRef,
     const D3D12_VERTEX_BUFFER_VIEW& vbv,
     const D3D12_INDEX_BUFFER_VIEW& ibv,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT srvDescSize,
-    uint32_t curBackBufIdx,
+    ID3D12DescriptorHeap* srvHeap,
+    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
     const std::vector<DrawCmd>& drawCmds,
     uint32_t totalSlots
 )
@@ -208,13 +189,9 @@ void ShadowRenderer::render(
     cmdList->IASetVertexBuffers(0, 1, &vbv);
     cmdList->IASetIndexBuffer(&ibv);
 
-    ID3D12DescriptorHeap* heaps[] = { sceneSrvHeap };
+    ID3D12DescriptorHeap* heaps[] = { srvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
-        sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
-        srvDescSize
-    );
-    cmdList->SetGraphicsRootDescriptorTable(4, srvGpuHandle);
+    cmdList->SetGraphicsRootDescriptorTable(4, perObjHandle);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
         cmdList->SetGraphicsRoot32BitConstant(2, totalSlots + drawCmds[i].baseDrawIndex, 0);

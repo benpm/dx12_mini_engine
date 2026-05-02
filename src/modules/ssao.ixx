@@ -28,10 +28,7 @@ export class SsaoRenderer
         uint32_t width,
         uint32_t height,
         gfx::TextureHandle normalBuffer,
-        gfx::TextureHandle depthBuffer,
-        ID3D12DescriptorHeap* sceneSrvHeap,
-        UINT sceneSrvDescSize,
-        INT ssaoSlot
+        gfx::TextureHandle depthBuffer
     );
 
     void resize(
@@ -39,11 +36,10 @@ export class SsaoRenderer
         uint32_t width,
         uint32_t height,
         gfx::TextureHandle normalBuffer,
-        gfx::TextureHandle depthBuffer,
-        ID3D12DescriptorHeap* sceneSrvHeap,
-        UINT sceneSrvDescSize,
-        INT ssaoSlot
+        gfx::TextureHandle depthBuffer
     );
+
+    gfx::TextureHandle blurRT() const { return ssaoBlurRT; }
 
     void render(
         gfx::ICommandList& cmdRef,
@@ -87,10 +83,7 @@ export class SsaoRenderer
         uint32_t width,
         uint32_t height,
         gfx::TextureHandle normalBuffer,
-        gfx::TextureHandle depthBuffer,
-        ID3D12DescriptorHeap* sceneSrvHeap,
-        UINT sceneSrvDescSize,
-        INT ssaoSlot
+        gfx::TextureHandle depthBuffer
     );
 
     void transitionResource(

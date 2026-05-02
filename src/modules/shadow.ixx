@@ -35,15 +35,7 @@ export class ShadowRenderer
     gfx::IDevice* devForDestroy = nullptr;
     ~ShadowRenderer();
 
-    // sceneSrvHeap: shadow SRV placed at sceneSrvHeap[shadowSrvSlot]
-    void createResources(
-        gfx::IDevice& dev,
-        ID3D12RootSignature* rootSig,
-        D3D12_SHADER_BYTECODE vs,
-        ID3D12DescriptorHeap* sceneSrvHeap,
-        UINT srvDescSize,
-        INT shadowSrvSlot
-    );
+    void createResources(gfx::IDevice& dev, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
 
     void reloadPSO(gfx::IDevice& dev, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
 
@@ -55,9 +47,8 @@ export class ShadowRenderer
         gfx::ICommandList& cmdRef,
         const D3D12_VERTEX_BUFFER_VIEW& vbv,
         const D3D12_INDEX_BUFFER_VIEW& ibv,
-        ID3D12DescriptorHeap* sceneSrvHeap,
-        UINT srvDescSize,
-        uint32_t curBackBufIdx,
+        ID3D12DescriptorHeap* srvHeap,
+        D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
         const std::vector<DrawCmd>& drawCmds,
         uint32_t totalSlots
     );

@@ -145,9 +145,6 @@ export class Scene
     gfx::BufferHandle perPassBuffer[nBuffers];
     PerPassCB* perPassMapped[nBuffers]{};
 
-    ComPtr<ID3D12DescriptorHeap> sceneSrvHeap;
-    UINT sceneSrvDescSize = 0;
-
     // Light Buffer for Raytracing/ReSTIR
     gfx::BufferHandle lightBuffer{};
     uint32_t activeLightCount = 0;

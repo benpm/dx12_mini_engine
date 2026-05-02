@@ -98,10 +98,7 @@ void SsaoRenderer::createRTs(
     uint32_t width,
     uint32_t height,
     gfx::TextureHandle normalBuffer,
-    gfx::TextureHandle depthBuffer,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT sceneSrvDescSize,
-    INT ssaoSlot
+    gfx::TextureHandle depthBuffer
 )
 {
     auto* device = nativeDev(dev);
@@ -169,7 +166,8 @@ void SsaoRenderer::createRTs(
         device->CreateShaderResourceView(res, &srvDesc, ssaoSrv);
     }
 
-    // ssaoBlurRT
+    // ssaoBlurRT — the gfx backend auto-creates an SRV in the bindless heap
+    // (via TextureUsage::ShaderResource) so callers can use bindlessSrvIndex(blurRT()).
     {
         gfx::TextureDesc td{};
         td.width = width;
@@ -181,15 +179,6 @@ void SsaoRenderer::createRTs(
         ssaoBlurRT = dev.createTexture(td);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoBlurRT));
         device->CreateRenderTargetView(res, nullptr, blurRtvCpu());
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R8_UNORM;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE sceneSrv(
-            sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), ssaoSlot, sceneSrvDescSize
-        );
-        device->CreateShaderResourceView(res, &srvDesc, sceneSrv);
     }
 }
 
@@ -198,10 +187,7 @@ void SsaoRenderer::createResources(
     uint32_t width,
     uint32_t height,
     gfx::TextureHandle normalBuffer,
-    gfx::TextureHandle depthBuffer,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT sceneSrvDescSize,
-    INT ssaoSlot
+    gfx::TextureHandle depthBuffer
 )
 {
     devForDestroy = &dev;
@@ -376,9 +362,7 @@ void SsaoRenderer::createResources(
         device->CreateShaderResourceView(noiseRes, &srvDesc, noiseSrv);
     }
 
-    createRTs(
-        dev, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
-    );
+    createRTs(dev, width, height, normalBuffer, depthBuffer);
 }
 
 void SsaoRenderer::resize(
@@ -386,15 +370,10 @@ void SsaoRenderer::resize(
     uint32_t width,
     uint32_t height,
     gfx::TextureHandle normalBuffer,
-    gfx::TextureHandle depthBuffer,
-    ID3D12DescriptorHeap* sceneSrvHeap,
-    UINT sceneSrvDescSize,
-    INT ssaoSlot
+    gfx::TextureHandle depthBuffer
 )
 {
-    createRTs(
-        dev, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
-    );
+    createRTs(dev, width, height, normalBuffer, depthBuffer);
 }
 
 void SsaoRenderer::render(

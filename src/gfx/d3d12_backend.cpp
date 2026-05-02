@@ -292,6 +292,19 @@ namespace gfxd3d12
         rec.resource = std::move(res);
         rec.desc = d;
         rec.currentState = initState;
+
+        if (gfx::any(d.usage, gfx::BufferUsage::Structured) && d.structuredStride > 0) {
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Buffer.NumElements = static_cast<UINT>(d.size / d.structuredStride);
+            srvDesc.Buffer.StructureByteStride = d.structuredStride;
+            rec.srvIndex = resourceHeap.allocate();
+            d3dDevice->CreateShaderResourceView(
+                rec.resource.Get(), &srvDesc, resourceHeap.cpuHandle(rec.srvIndex)
+            );
+        }
         return { slot };
     }
 
@@ -699,6 +712,29 @@ namespace gfxd3d12
     {
         auto* r = getSampler(h);
         return r ? r->index : 0;
+    }
+
+    uint64_t Device::srvGpuDescriptorHandle(uint32_t bindlessIndex) const
+    {
+        return resourceHeap.gpuHandle(bindlessIndex).ptr;
+    }
+
+    uint32_t Device::createTypedSrv(gfx::TextureHandle h, gfx::Format viewFormat)
+    {
+        auto* tex = getTexture(h);
+        if (!tex) {
+            return 0;
+        }
+        uint32_t srvIdx = resourceHeap.allocate();
+        D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+        sd.Format = toDXGI(viewFormat);
+        sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sd.Texture2D.MipLevels = 1;
+        d3dDevice->CreateShaderResourceView(
+            tex->resource.Get(), &sd, resourceHeap.cpuHandle(srvIdx)
+        );
+        return srvIdx;
     }
 
     std::unique_ptr<gfx::ISwapChain> Device::createSwapChain(const gfx::SwapChainDesc& d)

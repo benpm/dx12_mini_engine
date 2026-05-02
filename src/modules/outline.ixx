@@ -19,9 +19,8 @@ export struct OutlineRenderContext
     ID3D12RootSignature* rootSig = nullptr;
     const D3D12_VERTEX_BUFFER_VIEW* vbv = nullptr;
     const D3D12_INDEX_BUFFER_VIEW* ibv = nullptr;
-    ID3D12DescriptorHeap* sceneSrvHeap = nullptr;
-    UINT srvDescSize = 0;
-    uint32_t curBackBufIdx = 0;
+    ID3D12DescriptorHeap* srvHeap = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle{};
     D3D12_GPU_VIRTUAL_ADDRESS perFrameAddr = 0;
     D3D12_GPU_VIRTUAL_ADDRESS perPassAddr = 0;
     D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv{};

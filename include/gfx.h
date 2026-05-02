@@ -199,6 +199,18 @@ namespace gfx
         virtual uint32_t bindlessUavIndex(BufferHandle h) = 0;
         virtual uint32_t bindlessSamplerIndex(SamplerHandle h) = 0;
 
+        // Returns the GPU descriptor handle (D3D12_GPU_DESCRIPTOR_HANDLE.ptr) for
+        // a slot in the bindless SRV/UAV/CBV heap. Pass to SetGraphicsRootDescriptorTable.
+        virtual uint64_t srvGpuDescriptorHandle(uint32_t bindlessIndex) const = 0;
+
+        // Creates a typed SRV for a typeless resource (e.g. R32Typeless → R32Float
+        // for shadow depth) and registers it in the bindless heap. Returns the slot index.
+        virtual uint32_t createTypedSrv(TextureHandle h, Format viewFormat) = 0;
+
+        // Returns the underlying ID3D12DescriptorHeap* for the bindless SRV heap.
+        // Needed to call SetDescriptorHeaps with the gfx-owned shader-visible heap.
+        virtual void* srvHeapNative() const = 0;
+
         virtual IQueue* graphicsQueue() = 0;
         virtual std::unique_ptr<ISwapChain> createSwapChain(const SwapChainDesc& desc) = 0;
         virtual void retireCompletedResources() = 0;

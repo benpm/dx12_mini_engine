@@ -43,24 +43,15 @@ export import gfx;
 // Global application data and state
 export namespace app_slots
 {
-    // Root signature slot assignments
-
+    // Root signature slot assignments (8-param layout, VOLATILE descriptor tables)
     inline constexpr UINT rootPerFrameCB = 0;
     inline constexpr UINT rootPerPassCB = 1;
     inline constexpr UINT rootDrawIndex = 2;
     inline constexpr UINT rootOutlineParams = 3;
-    inline constexpr UINT rootPerObjectSrv = 4;
+    inline constexpr UINT rootPerObjectSrv = 4;  // SRV for per-object StructuredBuffer
     inline constexpr UINT rootShadowSrv = 5;
     inline constexpr UINT rootCubemapSrv = 6;
     inline constexpr UINT rootSsaoSrv = 7;
-
-    // Note: rootPerObjectSrv is a descriptor table with one entry per back buffer, so the actual
-    // SRV for drawIndex N is at rootPerObjectSrv + (N * srvSlotPerObjectBase)
-
-    inline constexpr uint32_t srvSlotPerObjectBase = 0;
-    inline constexpr uint32_t srvSlotShadow = Scene::nBuffers;
-    inline constexpr uint32_t srvSlotCubemap = Scene::nBuffers + 1;
-    inline constexpr uint32_t srvSlotSsao = Scene::nBuffers + 2;
 }  // namespace app_slots
 
 export class Application
@@ -98,13 +89,10 @@ export class Application
     vec2 mouseDelta;
     // gfx abstraction owns device + swap chain (P1). Legacy ComPtr fields below
     // are obtained via the gfx native handles and remain in place during
-    // P2-P13 subsystem migration so existing subsystem signatures keep working.
     std::unique_ptr<gfx::IDevice> gfxDevice;
     std::unique_ptr<gfx::ISwapChain> gfxSwapChain;
 
-    Microsoft::WRL::ComPtr<ID3D12Device2> device;
     CommandQueue cmdQueue;
-    Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain;
     gfx::TextureHandle backBuffers[nBuffers];
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
     UINT rtvDescSize;
@@ -133,6 +121,9 @@ export class Application
     gfx::TextureHandle depthBuffer{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
+    // Bindless SRV index for the shadow map typed view (R32Float of R32Typeless resource).
+    // Created via gfxDevice->createTypedSrv() after shadow.createResources().
+    uint32_t shadowSrvIdx = 0;
     // Scene + GBuffer PSOs migrated to gfx; the engine still owns the root sig
     // (descriptor-table layout) and passes it via nativeRootSignatureOverride
     // until P2 lands the bindless rewrite.

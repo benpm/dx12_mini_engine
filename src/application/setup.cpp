@@ -109,6 +109,7 @@ void Application::createScenePSO()
 void Application::createGridPSO()
 {
     if (!gridRootSig) {
+        auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
         CD3DX12_ROOT_PARAMETER1 rootParam;
         rootParam.InitAsConstantBufferView(
             0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
@@ -121,7 +122,7 @@ void Application::createGridPSO()
         chkDX(D3DX12SerializeVersionedRootSignature(
             &rsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &err
         ));
-        chkDX(device->CreateRootSignature(
+        chkDX(d3dDev->CreateRootSignature(
             0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&gridRootSig)
         ));
     }
@@ -185,6 +186,7 @@ bool Application::loadContent()
     }
     this->contentLoaded = true;
     spdlog::info("loadContent start");
+    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
 
     scene.createMegaBuffers(*gfxDevice);
     scene.createDrawDataBuffers(*gfxDevice);
@@ -231,22 +233,31 @@ bool Application::loadContent()
         dsvHeapDesc.NumDescriptors = 1;
         dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        chkDX(this->device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&this->dsvHeap)));
+        chkDX(d3dDev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&this->dsvHeap)));
     }
 
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(this->device->CheckFeatureSupport(
+    if (FAILED(d3dDev->CheckFeatureSupport(
             D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)
         ))) {
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
     }
 
+    // VOLATILE: descriptor contents are stable but offsets into the bindless heap vary per draw.
     CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
-    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0
-    ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1
-    ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2
-    ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3
+    ranges[0].Init(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+    );  // t0
+    ranges[1].Init(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+    );  // t1
+    ranges[2].Init(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+    );  // t2
+    ranges[3].Init(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+    );  // t3
 
     CD3DX12_ROOT_PARAMETER1 rootParams[8];
     rootParams[app_slots::rootPerFrameCB].InitAsConstantBufferView(
@@ -301,7 +312,7 @@ bool Application::loadContent()
     chkDX(D3DX12SerializeVersionedRootSignature(
         &rootSigDesc, featureData.HighestVersion, &rootSigBlob, &errorBlob
     ));
-    chkDX(this->device->CreateRootSignature(
+    chkDX(d3dDev->CreateRootSignature(
         0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
         IID_PPV_ARGS(&this->rootSignature)
     ));
@@ -312,9 +323,11 @@ bool Application::loadContent()
 
     shadow.createResources(
         *gfxDevice, rootSignature.Get(),
-        CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader)), scene.sceneSrvHeap.Get(),
-        scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotShadow)
+        CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader))
     );
+    // Create typed R32_FLOAT SRV for the shadow map (R32Typeless resource) in the gfx heap.
+    shadowSrvIdx = gfxDevice->createTypedSrv(shadow.shadowMap, gfx::Format::R32Float);
+
     bloom.createResources(*gfxDevice, clientWidth, clientHeight);
     outline.createResources(
         *gfxDevice, rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
@@ -328,15 +341,14 @@ bool Application::loadContent()
 
     resizeDepthBuffer(clientWidth, clientHeight);
     ssao.createResources(
-        *gfxDevice, clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal], depthBuffer,
-        scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, static_cast<INT>(app_slots::srvSlotSsao)
+        *gfxDevice, clientWidth, clientHeight, gbuffer.resources[GBuffer::Normal], depthBuffer
     );
     createGBufferPSO();
 
 #ifdef TRACY_ENABLE
     UINT64 tsFreq = 0;
     if (SUCCEEDED(cmdQueue.queue->GetTimestampFrequency(&tsFreq)) && tsFreq > 0) {
-        g_tracyD3d12Ctx = TracyD3D12Context(device.Get(), cmdQueue.queue.Get());
+        g_tracyD3d12Ctx = TracyD3D12Context(d3dDev, cmdQueue.queue.Get());
     }
 #endif
 
@@ -362,6 +374,7 @@ bool Application::loadContent()
 
 void Application::createCubemapResources()
 {
+    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
     if (cubemapTexture.isValid()) {
         gfxDevice->destroy(cubemapTexture);
     }
@@ -375,7 +388,7 @@ void Application::createCubemapResources()
         td.height = cubemapResolution;
         td.depthOrArraySize = 6;
         td.format = gfx::Format::R11G11B10Float;
-        td.usage = gfx::TextureUsage::RenderTarget;
+        td.usage = gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
         td.initialState = gfx::ResourceState::PixelShaderResource;
         td.isCubemap = true;
         td.debugName = "cubemap";
@@ -385,16 +398,16 @@ void Application::createCubemapResources()
 
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 6,
                                                D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
-    chkDX(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&cubemapRtvHeap)));
+    chkDX(d3dDev->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&cubemapRtvHeap)));
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = { DXGI_FORMAT_R11G11B10_FLOAT,
                                               D3D12_RTV_DIMENSION_TEXTURE2DARRAY };
     rtvDesc.Texture2DArray.ArraySize = 1;
     rtvDesc.Texture2DArray.MipSlice = 0;
-    UINT rtvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    UINT rtvSize = d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < 6; ++i) {
         rtvDesc.Texture2DArray.FirstArraySlice = i;
-        device->CreateRenderTargetView(cubemapRes, &rtvDesc, rtvHandle);
+        d3dDev->CreateRenderTargetView(cubemapRes, &rtvDesc, rtvHandle);
         rtvHandle.Offset(1, rtvSize);
     }
 
@@ -415,27 +428,21 @@ void Application::createCubemapResources()
 
     D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 6,
                                                D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
-    chkDX(device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&cubemapDsvHeap)));
+    chkDX(d3dDev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&cubemapDsvHeap)));
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = { DXGI_FORMAT_D32_FLOAT,
                                               D3D12_DSV_DIMENSION_TEXTURE2DARRAY };
     dsvDesc.Texture2DArray.ArraySize = 1;
     dsvDesc.Texture2DArray.MipSlice = 0;
-    UINT dsvSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    UINT dsvSize = d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
     CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < 6; ++i) {
         dsvDesc.Texture2DArray.FirstArraySlice = i;
-        device->CreateDepthStencilView(cubemapDepthRes, &dsvDesc, dsvHandle);
+        d3dDev->CreateDepthStencilView(cubemapDepthRes, &dsvDesc, dsvHandle);
         dsvHandle.Offset(1, dsvSize);
     }
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = { DXGI_FORMAT_R11G11B10_FLOAT,
-                                                D3D12_SRV_DIMENSION_TEXTURECUBE,
-                                                D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING };
-    srvDesc.TextureCube.MipLevels = 1;
-    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(
-        scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
-        static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
-    );
-    device->CreateShaderResourceView(cubemapRes, &srvDesc, srvHandle);
+    // The cubemap SRV is auto-created in the gfx bindless heap via TextureUsage::ShaderResource.
+    // Access it via gfxDevice->bindlessSrvIndex(cubemapTexture) in the render pass.
+    (void)cubemapRes;
 }
 
 void Application::createGBufferPSO()
@@ -522,8 +529,7 @@ void Application::onResize(uint32_t width, uint32_t height)
         bloom.resize(*gfxDevice, clientWidth, height);
         picker.resize(*gfxDevice, clientWidth, height);
         ssao.resize(
-            *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal], depthBuffer,
-            scene.sceneSrvHeap.Get(), scene.sceneSrvDescSize, static_cast<INT>(Scene::nBuffers + 2)
+            *gfxDevice, clientWidth, height, gbuffer.resources[GBuffer::Normal], depthBuffer
         );
         this->flush();
     }

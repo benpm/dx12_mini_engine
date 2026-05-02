@@ -145,15 +145,26 @@ void Application::render()
         cmd->IASetIndexBuffer(&scene.megaIBV);
     };
 
-    auto bindSceneHeapAndObjects = [&](ID3D12GraphicsCommandList2* cmd) {
-        ID3D12DescriptorHeap* heaps[] = { scene.sceneSrvHeap.Get() };
-        cmd->SetDescriptorHeaps(1, heaps);
+    // Precompute the per-object buffer GPU handle and shadow/cubemap/ssao SRV handles
+    // for this frame. All resources now live in the gfx bindless heap.
+    auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(gfxDevice->srvHeapNative());
+    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle;
+    perObjHandle.ptr = gfxDevice->srvGpuDescriptorHandle(
+        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx])
+    );
+    D3D12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle;
+    shadowSrvHandle.ptr = gfxDevice->srvGpuDescriptorHandle(shadowSrvIdx);
+    D3D12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle;
+    cubemapSrvHandle.ptr =
+        gfxDevice->srvGpuDescriptorHandle(gfxDevice->bindlessSrvIndex(cubemapTexture));
+    D3D12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle;
+    ssaoSrvHandle.ptr =
+        gfxDevice->srvGpuDescriptorHandle(gfxDevice->bindlessSrvIndex(ssao.blurRT()));
 
-        CD3DX12_GPU_DESCRIPTOR_HANDLE objectTable(
-            scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-            static_cast<INT>(curBackBufIdx), scene.sceneSrvDescSize
-        );
-        cmd->SetGraphicsRootDescriptorTable(app_slots::rootPerObjectSrv, objectTable);
+    auto bindSceneHeapAndObjects = [&](ID3D12GraphicsCommandList2* cmd) {
+        ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
+        cmd->SetDescriptorHeaps(1, heaps);
+        cmd->SetGraphicsRootDescriptorTable(app_slots::rootPerObjectSrv, perObjHandle);
     };
 
     auto bindPerFrameAndPass = [&](ID3D12GraphicsCommandList2* cmd,
@@ -245,8 +256,7 @@ void Application::render()
                 bindPerFrameAndPass(cmd, shadowPassAddr);
 
                 shadow.render(
-                    cmdRef, scene.megaVBV, scene.megaIBV, scene.sceneSrvHeap.Get(),
-                    scene.sceneSrvDescSize, curBackBufIdx, sceneDrawCmds, 0
+                    cmdRef, scene.megaVBV, scene.megaIBV, gfxSrvHeap, perObjHandle, sceneDrawCmds, 0
                 );
             }
         );
@@ -349,17 +359,8 @@ void Application::render()
                         ->GetGPUVirtualAddress();
                 cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerFrameCB, perFrameAddr);
 
-                CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrv(
-                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                    static_cast<INT>(app_slots::srvSlotShadow), scene.sceneSrvDescSize
-                );
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrv);
-
-                CD3DX12_GPU_DESCRIPTOR_HANDLE cubeSrv(
-                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                    static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
-                );
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubeSrv);
+                cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
+                cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
 
                 for (uint32_t face = 0; face < 6; ++face) {
                     CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
@@ -498,22 +499,8 @@ void Application::render()
             bindSceneHeapAndObjects(cmd);
             bindPerFrameAndPass(cmd, getPassCBAddress(0));
 
-            CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(app_slots::srvSlotShadow), scene.sceneSrvDescSize
-            );
             cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
-
-            CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
-            );
             cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
-
-            CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
-                scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                static_cast<INT>(app_slots::srvSlotSsao), scene.sceneSrvDescSize
-            );
             cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
 
             cmd->OMSetStencilRef(1);
@@ -559,22 +546,8 @@ void Application::render()
                 bindSceneHeapAndObjects(cmd);
                 bindPerFrameAndPass(cmd, scenePassAddr);
 
-                CD3DX12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle(
-                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                    static_cast<INT>(app_slots::srvSlotShadow), scene.sceneSrvDescSize
-                );
                 cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
-
-                CD3DX12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle(
-                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                    static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
-                );
                 cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
-
-                CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle(
-                    scene.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(),
-                    static_cast<INT>(app_slots::srvSlotSsao), scene.sceneSrvDescSize
-                );
                 cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
 
                 for (const auto& dc : gizmoDrawCmds) {
@@ -664,9 +637,8 @@ void Application::render()
                 outlineCtx.rootSig = this->rootSignature.Get();
                 outlineCtx.vbv = &scene.megaVBV;
                 outlineCtx.ibv = &scene.megaIBV;
-                outlineCtx.sceneSrvHeap = scene.sceneSrvHeap.Get();
-                outlineCtx.srvDescSize = scene.sceneSrvDescSize;
-                outlineCtx.curBackBufIdx = curBackBufIdx;
+                outlineCtx.srvHeap = gfxSrvHeap;
+                outlineCtx.perObjHandle = perObjHandle;
                 outlineCtx.perFrameAddr = perFrameAddr;
                 outlineCtx.perPassAddr = perPassAddr;
                 outlineCtx.hdrRtv = hdrRtv;

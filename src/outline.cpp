@@ -136,17 +136,13 @@ void OutlineRenderer::render(
     cmdList->IASetVertexBuffers(0, 1, ctx.vbv);
     cmdList->IASetIndexBuffer(ctx.ibv);
 
-    ID3D12DescriptorHeap* heaps[] = { ctx.sceneSrvHeap };
+    ID3D12DescriptorHeap* heaps[] = { ctx.srvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
 
     cmdList->SetGraphicsRootConstantBufferView(0, ctx.perFrameAddr);
     cmdList->SetGraphicsRootConstantBufferView(1, ctx.perPassAddr);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(
-        ctx.sceneSrvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(ctx.curBackBufIdx),
-        ctx.srvDescSize
-    );
-    cmdList->SetGraphicsRootDescriptorTable(4, srvHandle);
+    cmdList->SetGraphicsRootDescriptorTable(4, ctx.perObjHandle);
 
     auto drawOutline = [&](flecs::entity e, float width, float r, float g, float b) {
         for (uint32_t i = 0; i < static_cast<uint32_t>(drawIndexToEntity.size()); ++i) {
