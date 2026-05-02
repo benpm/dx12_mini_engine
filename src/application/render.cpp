@@ -229,7 +229,8 @@ void Application::render()
         D3D12_RESOURCE_STATE_COMMON
     );
     auto hHdrRT = renderGraph.importTexture(
-        "HdrRT", bloom.hdrRenderTarget.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "HdrRT", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(bloom.hdrRT)),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     auto hCubemap = renderGraph.importTexture(
         "Cubemap", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapTexture)),
@@ -801,8 +802,8 @@ void Application::render()
                 rtvDescSize
             );
             bloom.render(
-                cmdRef, backBufferRes, backBufRtv, clientWidth, clientHeight, bloomThreshold,
-                bloomIntensity, tonemapMode, skyParams
+                cmdRef, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
+                tonemapMode, skyParams
             );
         }
     );

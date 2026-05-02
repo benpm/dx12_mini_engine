@@ -27,55 +27,66 @@ static void reloadBloomPipelinesNative(
 );
 
 static void transitionResource(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    ComPtr<ID3D12Resource> resource,
+    ID3D12GraphicsCommandList2* cmdList,
+    ID3D12Resource* resource,
     D3D12_RESOURCE_STATES before,
     D3D12_RESOURCE_STATES after
 )
 {
     CD3DX12_RESOURCE_BARRIER barrier =
-        CD3DX12_RESOURCE_BARRIER::Transition(resource.Get(), before, after);
+        CD3DX12_RESOURCE_BARRIER::Transition(resource, before, after);
     cmdList->ResourceBarrier(1, &barrier);
+}
+
+// ---------------------------------------------------------------------------
+// BloomRenderer destructor
+// ---------------------------------------------------------------------------
+
+BloomRenderer::~BloomRenderer()
+{
+    if (devForDestroy) {
+        if (hdrRT.isValid()) devForDestroy->destroy(hdrRT);
+        for (auto& m : bloomMips) {
+            if (m.isValid()) devForDestroy->destroy(m);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // BloomRenderer::createTexturesAndHeaps
 // ---------------------------------------------------------------------------
 
-void BloomRenderer::createTexturesAndHeaps(ID3D12Device2* device, uint32_t width, uint32_t height)
+void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    auto* device = nativeDev(dev);
     width = std::max(1u, width);
     height = std::max(1u, height);
 
-    const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
-
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = hdrFormat;
-        clearVal.Color[3] = 1.0f;
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            hdrFormat, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            &clearVal, IID_PPV_ARGS(&hdrRenderTarget)
-        ));
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::R11G11B10Float;
+        td.usage = gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::PixelShaderResource;
+        td.useClearValue = true;
+        td.clearColor[3] = 1.0f;
+        td.debugName = "hdr_rt";
+        hdrRT = dev.createTexture(td);
     }
 
     uint32_t mipW = std::max(1u, width / 2);
     uint32_t mipH = std::max(1u, height / 2);
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = hdrFormat;
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            hdrFormat, mipW, mipH, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVal,
-            IID_PPV_ARGS(&bloomMips[i])
-        ));
+        gfx::TextureDesc td{};
+        td.width = mipW;
+        td.height = mipH;
+        td.format = gfx::Format::R11G11B10Float;
+        td.usage = gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::RenderTarget;
+        td.useClearValue = true;
+        td.debugName = "bloom_mip";
+        bloomMips[i] = dev.createTexture(td);
         mipW = std::max(1u, mipW / 2);
         mipH = std::max(1u, mipH / 2);
     }
@@ -100,20 +111,22 @@ void BloomRenderer::createTexturesAndHeaps(ID3D12Device2* device, uint32_t width
     CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(srvHeap->GetCPUDescriptorHandleForHeapStart());
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = hdrFormat;
+    srvDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Texture2D.MipLevels = 1;
 
-    device->CreateRenderTargetView(hdrRenderTarget.Get(), nullptr, rtvHandle);
+    auto* hdrRes = static_cast<ID3D12Resource*>(dev.nativeResource(hdrRT));
+    device->CreateRenderTargetView(hdrRes, nullptr, rtvHandle);
     rtvHandle.Offset(static_cast<INT>(rtvInc));
-    device->CreateShaderResourceView(hdrRenderTarget.Get(), &srvDesc, srvHandle);
+    device->CreateShaderResourceView(hdrRes, &srvDesc, srvHandle);
     srvHandle.Offset(static_cast<INT>(srvDescSize));
 
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
-        device->CreateRenderTargetView(bloomMips[i].Get(), nullptr, rtvHandle);
+        auto* mipRes = static_cast<ID3D12Resource*>(dev.nativeResource(bloomMips[i]));
+        device->CreateRenderTargetView(mipRes, nullptr, rtvHandle);
         rtvHandle.Offset(static_cast<INT>(rtvInc));
-        device->CreateShaderResourceView(bloomMips[i].Get(), &srvDesc, srvHandle);
+        device->CreateShaderResourceView(mipRes, &srvDesc, srvHandle);
         srvHandle.Offset(static_cast<INT>(srvDescSize));
     }
 }
@@ -181,21 +194,26 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
 
 void BloomRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
-    auto* device = nativeDev(dev);
-    createPipelines(device);
-    createTexturesAndHeaps(device, width, height);
+    devForDestroy = &dev;
+    createPipelines(nativeDev(dev));
+    createTexturesAndHeaps(dev, width, height);
 }
 
 void BloomRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
-    auto* device = nativeDev(dev);
-    hdrRenderTarget.Reset();
+    if (hdrRT.isValid()) {
+        dev.destroy(hdrRT);
+        hdrRT = {};
+    }
     for (auto& m : bloomMips) {
-        m.Reset();
+        if (m.isValid()) {
+            dev.destroy(m);
+            m = {};
+        }
     }
     bloomRtvHeap.Reset();
     srvHeap.Reset();
-    createTexturesAndHeaps(device, width, height);
+    createTexturesAndHeaps(dev, width, height);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +301,6 @@ void BloomRenderer::reloadPipelines(
 
 void BloomRenderer::render(
     gfx::ICommandList& cmdRef,
-    ComPtr<ID3D12Resource> backBuffer,
     D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
     uint32_t width,
     uint32_t height,
@@ -315,6 +332,11 @@ void BloomRenderer::render(
         return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, static_cast<INT>(idx), srvDescSize);
     };
 
+    auto* hdrRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(hdrRT));
+    auto mipRes = [&](uint32_t i) -> ID3D12Resource* {
+        return static_cast<ID3D12Resource*>(devForDestroy->nativeResource(bloomMips[i]));
+    };
+
     uint32_t mipW[bloomMipCount], mipH[bloomMipCount];
     mipW[0] = std::max(1u, width / 2);
     mipH[0] = std::max(1u, height / 2);
@@ -330,7 +352,7 @@ void BloomRenderer::render(
 
     // Prefilter
     transitionResource(
-        cmdList, hdrRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET,
+        cmdList, hdrRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(prefilterPSO.Get());
@@ -350,7 +372,7 @@ void BloomRenderer::render(
     cmdList->SetPipelineState(downsamplePSO.Get());
     for (uint32_t i = 0; i < bloomMipCount - 1; ++i) {
         transitionResource(
-            cmdList, bloomMips[i], D3D12_RESOURCE_STATE_RENDER_TARGET,
+            cmdList, mipRes(i), D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(1 + i));
@@ -369,11 +391,11 @@ void BloomRenderer::render(
     cmdList->SetPipelineState(upsamplePSO.Get());
     for (int i = bloomMipCount - 2; i >= 0; --i) {
         transitionResource(
-            cmdList, bloomMips[i + 1], D3D12_RESOURCE_STATE_RENDER_TARGET,
+            cmdList, mipRes(i + 1), D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
         transitionResource(
-            cmdList, bloomMips[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(2 + i));
@@ -383,15 +405,15 @@ void BloomRenderer::render(
         sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]), 1.0f,
-               0 };
+        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]),
+               1.0f, 0 };
         cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }
 
     // Composite
     transitionResource(
-        cmdList, bloomMips[0], D3D12_RESOURCE_STATE_RENDER_TARGET,
+        cmdList, mipRes(0), D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(compositePSO.Get());
@@ -402,13 +424,6 @@ void BloomRenderer::render(
     sr = { 0, 0, (LONG)width, (LONG)height };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    // 24 DWORDs matching HLSL cbuffer packing (float3 padded to 16-byte rows)
-    // Row0: texelW, texelH, intensity, tonemapMode
-    // Row1: camFwd.xyz, pad
-    // Row2: camRight.xyz, pad
-    // Row3: camUp.xyz, pad
-    // Row4: sunDir.xyz, aspectRatio
-    // Row5: tanHalfFov, pad, pad, pad
     float compositeCB[24] = {};
     compositeCB[2] = intensity;
     *reinterpret_cast<uint32_t*>(&compositeCB[3]) = (uint32_t)tonemapMode;
@@ -432,12 +447,12 @@ void BloomRenderer::render(
 
     // Reset bloom resources to RENDER_TARGET for next frame
     transitionResource(
-        cmdList, hdrRenderTarget, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        cmdList, hdrRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_STATE_RENDER_TARGET
     );
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
         transitionResource(
-            cmdList, bloomMips[i], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
     }

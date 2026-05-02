@@ -20,8 +20,8 @@ export class BloomRenderer
    public:
     static constexpr uint32_t bloomMipCount = 5;
 
-    ComPtr<ID3D12Resource> hdrRenderTarget;
-    ComPtr<ID3D12Resource> bloomMips[bloomMipCount];
+    gfx::TextureHandle hdrRT{};
+    gfx::TextureHandle bloomMips[bloomMipCount]{};
     ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;
     ComPtr<ID3D12DescriptorHeap> srvHeap;
     UINT srvDescSize = 0;
@@ -31,16 +31,9 @@ export class BloomRenderer
     ComPtr<ID3D12PipelineState> upsamplePSO;
     ComPtr<ID3D12PipelineState> compositePSO;
 
-    // Creates textures, heaps, root sig, and all four PSOs
     void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
-
-    // Re-creates textures and heaps at new size (PSOs unchanged)
     void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
-    // Runs the full bloom + composite pass.
-    // backBuffer must be in PRESENT state on entry; leaves it in RENDER_TARGET state.
-    // Resets hdrRenderTarget and bloomMips to RENDER_TARGET before returning.
-    // Sky/camera data for composite pass Rayleigh sky
     struct SkyParams
     {
         vec3 camForward, camRight, camUp;
@@ -51,7 +44,6 @@ export class BloomRenderer
 
     void render(
         gfx::ICommandList& cmdRef,
-        ComPtr<ID3D12Resource> backBuffer,
         D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
         uint32_t width,
         uint32_t height,
@@ -61,7 +53,6 @@ export class BloomRenderer
         const SkyParams& sky
     );
 
-    // Recreate PSOs with new shader bytecodes. Null bytecodes fall back to embedded defaults.
     void reloadPipelines(
         gfx::IDevice& dev,
         D3D12_SHADER_BYTECODE fullscreenVS,
@@ -71,8 +62,12 @@ export class BloomRenderer
         D3D12_SHADER_BYTECODE compositePS
     );
 
+    ~BloomRenderer();
+
    private:
-    void createTexturesAndHeaps(ID3D12Device2* device, uint32_t width, uint32_t height);
+    gfx::IDevice* devForDestroy = nullptr;
+
+    void createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, uint32_t height);
     void createPipelines(ID3D12Device2* device);
 
     static ID3D12Device2* nativeDev(gfx::IDevice& dev)
