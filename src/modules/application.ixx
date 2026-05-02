@@ -139,11 +139,15 @@ export class Application
     gfx::PipelineHandle pipelineState{};
     gfx::ShaderHandle scenePsoVS{};
     gfx::ShaderHandle scenePsoPS{};
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gbufferPSO;
+    gfx::PipelineHandle gbufferPSO{};
+    gfx::ShaderHandle gbufferVS{};
+    gfx::ShaderHandle gbufferPS{};
 
     // Infinite grid
     Microsoft::WRL::ComPtr<ID3D12RootSignature> gridRootSig;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gridPSO;
+    gfx::PipelineHandle gridPSO{};
+    gfx::ShaderHandle gridVS{};
+    gfx::ShaderHandle gridPS{};
     bool showGrid = true;
     float gridMajorSize = 10.0f;
     int gridSubdivisions = 10;

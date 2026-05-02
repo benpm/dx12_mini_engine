@@ -150,8 +150,12 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - P10 ✅ — `BillboardRenderer::init/render` take gfx types. `ImGuiLayer::init` takes `gfx::IDevice&`.
 - P11 ✅ — `GizmoState::init` takes `gfx::IDevice&`.
 - P12 (partial) ✅ — `Scene::createMegaBuffers/createDrawDataBuffers/appendToMegaBuffers/loadTeapot/loadGltf/updateLightBuffer/updateTLAS/buildBlasForMesh` all take `gfx::IDevice&`. The `CommandQueue&` parameter remains because `CommandQueue` itself still owns the fence-tracked upload pool; full dissolution into `gfx::IQueue` is deferred.
+- P13 (partial) ✅ — Application's scene PSO, gbuffer PSO, and grid PSO are `gfx::PipelineHandle`. Their VS/PS bytecodes go through `gfx::ShaderHandle`. The descriptor-table root sigs are passed via the new `GraphicsPipelineDesc::nativeRootSignatureOverride` escape hatch until P2.
 - P2 (bindless shader rewrite) — postponed; high-risk and orthogonal to subsystem signature migration.
-- P13-P14 — pending. See plan file.
+- P13 (remainder) — depthBuffer / dsvHeap / cubemap textures + heaps still ComPtr-typed; ditto the engine's main rootSignature ComPtr.
+- P14 — pending.
+
+**`gfx::Format`** now covers RGB32Float, D16Unorm, D24UnormS8Uint, D32Float, D32FloatS8X24Uint, and the typeless variants R32Typeless / R32G8X24Typeless. The bug where `createGraphicsPipeline` left `pd.DepthStencilState.FrontFace/BackFace` zero-initialised when stencil was enabled is fixed.
 
 **What still leaks D3D12 in subsystems (all deferred to P12+):**
 - `ComPtr<ID3D12Resource>` data members for owned textures/buffers.

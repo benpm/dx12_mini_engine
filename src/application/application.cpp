@@ -249,6 +249,24 @@ Application::~Application()
         if (scenePsoPS.isValid()) {
             gfxDevice->destroy(scenePsoPS);
         }
+        if (gridPSO.isValid()) {
+            gfxDevice->destroy(gridPSO);
+        }
+        if (gridVS.isValid()) {
+            gfxDevice->destroy(gridVS);
+        }
+        if (gridPS.isValid()) {
+            gfxDevice->destroy(gridPS);
+        }
+        if (gbufferPSO.isValid()) {
+            gfxDevice->destroy(gbufferPSO);
+        }
+        if (gbufferVS.isValid()) {
+            gfxDevice->destroy(gbufferVS);
+        }
+        if (gbufferPS.isValid()) {
+            gfxDevice->destroy(gbufferPS);
+        }
     }
 }
 

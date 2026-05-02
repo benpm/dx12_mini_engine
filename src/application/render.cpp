@@ -423,7 +423,7 @@ void Application::render()
             cmd->ClearRenderTargetView(rtvs[3], clearZero, 0, nullptr);
             this->clearDepth(cmd, dsv);
 
-            cmd->SetPipelineState(this->gbufferPSO.Get());
+            cmdRef.bindPipeline(this->gbufferPSO);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
             bindSharedGeometry(cmd);
             cmd->OMSetRenderTargets(4, rtvs, false, &dsv);
@@ -614,7 +614,7 @@ void Application::render()
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
                 auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-                cmd->SetPipelineState(gridPSO.Get());
+                cmdRef.bindPipeline(gridPSO);
                 cmd->SetGraphicsRootSignature(gridRootSig.Get());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 cmd->RSSetViewports(1, &this->viewport);

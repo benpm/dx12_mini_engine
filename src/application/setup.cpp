@@ -126,31 +126,56 @@ void Application::createGridPSO()
         ));
     }
 
+    if (gridPSO.isValid()) {
+        gfxDevice->destroy(gridPSO);
+    }
+    if (gridVS.isValid()) {
+        gfxDevice->destroy(gridVS);
+    }
+    if (gridPS.isValid()) {
+        gfxDevice->destroy(gridPS);
+    }
+
     auto vsData = shaderCompiler.data(gridVSIdx);
     auto psData = shaderCompiler.data(gridPSIdx);
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = gridRootSig.Get();
-    psoDesc.VS = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(gridVSIdx))
-                        : CD3DX12_SHADER_BYTECODE(g_grid_vs, sizeof(g_grid_vs));
-    psoDesc.PS = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(gridPSIdx))
-                        : CD3DX12_SHADER_BYTECODE(g_grid_ps, sizeof(g_grid_ps));
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
-    psoDesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    psoDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-    psoDesc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    psoDesc.SampleDesc = { 1, 0 };
-    chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&gridPSO)));
+    gfx::ShaderDesc vsDesc{};
+    vsDesc.stage = gfx::ShaderStage::Vertex;
+    vsDesc.bytecode = vsData ? vsData : static_cast<const void*>(g_grid_vs);
+    vsDesc.bytecodeSize = vsData ? shaderCompiler.size(gridVSIdx) : sizeof(g_grid_vs);
+    vsDesc.debugName = "grid_vs";
+    gridVS = gfxDevice->createShader(vsDesc);
+
+    gfx::ShaderDesc psDesc{};
+    psDesc.stage = gfx::ShaderStage::Pixel;
+    psDesc.bytecode = psData ? psData : static_cast<const void*>(g_grid_ps);
+    psDesc.bytecodeSize = psData ? shaderCompiler.size(gridPSIdx) : sizeof(g_grid_ps);
+    psDesc.debugName = "grid_ps";
+    gridPS = gfxDevice->createShader(psDesc);
+
+    gfx::GraphicsPipelineDesc gd{};
+    gd.vs = gridVS;
+    gd.ps = gridPS;
+    // No vertex attributes — grid_vs synthesises a fullscreen tri from SV_VertexID.
+    gd.topology = gfx::PrimitiveTopology::TriangleList;
+    gd.rasterizer.cull = gfx::CullMode::None;
+    gd.numRenderTargets = 1;
+    gd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
+    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencil.depthEnable = true;
+    gd.depthStencil.depthWrite = false;
+    gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    gd.blend[0].blendEnable = true;
+    gd.blend[0].srcColor = gfx::BlendFactor::SrcAlpha;
+    gd.blend[0].dstColor = gfx::BlendFactor::InvSrcAlpha;
+    gd.blend[0].colorOp = gfx::BlendOp::Add;
+    gd.blend[0].srcAlpha = gfx::BlendFactor::One;
+    gd.blend[0].dstAlpha = gfx::BlendFactor::Zero;
+    gd.blend[0].alphaOp = gfx::BlendOp::Add;
+    gd.blend[0].writeMask = 0xF;
+    gd.nativeRootSignatureOverride = gridRootSig.Get();
+    gd.debugName = "grid_pso";
+    gridPSO = gfxDevice->createGraphicsPipeline(gd);
 }
 
 bool Application::loadContent()
@@ -401,32 +426,54 @@ void Application::createCubemapResources()
 
 void Application::createGBufferPSO()
 {
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    if (gbufferPSO.isValid()) {
+        gfxDevice->destroy(gbufferPSO);
+    }
+    if (gbufferVS.isValid()) {
+        gfxDevice->destroy(gbufferVS);
+    }
+    if (gbufferPS.isValid()) {
+        gfxDevice->destroy(gbufferPS);
+    }
+
+    gfx::ShaderDesc vsDesc{};
+    vsDesc.stage = gfx::ShaderStage::Vertex;
+    vsDesc.bytecode = g_vertex_shader;
+    vsDesc.bytecodeSize = sizeof(g_vertex_shader);
+    vsDesc.debugName = "gbuffer_vs";
+    gbufferVS = gfxDevice->createShader(vsDesc);
+
+    gfx::ShaderDesc psDesc{};
+    psDesc.stage = gfx::ShaderStage::Pixel;
+    psDesc.bytecode = g_gbuffer_ps;
+    psDesc.bytecodeSize = sizeof(g_gbuffer_ps);
+    psDesc.debugName = "gbuffer_ps";
+    gbufferPS = gfxDevice->createShader(psDesc);
+
+    static constexpr gfx::VertexAttribute attrs[] = {
+        { "POSITION", 0, gfx::Format::RGB32Float, 0 },
+        { "NORMAL", 0, gfx::Format::RGB32Float, 12 },
+        { "TEXCOORD", 0, gfx::Format::RG32Float, 24 },
     };
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = this->rootSignature.Get();
-    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-    psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-    psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_gbuffer_ps, sizeof(g_gbuffer_ps));
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 4;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    psoDesc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    psoDesc.RTVFormats[2] = DXGI_FORMAT_R8G8_UNORM;
-    psoDesc.RTVFormats[3] = DXGI_FORMAT_R16G16_FLOAT;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    psoDesc.SampleDesc = { 1, 0 };
-    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->gbufferPSO)));
+
+    gfx::GraphicsPipelineDesc gd{};
+    gd.vs = gbufferVS;
+    gd.ps = gbufferPS;
+    gd.vertexAttributes = attrs;
+    gd.vertexStride = 32;
+    gd.topology = gfx::PrimitiveTopology::TriangleList;
+    gd.numRenderTargets = 4;
+    gd.renderTargetFormats[0] = gfx::Format::RGBA8Unorm;
+    gd.renderTargetFormats[1] = gfx::Format::RGBA8Unorm;
+    gd.renderTargetFormats[2] = gfx::Format::RG8Unorm;
+    gd.renderTargetFormats[3] = gfx::Format::RG16Float;
+    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencil.depthEnable = true;
+    gd.depthStencil.depthWrite = true;
+    gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    gd.nativeRootSignatureOverride = this->rootSignature.Get();
+    gd.debugName = "gbuffer_pso";
+    gbufferPSO = gfxDevice->createGraphicsPipeline(gd);
 }
 
 void Application::onResize(uint32_t width, uint32_t height)
