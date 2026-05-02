@@ -30,12 +30,21 @@ namespace
     };
 }  // namespace
 
-void BillboardRenderer::init(
-    gfx::IDevice& dev,
-    ID3D12CommandQueue* queue,
-    const wchar_t* texturePath
-)
+BillboardRenderer::~BillboardRenderer()
 {
+    if (devForDestroy) {
+        if (quadVertexBuffer.isValid()) {
+            devForDestroy->destroy(quadVertexBuffer);
+        }
+        if (instanceBuffer.isValid()) {
+            devForDestroy->destroy(instanceBuffer);
+        }
+    }
+}
+
+void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
+{
+    devForDestroy = &dev;
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
@@ -126,6 +135,7 @@ void BillboardRenderer::init(
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     chkDX(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap)));
 
+    auto* queue = static_cast<ID3D12CommandQueue*>(dev.graphicsQueue()->nativeHandle());
     DirectX::ResourceUploadBatch upload(device);
     upload.Begin(D3D12_COMMAND_LIST_TYPE_DIRECT);
     chkDX(
@@ -156,37 +166,34 @@ void BillboardRenderer::init(
         QuadVertex{ { 1.0f, -1.0f }, { 1.0f, 1.0f } },
     };
 
-    const CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-    const CD3DX12_RESOURCE_DESC quadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(quadVerts));
-    chkDX(device->CreateCommittedResource(
-        &uploadHeap, D3D12_HEAP_FLAG_NONE, &quadDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-        IID_PPV_ARGS(&quadVertexBuffer)
-    ));
+    {
+        gfx::BufferDesc bd{};
+        bd.size = sizeof(quadVerts);
+        bd.usage = gfx::BufferUsage::Upload;
+        bd.debugName = "billboard_quad_vb";
+        quadVertexBuffer = dev.createBuffer(bd);
+        void* mapped = dev.map(quadVertexBuffer);
+        std::memcpy(mapped, quadVerts.data(), sizeof(quadVerts));
+        dev.unmap(quadVertexBuffer);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(quadVertexBuffer));
+        quadVBV.BufferLocation = res->GetGPUVirtualAddress();
+        quadVBV.SizeInBytes = sizeof(quadVerts);
+        quadVBV.StrideInBytes = sizeof(QuadVertex);
+    }
 
-    void* quadMapped = nullptr;
-    chkDX(quadVertexBuffer->Map(0, nullptr, &quadMapped));
-    std::memcpy(quadMapped, quadVerts.data(), sizeof(quadVerts));
-    quadVertexBuffer->Unmap(0, nullptr);
-
-    quadVBV.BufferLocation = quadVertexBuffer->GetGPUVirtualAddress();
-    quadVBV.SizeInBytes = sizeof(quadVerts);
-    quadVBV.StrideInBytes = sizeof(QuadVertex);
-
-    const CD3DX12_RESOURCE_DESC instanceDesc =
-        CD3DX12_RESOURCE_DESC::Buffer(sizeof(BillboardInstance) * maxInstances);
-    chkDX(device->CreateCommittedResource(
-        &uploadHeap, D3D12_HEAP_FLAG_NONE, &instanceDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr, IID_PPV_ARGS(&instanceBuffer)
-    ));
-
-    void* instanceMapped = nullptr;
-    chkDX(instanceBuffer->Map(0, nullptr, &instanceMapped));
-    mappedInstances = static_cast<BillboardInstance*>(instanceMapped);
-    std::memset(mappedInstances, 0, sizeof(BillboardInstance) * maxInstances);
-
-    instanceVBV.BufferLocation = instanceBuffer->GetGPUVirtualAddress();
-    instanceVBV.SizeInBytes = sizeof(BillboardInstance) * maxInstances;
-    instanceVBV.StrideInBytes = sizeof(BillboardInstance);
+    {
+        gfx::BufferDesc bd{};
+        bd.size = sizeof(BillboardInstance) * maxInstances;
+        bd.usage = gfx::BufferUsage::Upload;
+        bd.debugName = "billboard_instances";
+        instanceBuffer = dev.createBuffer(bd);
+        mappedInstances = static_cast<BillboardInstance*>(dev.map(instanceBuffer));
+        std::memset(mappedInstances, 0, sizeof(BillboardInstance) * maxInstances);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(instanceBuffer));
+        instanceVBV.BufferLocation = res->GetGPUVirtualAddress();
+        instanceVBV.SizeInBytes = sizeof(BillboardInstance) * maxInstances;
+        instanceVBV.StrideInBytes = sizeof(BillboardInstance);
+    }
 }
 
 void BillboardRenderer::updateInstances(

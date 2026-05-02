@@ -323,7 +323,7 @@ bool Application::loadContent()
     gbuffer.createResources(*gfxDevice, clientWidth, clientHeight);
     picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature);
 
-    billboards.init(*gfxDevice, cmdQueue.queue.Get(), L"resources/icons/light.png");
+    billboards.init(*gfxDevice, L"resources/icons/light.png");
     gizmo.init(scene, *gfxDevice, cmdQueue);
 
     resizeDepthBuffer(clientWidth, clientHeight);

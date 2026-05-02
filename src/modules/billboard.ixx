@@ -27,15 +27,20 @@ export class BillboardRenderer
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> spriteTexture;
-    Microsoft::WRL::ComPtr<ID3D12Resource> quadVertexBuffer;
-    Microsoft::WRL::ComPtr<ID3D12Resource> instanceBuffer;
+    gfx::BufferHandle quadVertexBuffer{};
+    gfx::BufferHandle instanceBuffer{};
     BillboardInstance* mappedInstances = nullptr;
     D3D12_VERTEX_BUFFER_VIEW quadVBV{};
     D3D12_VERTEX_BUFFER_VIEW instanceVBV{};
     uint32_t instanceCount = 0;
     float spriteSize = 0.35f;
 
-    void init(gfx::IDevice& dev, ID3D12CommandQueue* queue, const wchar_t* texturePath);
+    void init(gfx::IDevice& dev, const wchar_t* texturePath);
     void updateInstances(const vec4* lightPos, const vec4* lightColor, uint32_t count);
     void render(gfx::ICommandList& cmdRef, const mat4& viewProj, const vec3& cameraPos);
+
+    ~BillboardRenderer();
+
+   private:
+    gfx::IDevice* devForDestroy = nullptr;
 };
