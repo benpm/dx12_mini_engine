@@ -22,11 +22,6 @@ export class BloomRenderer
 
     gfx::TextureHandle hdrRT{};
     gfx::TextureHandle bloomMips[bloomMipCount]{};
-    ComPtr<ID3D12RootSignature> bloomRootSignature;
-    ComPtr<ID3D12PipelineState> prefilterPSO;
-    ComPtr<ID3D12PipelineState> downsamplePSO;
-    ComPtr<ID3D12PipelineState> upsamplePSO;
-    ComPtr<ID3D12PipelineState> compositePSO;
 
     void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
     void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
@@ -62,6 +57,12 @@ export class BloomRenderer
     ~BloomRenderer();
 
    private:
+    ComPtr<ID3D12RootSignature> bloomRootSignature;
+    ComPtr<ID3D12PipelineState> prefilterPSO;
+    ComPtr<ID3D12PipelineState> downsamplePSO;
+    ComPtr<ID3D12PipelineState> upsamplePSO;
+    ComPtr<ID3D12PipelineState> compositePSO;
+
     gfx::IDevice* devForDestroy = nullptr;
 
     void createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, uint32_t height);
