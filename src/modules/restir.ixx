@@ -55,6 +55,6 @@ export class ReStirRenderer
 
     gfx::IDevice* devForDestroy = nullptr;
 
-    void createShaders(ID3D12Device2* device);
-    void createTextures(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void createShaders(gfx::IDevice& dev);
+    void createTextures(gfx::IDevice& dev, uint32_t width, uint32_t height);
 };

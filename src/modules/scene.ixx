@@ -195,12 +195,4 @@ export class Scene
 
     void updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx);
     void buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef& mesh);
-
-   private:
-    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
-    {
-        return static_cast<ID3D12Device2*>(dev.nativeHandle());
-    }
-
-   public:
 };

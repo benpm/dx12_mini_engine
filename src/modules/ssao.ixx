@@ -83,20 +83,4 @@ export class SsaoRenderer
         gfx::TextureHandle normalBuffer,
         gfx::TextureHandle depthBuffer
     );
-
-    void transitionResource(
-        gfx::ICommandList& cmdRef,
-        ID3D12Resource* resource,
-        D3D12_RESOURCE_STATES before,
-        D3D12_RESOURCE_STATES after
-    );
-
-    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
-    {
-        return static_cast<ID3D12Device2*>(dev.nativeHandle());
-    }
-    static ID3D12GraphicsCommandList2* nativeCmd(gfx::ICommandList& cmdRef)
-    {
-        return static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-    }
 };

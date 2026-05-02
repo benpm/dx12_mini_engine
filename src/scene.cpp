@@ -603,7 +603,7 @@ bool Scene::loadGltf(
 
 void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef& mesh)
 {
-    auto* device = nativeDev(dev);
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     uint64_t key = (static_cast<uint64_t>(mesh.vertexOffset) << 32) | mesh.indexOffset;
     if (blasMap.contains(key)) {
         return;
@@ -725,7 +725,7 @@ void Scene::updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue)
 
 void Scene::updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx)
 {
-    auto* device = nativeDev(dev);
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instanceDescs;
 
     auto addInstance = [&](const mat4& world, const MeshRef& mesh) {
