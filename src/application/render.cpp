@@ -203,7 +203,8 @@ void Application::render()
         D3D12_RESOURCE_STATE_DEPTH_WRITE
     );
     auto hShadowMap = renderGraph.importTexture(
-        "ShadowMap", shadow.shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "ShadowMap", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(shadow.shadowMap)),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     auto hNormalRT = renderGraph.importTexture(
         "NormalRT", gbuffer.resources[GBuffer::Normal].Get(), D3D12_RESOURCE_STATE_COMMON

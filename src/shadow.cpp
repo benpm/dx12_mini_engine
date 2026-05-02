@@ -24,6 +24,21 @@ static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 };
 
+ShadowRenderer::~ShadowRenderer()
+{
+    if (devForDestroy) {
+        if (shadowMap.isValid()) {
+            devForDestroy->destroy(shadowMap);
+        }
+        if (pso.isValid()) {
+            devForDestroy->destroy(pso);
+        }
+        if (vsHandle.isValid()) {
+            devForDestroy->destroy(vsHandle);
+        }
+    }
+}
+
 void ShadowRenderer::createResources(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
@@ -34,21 +49,26 @@ void ShadowRenderer::createResources(
 )
 {
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-    // Shadow depth texture (R32_TYPELESS / D32_FLOAT)
+    devForDestroy = &dev;
+
+    // Shadow depth texture (R32_TYPELESS resource + D32_FLOAT view; sampled
+    // as SRV by the scene pass, so we need a typed SRV format that the
+    // engine creates manually below).
     {
-        D3D12_CLEAR_VALUE clearVal = {};
-        clearVal.Format = DXGI_FORMAT_D32_FLOAT;
-        clearVal.DepthStencil = { 1.0f, 0 };
-        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R32_TYPELESS, mapSize, mapSize, 1, 1, 1, 0,
-            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-        );
-        chkDX(device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearVal,
-            IID_PPV_ARGS(&shadowMap)
-        ));
+        gfx::TextureDesc td{};
+        td.width = mapSize;
+        td.height = mapSize;
+        td.format = gfx::Format::R32Typeless;
+        td.viewFormat = gfx::Format::D32Float;
+        td.usage = gfx::TextureUsage::DepthStencil;
+        td.initialState = gfx::ResourceState::PixelShaderResource;
+        td.useClearValue = true;
+        td.clearDepth = 1.0f;
+        td.clearStencil = 0;
+        td.debugName = "shadow_map";
+        shadowMap = dev.createTexture(td);
     }
+    auto* shadowRes = static_cast<ID3D12Resource*>(dev.nativeResource(shadowMap));
 
     // DSV heap + view
     {
@@ -61,11 +81,12 @@ void ShadowRenderer::createResources(
         dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
         dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
         device->CreateDepthStencilView(
-            shadowMap.Get(), &dsvViewDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
+            shadowRes, &dsvViewDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 
-    // SRV in sceneSrvHeap at the given slot
+    // SRV in sceneSrvHeap at the given slot (R32_FLOAT — typed view of the
+    // R32_TYPELESS resource).
     {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
@@ -75,7 +96,7 @@ void ShadowRenderer::createResources(
         CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(
             sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), shadowSrvSlot, srvDescSize
         );
-        device->CreateShaderResourceView(shadowMap.Get(), &srvDesc, srvHandle);
+        device->CreateShaderResourceView(shadowRes, &srvDesc, srvHandle);
     }
 
     reloadPSO(dev, rootSig, vs);
@@ -87,31 +108,49 @@ void ShadowRenderer::reloadPSO(
     D3D12_SHADER_BYTECODE vs
 )
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
+    devForDestroy = &dev;
+    if (pso.isValid()) {
+        dev.destroy(pso);
+    }
+    if (vsHandle.isValid()) {
+        dev.destroy(vsHandle);
+    }
     // Fall back to embedded CSO if no hot-reload data
     if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
         vs = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
     }
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = rootSig;
-    psoDesc.InputLayout = { g_inputLayout, _countof(g_inputLayout) };
-    psoDesc.VS = vs;
-    psoDesc.PS = {};  // depth-only
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
-    psoDesc.RasterizerState.DepthBias = rasterDepthBias;
-    psoDesc.RasterizerState.SlopeScaledDepthBias = rasterSlopeBias;
-    psoDesc.RasterizerState.DepthBiasClamp = rasterBiasClamp;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 0;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    psoDesc.SampleDesc = { 1, 0 };
+    gfx::ShaderDesc vsDesc{};
+    vsDesc.stage = gfx::ShaderStage::Vertex;
+    vsDesc.bytecode = vs.pShaderBytecode;
+    vsDesc.bytecodeSize = vs.BytecodeLength;
+    vsDesc.debugName = "shadow_vs";
+    vsHandle = dev.createShader(vsDesc);
 
-    chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+    static constexpr gfx::VertexAttribute attrs[] = {
+        { "POSITION", 0, gfx::Format::RGB32Float, 0 },
+        { "NORMAL", 0, gfx::Format::RGB32Float, 12 },
+        { "TEXCOORD", 0, gfx::Format::RG32Float, 24 },
+    };
+
+    gfx::GraphicsPipelineDesc gd{};
+    gd.vs = vsHandle;
+    // No PS — depth-only pass.
+    gd.vertexAttributes = attrs;
+    gd.vertexStride = 32;
+    gd.topology = gfx::PrimitiveTopology::TriangleList;
+    gd.rasterizer.cull = gfx::CullMode::Front;
+    gd.rasterizer.depthBias = rasterDepthBias;
+    gd.rasterizer.slopeScaledDepthBias = rasterSlopeBias;
+    gd.rasterizer.depthBiasClamp = rasterBiasClamp;
+    gd.numRenderTargets = 0;
+    gd.depthStencilFormat = gfx::Format::D32Float;
+    gd.depthStencil.depthEnable = true;
+    gd.depthStencil.depthWrite = true;
+    gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    gd.nativeRootSignatureOverride = rootSig;
+    gd.debugName = "shadow_pso";
+    pso = dev.createGraphicsPipeline(gd);
 }
 
 mat4 ShadowRenderer::computeLightViewProj(vec3 dirLightDir) const
@@ -157,7 +196,7 @@ void ShadowRenderer::render(
     auto shadowDsv = dsvHeap->GetCPUDescriptorHandleForHeapStart();
     cmdList->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-    cmdList->SetPipelineState(pso.Get());
+    cmdRef.bindPipeline(pso);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     D3D12_VIEWPORT shadowVP = { 0.0f, 0.0f, (float)mapSize, (float)mapSize, 0.0f, 1.0f };

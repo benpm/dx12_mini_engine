@@ -28,9 +28,12 @@ export class ShadowRenderer
 
     static constexpr uint32_t mapSize = 2048;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMap;
+    gfx::TextureHandle shadowMap{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
+    gfx::PipelineHandle pso{};
+    gfx::ShaderHandle vsHandle{};
+    gfx::IDevice* devForDestroy = nullptr;
+    ~ShadowRenderer();
 
     // sceneSrvHeap: shadow SRV placed at sceneSrvHeap[shadowSrvSlot]
     void createResources(
