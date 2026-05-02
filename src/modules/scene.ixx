@@ -150,16 +150,6 @@ export class Scene
     uint32_t activeLightCount = 0;
     static constexpr uint32_t maxLightsRRT = 1024;
 
-    // Raytracing Acceleration Structures
-    ComPtr<ID3D12Resource> tlasBuffer;
-    ComPtr<ID3D12Resource> tlasScratch;
-    ComPtr<ID3D12Resource> tlasInstances;
-    struct BlasEntry
-    {
-        ComPtr<ID3D12Resource> buffer;
-    };
-    std::map<uint64_t, BlasEntry> blasMap;  // key: (vertexOffset << 32) | indexOffset
-
     std::vector<DrawCmd> drawCmds;
     std::vector<flecs::entity> drawIndexToEntity;
     std::vector<bool> isGizmoDraw;
@@ -192,6 +182,17 @@ export class Scene
         bool append = false
     );
     void loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCompanion = true);
+
+   private:
+    // Raytracing Acceleration Structures (capability-gated, only used in scene.cpp)
+    ComPtr<ID3D12Resource> tlasBuffer;
+    ComPtr<ID3D12Resource> tlasScratch;
+    ComPtr<ID3D12Resource> tlasInstances;
+    struct BlasEntry
+    {
+        ComPtr<ID3D12Resource> buffer;
+    };
+    std::map<uint64_t, BlasEntry> blasMap;  // key: (vertexOffset << 32) | indexOffset
 
     void updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx);
     void buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef& mesh);
