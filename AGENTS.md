@@ -161,7 +161,7 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 
 **What still leaks D3D12 in subsystems:**
 - `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only, capability-gated) and `spriteTexture` (WIC-loaded; no `adoptTexture` in gfx yet).
-- `ComPtr<ID3D12DescriptorHeap>` in subsystems: `BloomRenderer::bloomRtvHeap`, `GBuffer::rtvHeap`/`srvHeap`, `SsaoRenderer::rtvHeap`/`srvHeap`, `ShadowRenderer::dsvHeap`, `ObjectPicker::rtvHeap`/`dsvHeap`/`srvHeap`, `BillboardRenderer::srvHeap` — deferred to P14 (bindless rewrite).
+- `ComPtr<ID3D12DescriptorHeap>` — only shader-visible SRV/UAV heaps remain: `BloomRenderer::srvHeap` (hdrRT + mips), `SsaoRenderer::srvHeap` (normal/depth/noise/ssaoRT), `BillboardRenderer::srvHeap`, `ImGuiLayer::srvHeap`, `ReStirRenderer::uavHeap`. All CPU-only RTV/DSV heaps have been removed (replaced by `gfxDevice->rtvHandle/dsvHandle`).
 - Root signatures and PSOs in subsystems that use custom root sigs (SSAO, Bloom, Billboard — deferred to bindless).
 - `D3D12_VERTEX_BUFFER_VIEW` / `D3D12_INDEX_BUFFER_VIEW` for mega-buffers and billboard VBs (use `nativeResource()->GetGPUVirtualAddress()` pattern).
 - `D3D12_RESOURCE_STATES` in render pass lambdas for D3D12 binding/clear calls (the render graph resource state tracking itself now uses `gfx::ResourceState`).
