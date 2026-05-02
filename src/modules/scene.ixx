@@ -131,8 +131,8 @@ export class Scene
 
     gfx::BufferHandle megaVB{};
     gfx::BufferHandle megaIB{};
-    D3D12_VERTEX_BUFFER_VIEW megaVBV{};
-    D3D12_INDEX_BUFFER_VIEW megaIBV{};
+    gfx::VertexBufferView megaVBV{};
+    gfx::IndexBufferView megaIBV{};
     uint32_t megaVBCapacity = 1024 * 1024;  // 1M verts
     uint32_t megaVBUsed = 0;
     uint32_t megaIBCapacity = 4 * 1024 * 1024;  // 4M indices

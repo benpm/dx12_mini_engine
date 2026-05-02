@@ -44,9 +44,8 @@ export class ShadowRenderer
 
     void render(
         gfx::ICommandList& cmdRef,
-        const D3D12_VERTEX_BUFFER_VIEW& vbv,
-        const D3D12_INDEX_BUFFER_VIEW& ibv,
-        ID3D12DescriptorHeap* srvHeap,
+        const gfx::VertexBufferView& vbv,
+        const gfx::IndexBufferView& ibv,
         D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
         const std::vector<DrawCmd>& drawCmds,
         uint32_t totalSlots

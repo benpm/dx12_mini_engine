@@ -140,8 +140,12 @@ void Application::render()
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd->RSSetViewports(1, &this->viewport);
         cmd->RSSetScissorRects(1, &this->scissorRect);
-        cmd->IASetVertexBuffers(0, 1, &scene.megaVBV);
-        cmd->IASetIndexBuffer(&scene.megaIBV);
+        D3D12_VERTEX_BUFFER_VIEW vbv{ scene.megaVBV.gpuAddress, scene.megaVBV.sizeInBytes,
+                                      scene.megaVBV.strideInBytes };
+        D3D12_INDEX_BUFFER_VIEW ibv{ scene.megaIBV.gpuAddress, scene.megaIBV.sizeInBytes,
+                                     DXGI_FORMAT_R32_UINT };
+        cmd->IASetVertexBuffers(0, 1, &vbv);
+        cmd->IASetIndexBuffer(&ibv);
     };
 
     // Precompute the per-object buffer GPU handle and shadow/cubemap/ssao SRV handles
@@ -250,9 +254,7 @@ void Application::render()
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
                 bindPerFrameAndPass(cmd, shadowPassAddr);
 
-                shadow.render(
-                    cmdRef, scene.megaVBV, scene.megaIBV, gfxSrvHeap, perObjHandle, sceneDrawCmds, 0
-                );
+                shadow.render(cmdRef, scene.megaVBV, scene.megaIBV, perObjHandle, sceneDrawCmds, 0);
             }
         );
     }
@@ -623,9 +625,8 @@ void Application::render()
 
                 OutlineRenderContext outlineCtx{};
                 outlineCtx.rootSig = this->rootSignature.Get();
-                outlineCtx.vbv = &scene.megaVBV;
-                outlineCtx.ibv = &scene.megaIBV;
-                outlineCtx.srvHeap = gfxSrvHeap;
+                outlineCtx.vbv = scene.megaVBV;
+                outlineCtx.ibv = scene.megaIBV;
                 outlineCtx.perObjHandle = perObjHandle;
                 outlineCtx.perFrameAddr = perFrameAddr;
                 outlineCtx.perPassAddr = perPassAddr;

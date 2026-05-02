@@ -830,6 +830,32 @@ namespace gfxd3d12
         return srvIdx;
     }
 
+    uint32_t Device::createExternalSrv(
+        void* nativeResource,
+        gfx::Format format,
+        uint32_t mipLevels,
+        bool isCubemap
+    )
+    {
+        auto* res = static_cast<ID3D12Resource*>(nativeResource);
+        if (!res) {
+            return 0;
+        }
+        uint32_t srvIdx = resourceHeap.allocate();
+        D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+        sd.Format = toDXGI(format);
+        sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        if (isCubemap) {
+            sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+            sd.TextureCube.MipLevels = mipLevels;
+        } else {
+            sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            sd.Texture2D.MipLevels = mipLevels;
+        }
+        d3dDevice->CreateShaderResourceView(res, &sd, resourceHeap.cpuHandle(srvIdx));
+        return srvIdx;
+    }
+
     std::unique_ptr<gfx::ISwapChain> Device::createSwapChain(const gfx::SwapChainDesc& d)
     {
         return std::make_unique<SwapChain>(this, d);

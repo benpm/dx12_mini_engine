@@ -62,7 +62,6 @@ BloomRenderer::~BloomRenderer()
 
 void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
-    auto* device = nativeDev(dev);
     width = std::max(1u, width);
     height = std::max(1u, height);
 
@@ -95,32 +94,8 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
         mipH = std::max(1u, mipH / 2);
     }
 
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = 1 + bloomMipCount;
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&srvHeap)));
-    }
-    srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(srvHeap->GetCPUDescriptorHandleForHeapStart());
-
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Texture2D.MipLevels = 1;
-
-    auto* hdrRes = static_cast<ID3D12Resource*>(dev.nativeResource(hdrRT));
-    device->CreateShaderResourceView(hdrRes, &srvDesc, srvHandle);
-    srvHandle.Offset(static_cast<INT>(srvDescSize));
-
-    for (uint32_t i = 0; i < bloomMipCount; ++i) {
-        auto* mipRes = static_cast<ID3D12Resource*>(dev.nativeResource(bloomMips[i]));
-        device->CreateShaderResourceView(mipRes, &srvDesc, srvHandle);
-        srvHandle.Offset(static_cast<INT>(srvDescSize));
-    }
+    // SRVs for hdrRT and bloomMips[] are created automatically by the gfx backend
+    // (TextureUsage::ShaderResource). Access via dev.bindlessSrvIndex() in render().
 }
 
 // ---------------------------------------------------------------------------
@@ -139,8 +114,12 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
 
     {
         CD3DX12_DESCRIPTOR_RANGE1 srvRange0, srvRange1;
-        srvRange0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-        srvRange1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+        srvRange0.Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
+        srvRange1.Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
 
         CD3DX12_ROOT_PARAMETER1 bloomRootParams[3];
         bloomRootParams[0].InitAsDescriptorTable(1, &srvRange0, D3D12_SHADER_VISIBILITY_PIXEL);
@@ -203,7 +182,6 @@ void BloomRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
             m = {};
         }
     }
-    srvHeap.Reset();
     createTexturesAndHeaps(dev, width, height);
 }
 
@@ -302,20 +280,21 @@ void BloomRenderer::render(
 )
 {
     auto* cmdList = nativeCmd(cmdRef);
-    ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
+    auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    auto srvGpuBase = srvHeap->GetGPUDescriptorHandleForHeapStart();
 
     auto getRtv = [&](gfx::TextureHandle h) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         D3D12_CPU_DESCRIPTOR_HANDLE rv;
         rv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(h));
         return rv;
     };
-    auto getSrvGpu = [&](uint32_t idx) -> D3D12_GPU_DESCRIPTOR_HANDLE {
-        return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, static_cast<INT>(idx), srvDescSize);
+    auto getSrvGpu = [&](gfx::TextureHandle h) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        D3D12_GPU_DESCRIPTOR_HANDLE hd;
+        hd.ptr = devForDestroy->srvGpuDescriptorHandle(devForDestroy->bindlessSrvIndex(h));
+        return hd;
     };
 
     auto* hdrRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(hdrRT));
@@ -342,7 +321,7 @@ void BloomRenderer::render(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(prefilterPSO.Get());
-    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));
+    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
     auto mip0Rtv = getRtv(bloomMips[0]);
     cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
     CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
@@ -361,7 +340,7 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
-        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(1 + i));
+        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i]));
         auto rtv = getRtv(bloomMips[i + 1]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
@@ -384,7 +363,7 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
-        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(2 + i));
+        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i + 1]));
         auto rtv = getRtv(bloomMips[i]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
@@ -403,8 +382,8 @@ void BloomRenderer::render(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(compositePSO.Get());
-    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));
-    cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(1));
+    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
+    cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(bloomMips[0]));
     cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
     vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)width, (float)height);
     sr = { 0, 0, (LONG)width, (LONG)height };

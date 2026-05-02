@@ -144,9 +144,8 @@ mat4 ShadowRenderer::computeLightViewProj(vec3 dirLightDir) const
 
 void ShadowRenderer::render(
     gfx::ICommandList& cmdRef,
-    const D3D12_VERTEX_BUFFER_VIEW& vbv,
-    const D3D12_INDEX_BUFFER_VIEW& ibv,
-    ID3D12DescriptorHeap* srvHeap,
+    const gfx::VertexBufferView& vbv,
+    const gfx::IndexBufferView& ibv,
     D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
     const std::vector<DrawCmd>& drawCmds,
     uint32_t totalSlots
@@ -166,10 +165,13 @@ void ShadowRenderer::render(
     cmdList->RSSetScissorRects(1, &shadowScissor);
     cmdList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
 
-    cmdList->IASetVertexBuffers(0, 1, &vbv);
-    cmdList->IASetIndexBuffer(&ibv);
+    D3D12_VERTEX_BUFFER_VIEW d3dVbv{ vbv.gpuAddress, vbv.sizeInBytes, vbv.strideInBytes };
+    D3D12_INDEX_BUFFER_VIEW d3dIbv{ ibv.gpuAddress, ibv.sizeInBytes, DXGI_FORMAT_R32_UINT };
+    cmdList->IASetVertexBuffers(0, 1, &d3dVbv);
+    cmdList->IASetIndexBuffer(&d3dIbv);
 
-    ID3D12DescriptorHeap* heaps[] = { srvHeap };
+    auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootDescriptorTable(4, perObjHandle);
 

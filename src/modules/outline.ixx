@@ -17,9 +17,8 @@ export import gfx;
 export struct OutlineRenderContext
 {
     ID3D12RootSignature* rootSig = nullptr;
-    const D3D12_VERTEX_BUFFER_VIEW* vbv = nullptr;
-    const D3D12_INDEX_BUFFER_VIEW* ibv = nullptr;
-    ID3D12DescriptorHeap* srvHeap = nullptr;
+    gfx::VertexBufferView vbv{};
+    gfx::IndexBufferView ibv{};
     D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle{};
     D3D12_GPU_VIRTUAL_ADDRESS perFrameAddr = 0;
     D3D12_GPU_VIRTUAL_ADDRESS perPassAddr = 0;

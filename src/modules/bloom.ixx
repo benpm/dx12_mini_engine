@@ -22,8 +22,6 @@ export class BloomRenderer
 
     gfx::TextureHandle hdrRT{};
     gfx::TextureHandle bloomMips[bloomMipCount]{};
-    ComPtr<ID3D12DescriptorHeap> srvHeap;
-    UINT srvDescSize = 0;
     ComPtr<ID3D12RootSignature> bloomRootSignature;
     ComPtr<ID3D12PipelineState> prefilterPSO;
     ComPtr<ID3D12PipelineState> downsamplePSO;

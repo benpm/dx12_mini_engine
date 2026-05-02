@@ -55,7 +55,9 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     }
 
     CD3DX12_DESCRIPTOR_RANGE1 spriteSrvRange;
-    spriteSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    spriteSrvRange.Init(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+    );
 
     CD3DX12_ROOT_PARAMETER1 rootParams[2];
     rootParams[0].InitAsConstants(24, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
@@ -129,12 +131,6 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
 
     chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
 
-    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = 1;
-    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    chkDX(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap)));
-
     auto* queue = static_cast<ID3D12CommandQueue*>(dev.graphicsQueue()->nativeHandle());
     DirectX::ResourceUploadBatch upload(device);
     upload.Begin(D3D12_COMMAND_LIST_TYPE_DIRECT);
@@ -147,14 +143,9 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     auto uploadFuture = upload.End(queue);
     uploadFuture.wait();
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = spriteTexture->GetDesc().Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Texture2D.MipLevels = static_cast<UINT>(spriteTexture->GetDesc().MipLevels);
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    device->CreateShaderResourceView(
-        spriteTexture.Get(), &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart()
+    spriteSrvIdx = dev.createExternalSrv(
+        spriteTexture.Get(), gfx::Format::RGBA8UnormSrgb,
+        static_cast<uint32_t>(spriteTexture->GetDesc().MipLevels)
     );
 
     const std::array<QuadVertex, 6> quadVerts = {
@@ -176,9 +167,9 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
         std::memcpy(mapped, quadVerts.data(), sizeof(quadVerts));
         dev.unmap(quadVertexBuffer);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(quadVertexBuffer));
-        quadVBV.BufferLocation = res->GetGPUVirtualAddress();
-        quadVBV.SizeInBytes = sizeof(quadVerts);
-        quadVBV.StrideInBytes = sizeof(QuadVertex);
+        quadVBV.gpuAddress = res->GetGPUVirtualAddress();
+        quadVBV.sizeInBytes = sizeof(quadVerts);
+        quadVBV.strideInBytes = sizeof(QuadVertex);
     }
 
     {
@@ -190,9 +181,9 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
         mappedInstances = static_cast<BillboardInstance*>(dev.map(instanceBuffer));
         std::memset(mappedInstances, 0, sizeof(BillboardInstance) * maxInstances);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(instanceBuffer));
-        instanceVBV.BufferLocation = res->GetGPUVirtualAddress();
-        instanceVBV.SizeInBytes = sizeof(BillboardInstance) * maxInstances;
-        instanceVBV.StrideInBytes = sizeof(BillboardInstance);
+        instanceVBV.gpuAddress = res->GetGPUVirtualAddress();
+        instanceVBV.sizeInBytes = sizeof(BillboardInstance) * maxInstances;
+        instanceVBV.strideInBytes = sizeof(BillboardInstance);
     }
 }
 
@@ -240,13 +231,19 @@ void BillboardRenderer::render(
     cmdList->SetGraphicsRootSignature(rootSignature.Get());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    D3D12_VERTEX_BUFFER_VIEW views[] = { quadVBV, instanceVBV };
+    D3D12_VERTEX_BUFFER_VIEW views[] = {
+        { quadVBV.gpuAddress, quadVBV.sizeInBytes, quadVBV.strideInBytes },
+        { instanceVBV.gpuAddress, instanceVBV.sizeInBytes, instanceVBV.strideInBytes },
+    };
     cmdList->IASetVertexBuffers(0, 2, views);
 
-    ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
+    auto* gfxHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRoot32BitConstants(0, 24, constants, 0);
-    cmdList->SetGraphicsRootDescriptorTable(1, srvHeap->GetGPUDescriptorHandleForHeapStart());
+    D3D12_GPU_DESCRIPTOR_HANDLE spriteSrv;
+    spriteSrv.ptr = devForDestroy->srvGpuDescriptorHandle(spriteSrvIdx);
+    cmdList->SetGraphicsRootDescriptorTable(1, spriteSrv);
 
     cmdList->DrawInstanced(6, instanceCount, 0, 0);
 }

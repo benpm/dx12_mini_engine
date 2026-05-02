@@ -189,9 +189,9 @@ void Scene::createMegaBuffers(gfx::IDevice& dev)
         bd.debugName = "scene_megaVB";
         megaVB = dev.createBuffer(bd);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(megaVB));
-        megaVBV.BufferLocation = res->GetGPUVirtualAddress();
-        megaVBV.StrideInBytes = sizeof(VertexPBR);
-        megaVBV.SizeInBytes = (UINT)byteSize;
+        megaVBV.gpuAddress = res->GetGPUVirtualAddress();
+        megaVBV.strideInBytes = sizeof(VertexPBR);
+        megaVBV.sizeInBytes = (uint32_t)byteSize;
     }
 
     {
@@ -202,9 +202,9 @@ void Scene::createMegaBuffers(gfx::IDevice& dev)
         bd.debugName = "scene_megaIB";
         megaIB = dev.createBuffer(bd);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(megaIB));
-        megaIBV.BufferLocation = res->GetGPUVirtualAddress();
-        megaIBV.Format = DXGI_FORMAT_R32_UINT;
-        megaIBV.SizeInBytes = (UINT)byteSize;
+        megaIBV.gpuAddress = res->GetGPUVirtualAddress();
+        megaIBV.format = gfx::IndexFormat::Uint32;
+        megaIBV.sizeInBytes = (uint32_t)byteSize;
     }
 }
 

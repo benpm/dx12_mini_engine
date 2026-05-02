@@ -85,6 +85,8 @@ namespace gfxd3d12
                 return DXGI_FORMAT_R32_TYPELESS;
             case Format::R32G8X24Typeless:
                 return DXGI_FORMAT_R32G8X24_TYPELESS;
+            case Format::R32FloatX8X24Typeless:
+                return DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
         }
         return DXGI_FORMAT_UNKNOWN;
     }
@@ -570,6 +572,12 @@ namespace gfxd3d12
         uint32_t bindlessSamplerIndex(gfx::SamplerHandle h) override;
         uint64_t srvGpuDescriptorHandle(uint32_t bindlessIndex) const override;
         uint32_t createTypedSrv(gfx::TextureHandle h, gfx::Format viewFormat) override;
+        uint32_t createExternalSrv(
+            void* nativeResource,
+            gfx::Format format,
+            uint32_t mipLevels = 1,
+            bool isCubemap = false
+        ) override;
         void* srvHeapNative() const override { return resourceHeap.native(); }
         uint64_t rtvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;
         uint64_t dsvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;

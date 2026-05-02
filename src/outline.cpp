@@ -133,10 +133,14 @@ void OutlineRenderer::render(
     cmdList->OMSetRenderTargets(1, &ctx.hdrRtv, true, &ctx.dsv);
     cmdList->OMSetStencilRef(1);
 
-    cmdList->IASetVertexBuffers(0, 1, ctx.vbv);
-    cmdList->IASetIndexBuffer(ctx.ibv);
+    D3D12_VERTEX_BUFFER_VIEW d3dVbv{ ctx.vbv.gpuAddress, ctx.vbv.sizeInBytes,
+                                     ctx.vbv.strideInBytes };
+    D3D12_INDEX_BUFFER_VIEW d3dIbv{ ctx.ibv.gpuAddress, ctx.ibv.sizeInBytes, DXGI_FORMAT_R32_UINT };
+    cmdList->IASetVertexBuffers(0, 1, &d3dVbv);
+    cmdList->IASetIndexBuffer(&d3dIbv);
 
-    ID3D12DescriptorHeap* heaps[] = { ctx.srvHeap };
+    auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
 
     cmdList->SetGraphicsRootConstantBufferView(0, ctx.perFrameAddr);

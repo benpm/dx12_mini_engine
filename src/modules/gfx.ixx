@@ -37,6 +37,7 @@ export namespace gfx
     using ::gfx::FilterMode;
     using ::gfx::Format;
     using ::gfx::GraphicsPipelineDesc;
+    using ::gfx::IndexBufferView;
     using ::gfx::IndexFormat;
     using ::gfx::LoadOp;
     using ::gfx::PipelineHandle;
@@ -57,6 +58,7 @@ export namespace gfx
     using ::gfx::TextureHandle;
     using ::gfx::TextureUsage;
     using ::gfx::VertexAttribute;
+    using ::gfx::VertexBufferView;
     using ::gfx::Viewport;
 
     using ::gfx::operator|;

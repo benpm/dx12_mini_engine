@@ -84,6 +84,8 @@ namespace gfx
         // from the underlying resource format (D3D12 idiom).
         R32Typeless,
         R32G8X24Typeless,
+        // SRV-only format for reading the depth plane of a D32_FLOAT_S8X24_UINT resource.
+        R32FloatX8X24Typeless,
     };
 
     enum class ResourceState : uint32_t
@@ -273,6 +275,20 @@ namespace gfx
         float clearDepth = 1.0f;
         uint8_t clearStencil = 0;
         std::string_view debugName;
+    };
+
+    struct VertexBufferView
+    {
+        uint64_t gpuAddress = 0;
+        uint32_t sizeInBytes = 0;
+        uint32_t strideInBytes = 0;
+    };
+
+    struct IndexBufferView
+    {
+        uint64_t gpuAddress = 0;
+        uint32_t sizeInBytes = 0;
+        IndexFormat format = IndexFormat::Uint32;
     };
 
     struct BufferDesc

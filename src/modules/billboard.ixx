@@ -25,13 +25,13 @@ export class BillboardRenderer
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> spriteTexture;
+    uint32_t spriteSrvIdx = 0;
     gfx::BufferHandle quadVertexBuffer{};
     gfx::BufferHandle instanceBuffer{};
     BillboardInstance* mappedInstances = nullptr;
-    D3D12_VERTEX_BUFFER_VIEW quadVBV{};
-    D3D12_VERTEX_BUFFER_VIEW instanceVBV{};
+    gfx::VertexBufferView quadVBV{};
+    gfx::VertexBufferView instanceVBV{};
     uint32_t instanceCount = 0;
     float spriteSize = 0.35f;
 

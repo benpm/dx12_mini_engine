@@ -207,6 +207,17 @@ namespace gfx
         // for shadow depth) and registers it in the bindless heap. Returns the slot index.
         virtual uint32_t createTypedSrv(TextureHandle h, Format viewFormat) = 0;
 
+        // Registers a SRV for an externally-created (non-gfx-owned) native resource
+        // (ID3D12Resource* on D3D12) in the bindless heap. The caller retains ownership
+        // of the native resource and must keep it alive as long as the index is used.
+        // Returns the slot index (same kind as bindlessSrvIndex).
+        virtual uint32_t createExternalSrv(
+            void* nativeResource,
+            Format format,
+            uint32_t mipLevels = 1,
+            bool isCubemap = false
+        ) = 0;
+
         // Returns the underlying ID3D12DescriptorHeap* for the bindless SRV heap.
         // Needed to call SetDescriptorHeaps with the gfx-owned shader-visible heap.
         virtual void* srvHeapNative() const = 0;

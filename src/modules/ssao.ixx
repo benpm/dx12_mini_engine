@@ -58,8 +58,11 @@ export class SsaoRenderer
     gfx::BufferHandle cbvBuffer{};
     void* cbvMapped = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
-    UINT srvDescSize = 0;
+    // Bindless SRV indices in the gfx global heap
+    uint32_t normalSrvIdx = 0;
+    uint32_t depthSrvIdx = 0;
+    uint32_t noiseSrvIdx = 0;
+    uint32_t ssaoRtSrvIdx = 0;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> ssaoRootSig;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> blurRootSig;

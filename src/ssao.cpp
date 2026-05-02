@@ -87,7 +87,6 @@ void SsaoRenderer::createRTs(
     gfx::TextureHandle depthBuffer
 )
 {
-    auto* device = nativeDev(dev);
     width = std::max(1u, width);
     height = std::max(1u, height);
 
@@ -100,34 +99,11 @@ void SsaoRenderer::createRTs(
         ssaoBlurRT = {};
     }
 
-    // Normal SRV at internal slot 0
-    {
-        auto* normalRes = static_cast<ID3D12Resource*>(dev.nativeResource(normalBuffer));
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE normalSrv(
-            srvHeap->GetCPUDescriptorHandleForHeapStart(), 0, srvDescSize
-        );
-        device->CreateShaderResourceView(normalRes, &srvDesc, normalSrv);
-    }
+    // Normal SRV: auto-created by gfx backend (RGBA8Unorm + ShaderResource)
+    normalSrvIdx = dev.bindlessSrvIndex(normalBuffer);
 
-    // Depth SRV at internal slot 1
-    {
-        auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        srvDesc.Texture2D.PlaneSlice = 0;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE depthSrv(
-            srvHeap->GetCPUDescriptorHandleForHeapStart(), 1, srvDescSize
-        );
-        device->CreateShaderResourceView(depthRes, &srvDesc, depthSrv);
-    }
+    // Depth SRV: typeless resource, needs typed R32_FLOAT_X8X24 view
+    depthSrvIdx = dev.createTypedSrv(depthBuffer, gfx::Format::R32FloatX8X24Typeless);
 
     // ssaoRT
     {
@@ -139,16 +115,7 @@ void SsaoRenderer::createRTs(
         td.initialState = gfx::ResourceState::PixelShaderResource;
         td.debugName = "ssao_rt";
         ssaoRT = dev.createTexture(td);
-        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoRT));
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R8_UNORM;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE ssaoSrv(
-            srvHeap->GetCPUDescriptorHandleForHeapStart(), 3, srvDescSize
-        );
-        device->CreateShaderResourceView(res, &srvDesc, ssaoSrv);
+        ssaoRtSrvIdx = dev.bindlessSrvIndex(ssaoRT);
     }
 
     // ssaoBlurRT — the gfx backend auto-creates an SRV in the bindless heap
@@ -175,22 +142,27 @@ void SsaoRenderer::createResources(
 {
     devForDestroy = &dev;
     auto* device = nativeDev(dev);
-    srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = 4;
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&srvHeap));
-    }
-
-    {
-        CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
-        CD3DX12_ROOT_PARAMETER1 params[2];
-        params[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-        params[1].InitAsConstantBufferView(
+        // 3 separate VOLATILE descriptor tables (t0=normal, t1=depth, t2=noise) + CBV
+        CD3DX12_DESCRIPTOR_RANGE1 srvRanges[3];
+        srvRanges[0].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
+        srvRanges[1].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
+        srvRanges[2].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
+        CD3DX12_ROOT_PARAMETER1 params[4];
+        params[0].InitAsDescriptorTable(1, &srvRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[1].InitAsDescriptorTable(1, &srvRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[2].InitAsDescriptorTable(1, &srvRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[3].InitAsConstantBufferView(
             0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL
         );
         D3D12_STATIC_SAMPLER_DESC samp = {};
@@ -200,7 +172,7 @@ void SsaoRenderer::createResources(
         samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
         rsd.Init_1_1(
-            2, params, 1, &samp,
+            4, params, 1, &samp,
             D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
                 D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
                 D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
@@ -213,7 +185,10 @@ void SsaoRenderer::createResources(
     }
     {
         CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+        srvRange.Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        );
         CD3DX12_ROOT_PARAMETER1 params[1];
         params[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
@@ -327,15 +302,8 @@ void SsaoRenderer::createResources(
         noiseUploadBuf->Unmap(0, nullptr);
         noisePendingUpload = true;
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        CD3DX12_CPU_DESCRIPTOR_HANDLE noiseSrv(
-            srvHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize
-        );
-        device->CreateShaderResourceView(noiseRes, &srvDesc, noiseSrv);
+        // SRV for noiseTexture auto-created by gfx backend (RG32Float + ShaderResource)
+        noiseSrvIdx = dev.bindlessSrvIndex(noiseTexture);
     }
 
     createRTs(dev, width, height, normalBuffer, depthBuffer);
@@ -420,10 +388,18 @@ void SsaoRenderer::render(
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
+        auto* gfxHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+        ID3D12DescriptorHeap* heaps[] = { gfxHeap };
         cmdList->SetDescriptorHeaps(1, heaps);
-        cmdList->SetGraphicsRootDescriptorTable(0, srvHeap->GetGPUDescriptorHandleForHeapStart());
-        cmdList->SetGraphicsRootConstantBufferView(1, cbvRes->GetGPUVirtualAddress());
+        auto getSrvGpu = [&](uint32_t idx) {
+            D3D12_GPU_DESCRIPTOR_HANDLE h;
+            h.ptr = devForDestroy->srvGpuDescriptorHandle(idx);
+            return h;
+        };
+        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(normalSrvIdx));
+        cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(depthSrvIdx));
+        cmdList->SetGraphicsRootDescriptorTable(2, getSrvGpu(noiseSrvIdx));
+        cmdList->SetGraphicsRootConstantBufferView(3, cbvRes->GetGPUVirtualAddress());
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionResource(
             cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -443,11 +419,11 @@ void SsaoRenderer::render(
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
-        ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
+        auto* gfxHeap2 = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
+        ID3D12DescriptorHeap* heaps[] = { gfxHeap2 };
         cmdList->SetDescriptorHeaps(1, heaps);
-        CD3DX12_GPU_DESCRIPTOR_HANDLE ssaoSrv(
-            srvHeap->GetGPUDescriptorHandleForHeapStart(), 3, srvDescSize
-        );
+        D3D12_GPU_DESCRIPTOR_HANDLE ssaoSrv;
+        ssaoSrv.ptr = devForDestroy->srvGpuDescriptorHandle(ssaoRtSrvIdx);
         cmdList->SetGraphicsRootDescriptorTable(0, ssaoSrv);
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionResource(
