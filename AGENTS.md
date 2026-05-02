@@ -148,9 +148,10 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - P8 ✅ — `OutlineRenderer::createResources/reloadPSO/render` take gfx types.
 - P9 ✅ — `ObjectPicker::createResources/resize/copyPickedPixel` take gfx types.
 - P10 ✅ — `BillboardRenderer::init/render` take gfx types. `ImGuiLayer::init` takes `gfx::IDevice&`.
-- P11 — pending; folds into P12 because `GizmoState::init` calls `Scene::loadTeapot` etc. which still take `ID3D12Device2*` + `CommandQueue&`.
+- P11 ✅ — `GizmoState::init` takes `gfx::IDevice&`.
+- P12 (partial) ✅ — `Scene::createMegaBuffers/createDrawDataBuffers/appendToMegaBuffers/loadTeapot/loadGltf/updateLightBuffer/updateTLAS/buildBlasForMesh` all take `gfx::IDevice&`. The `CommandQueue&` parameter remains because `CommandQueue` itself still owns the fence-tracked upload pool; full dissolution into `gfx::IQueue` is deferred.
 - P2 (bindless shader rewrite) — postponed; high-risk and orthogonal to subsystem signature migration.
-- P12-P14 — pending. See plan file.
+- P13-P14 — pending. See plan file.
 
 **What still leaks D3D12 in subsystems (all deferred to P12+):**
 - `ComPtr<ID3D12Resource>` data members for owned textures/buffers.

@@ -24,7 +24,7 @@ export struct GizmoState
     vec2 dragStartMouse;
     vec2 dragScreenDir;  // screen-space axis direction (normalized)
 
-    void init(Scene& scene, ID3D12Device2* device, CommandQueue& cmdQueue);
+    void init(Scene& scene, gfx::IDevice& dev, CommandQueue& cmdQueue);
     void update(
         Scene& scene,
         flecs::entity& selectedEntity,

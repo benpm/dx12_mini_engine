@@ -17,6 +17,7 @@ export module scene;
 export import common;
 export import ecs_components;
 export import command_queue;
+export import gfx;
 
 export using ::Material;
 export using ::MaterialPreset;
@@ -182,12 +183,12 @@ export class Scene
         const vec3& cameraPos,
         const DirectX::BoundingFrustum& frustum
     );
-    void updateLightBuffer(ID3D12Device2* device, CommandQueue& cmdQueue);
+    void updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue);
 
-    void createMegaBuffers(ID3D12Device2* device);
-    void createDrawDataBuffers(ID3D12Device2* device);
+    void createMegaBuffers(gfx::IDevice& dev);
+    void createDrawDataBuffers(gfx::IDevice& dev);
     MeshRef appendToMegaBuffers(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         CommandQueue& cmdQueue,
         ComPtr<ID3D12GraphicsCommandList2> cmdList,
         const std::vector<VertexPBR>& vertices,
@@ -200,12 +201,20 @@ export class Scene
     void trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resource>>&& temps);
     bool loadGltf(
         const std::string& path,
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         CommandQueue& cmdQueue,
         bool append = false
     );
-    void loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool includeCompanion = true);
+    void loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCompanion = true);
 
-    void updateTLAS(ID3D12Device2* device, CommandQueue& cmdQueue, uint32_t curBackBufIdx);
-    void buildBlasForMesh(ID3D12Device2* device, CommandQueue& cmdQueue, MeshRef& mesh);
+    void updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx);
+    void buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef& mesh);
+
+   private:
+    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
+    {
+        return static_cast<ID3D12Device2*>(dev.nativeHandle());
+    }
+
+   public:
 };

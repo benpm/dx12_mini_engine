@@ -124,7 +124,7 @@ static vec2 worldToScreen(const vec3& worldPos, const mat4& viewProj, const D3D1
              (-ndcY * 0.5f + 0.5f) * vp.Height + vp.TopLeftY };
 }
 
-void GizmoState::init(Scene& scene, ID3D12Device2* device, CommandQueue& cmdQueue)
+void GizmoState::init(Scene& scene, gfx::IDevice& dev, CommandQueue& cmdQueue)
 {
     std::vector<VertexPBR> verts;
     std::vector<uint32_t> indices;
@@ -152,7 +152,7 @@ void GizmoState::init(Scene& scene, ID3D12Device2* device, CommandQueue& cmdQueu
     auto cmdList = cmdQueue.getCmdList();
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> temps;
     arrowMeshRef = scene.appendToMegaBuffers(
-        device, cmdQueue, cmdList, verts, indices, materialIndices[0], temps
+        dev, cmdQueue, cmdList, verts, indices, materialIndices[0], temps
     );
     uint64_t fv = cmdQueue.execCmdList(cmdList);
     scene.trackUploadBatch(fv, std::move(temps));

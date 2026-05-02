@@ -174,8 +174,9 @@ void Scene::populateDrawCommands(
 // Scene::createMegaBuffers
 // ---------------------------------------------------------------------------
 
-void Scene::createMegaBuffers(ID3D12Device2* device)
+void Scene::createMegaBuffers(gfx::IDevice& dev)
 {
+    auto* device = nativeDev(dev);
     spdlog::info(
         "Scene::createMegaBuffers (VB={} KB, IB={} KB)", megaVBCapacity * sizeof(VertexPBR) / 1024,
         megaIBCapacity * sizeof(uint32_t) / 1024
@@ -212,8 +213,9 @@ void Scene::createMegaBuffers(ID3D12Device2* device)
 // Scene::createDrawDataBuffers
 // ---------------------------------------------------------------------------
 
-void Scene::createDrawDataBuffers(ID3D12Device2* device)
+void Scene::createDrawDataBuffers(gfx::IDevice& dev)
 {
+    auto* device = nativeDev(dev);
     spdlog::info("Scene::createDrawDataBuffers (triple-buffered, {} slots)", maxDrawsPerFrame);
     UINT cbvSrvSize =
         device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -274,7 +276,7 @@ void Scene::createDrawDataBuffers(ID3D12Device2* device)
 // ---------------------------------------------------------------------------
 
 MeshRef Scene::appendToMegaBuffers(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     CommandQueue& cmdQueue,
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
     const std::vector<VertexPBR>& vertices,
@@ -283,6 +285,7 @@ MeshRef Scene::appendToMegaBuffers(
     std::vector<ComPtr<ID3D12Resource>>& temps
 )
 {
+    auto* device = nativeDev(dev);
     uint32_t numVerts = static_cast<uint32_t>(vertices.size());
     uint32_t numIndices = static_cast<uint32_t>(indices.size());
 
@@ -335,7 +338,7 @@ MeshRef Scene::appendToMegaBuffers(
     megaVBUsed += numVerts;
     megaIBUsed += numIndices;
 
-    buildBlasForMesh(device, cmdQueue, ref);
+    buildBlasForMesh(dev, cmdQueue, ref);
 
     return ref;
 }
@@ -384,7 +387,7 @@ void Scene::trackUploadBatch(uint64_t fenceValue, std::vector<ComPtr<ID3D12Resou
 // Scene::loadTeapot
 // ---------------------------------------------------------------------------
 
-void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool includeCompanion)
+void Scene::loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCompanion)
 {
     auto loadRes = [](int resId) -> std::string {
         HRSRC hRes = FindResource(nullptr, MAKEINTRESOURCE(resId), RT_RCDATA);
@@ -477,7 +480,7 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
     presetIdx[static_cast<int>(MaterialPreset::Metal)] = base + 1;
     presetIdx[static_cast<int>(MaterialPreset::Mirror)] = base + 2;
 
-    MeshRef meshRef = appendToMegaBuffers(device, cmdQueue, cmdList, verts, indices, base, temps);
+    MeshRef meshRef = appendToMegaBuffers(dev, cmdQueue, cmdList, verts, indices, base, temps);
     spawnableMeshRefs.push_back(meshRef);
     spawnableMeshNames.push_back("Teapot");
 
@@ -516,14 +519,14 @@ void Scene::loadTeapot(ID3D12Device2* device, CommandQueue& cmdQueue, bool inclu
 
 bool Scene::loadGltf(
     const std::string& path,
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     CommandQueue& cmdQueue,
     bool append
 )
 {
     if (!append) {
         clearScene(cmdQueue);
-        loadTeapot(device, cmdQueue, false);
+        loadTeapot(dev, cmdQueue, false);
     }
 
     tinygltf::Model model;
@@ -627,7 +630,7 @@ bool Scene::loadGltf(
 
             int matIdx = (prim.material >= 0) ? materialBaseIdx + prim.material : 0;
             MeshRef meshRef =
-                appendToMegaBuffers(device, cmdQueue, cmdList, verts, indices, matIdx, uploadTemps);
+                appendToMegaBuffers(dev, cmdQueue, cmdList, verts, indices, matIdx, uploadTemps);
             spawnableMeshRefs.push_back(meshRef);
             spawnableMeshNames.push_back(
                 gMesh.name.empty() ? "GLB mesh " + std::to_string(spawnableMeshNames.size())
@@ -674,8 +677,9 @@ bool Scene::loadGltf(
 // Scene Raytracing
 // ---------------------------------------------------------------------------
 
-void Scene::buildBlasForMesh(ID3D12Device2* device, CommandQueue& cmdQueue, MeshRef& mesh)
+void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef& mesh)
 {
+    auto* device = nativeDev(dev);
     uint64_t key = (static_cast<uint64_t>(mesh.vertexOffset) << 32) | mesh.indexOffset;
     if (blasMap.contains(key)) {
         return;
@@ -753,8 +757,9 @@ void Scene::buildBlasForMesh(ID3D12Device2* device, CommandQueue& cmdQueue, Mesh
     spdlog::debug("Built BLAS for mesh at vertexOffset {}", mesh.vertexOffset);
 }
 
-void Scene::updateLightBuffer(ID3D12Device2* device, CommandQueue& cmdQueue)
+void Scene::updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue)
 {
+    auto* device = nativeDev(dev);
     std::vector<LightData> lights;
     lightQuery.each([&](flecs::entity e, PointLight& pl) {
         if (lights.size() >= maxLightsRRT) {
@@ -796,8 +801,9 @@ void Scene::updateLightBuffer(ID3D12Device2* device, CommandQueue& cmdQueue)
     lightBuffer->Unmap(0, nullptr);
 }
 
-void Scene::updateTLAS(ID3D12Device2* device, CommandQueue& cmdQueue, uint32_t curBackBufIdx)
+void Scene::updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx)
 {
+    auto* device = nativeDev(dev);
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instanceDescs;
 
     auto addInstance = [&](const mat4& world, const MeshRef& mesh) {

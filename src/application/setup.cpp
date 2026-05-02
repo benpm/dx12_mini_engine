@@ -148,13 +148,13 @@ bool Application::loadContent()
     this->contentLoaded = true;
     spdlog::info("loadContent start");
 
-    scene.createMegaBuffers(device.Get());
-    scene.createDrawDataBuffers(device.Get());
-    scene.loadTeapot(device.Get(), cmdQueue);
+    scene.createMegaBuffers(*gfxDevice);
+    scene.createDrawDataBuffers(*gfxDevice);
+    scene.loadTeapot(*gfxDevice, cmdQueue);
 
     for (const auto& entry : std::filesystem::directory_iterator(MODELS_DIR)) {
         if (entry.path().extension() == ".glb") {
-            scene.loadGltf(entry.path().string(), device.Get(), cmdQueue, true);
+            scene.loadGltf(entry.path().string(), *gfxDevice, cmdQueue, true);
         }
     }
 
@@ -182,7 +182,7 @@ bool Application::loadContent()
         int terrainMatIdx = static_cast<int>(scene.materials.size()) - 1;
 
         MeshRef meshRef = scene.appendToMegaBuffers(
-            device.Get(), cmdQueue, cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps
+            *gfxDevice, cmdQueue, cmdList, terrainVerts, terrainIndices, terrainMatIdx, temps
         );
 
         Transform tf;
@@ -290,7 +290,7 @@ bool Application::loadContent()
     picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature);
 
     billboards.init(*gfxDevice, cmdQueue.queue.Get(), L"resources/icons/light.png");
-    gizmo.init(scene, device.Get(), cmdQueue);
+    gizmo.init(scene, *gfxDevice, cmdQueue);
 
     resizeDepthBuffer(clientWidth, clientHeight);
     ssao.createResources(

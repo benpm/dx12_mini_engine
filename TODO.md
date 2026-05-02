@@ -27,8 +27,8 @@
   - [x] P8: OutlineRenderer signatures use gfx types
   - [x] P9: ObjectPicker signatures use gfx types
   - [x] P10: BillboardRenderer + ImGuiLayer signatures use gfx types
-  - [ ] P12: Migrate Scene mega-buffers, per-frame CBs, GizmoState init, BLAS/TLAS into gfx; dissolve `CommandQueue` into `gfx::IQueue`
-  - [ ] P11: GizmoState init takes gfx types (folds into P12)
+  - [x] P11: GizmoState init takes gfx types
+  - [x] P12 (partial): Scene methods take `gfx::IDevice&`. Still pending: dissolve `CommandQueue` into `gfx::IQueue`, migrate ComPtr fields to gfx handles, BLAS/TLAS gating on `caps.raytracing`.
   - [ ] P13: Application core (depthBuffer, dsvHeap, scene + grid PSOs, cubemap heaps) on gfx
   - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, orthogonal)
   - [ ] P14: Cleanup — verify no `ID3D12*` outside `src/gfx/`, remove `nativeHandle()` escape hatches

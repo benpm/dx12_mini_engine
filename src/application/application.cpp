@@ -495,8 +495,8 @@ void Application::update()
     if (pendingResetToTeapot) {
         pendingResetToTeapot = false;
         scene.clearScene(cmdQueue);
-        scene.loadTeapot(device.Get(), cmdQueue);
-        gizmo.init(scene, device.Get(), cmdQueue);
+        scene.loadTeapot(*gfxDevice, cmdQueue);
+        gizmo.init(scene, *gfxDevice, cmdQueue);
         spawningStopped = false;
         recentFrameHead = 0;
         recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
@@ -508,10 +508,10 @@ void Application::update()
         spawningStopped = false;
         recentFrameHead = 0;
         recentFrameMs[0] = recentFrameMs[1] = recentFrameMs[2] = 0.0f;
-        if (!scene.loadGltf(path, device.Get(), cmdQueue)) {
+        if (!scene.loadGltf(path, *gfxDevice, cmdQueue)) {
             spdlog::error("Failed to load GLB: {}", path);
         } else {
-            gizmo.init(scene, device.Get(), cmdQueue);
+            gizmo.init(scene, *gfxDevice, cmdQueue);
         }
     }
 
@@ -521,15 +521,15 @@ void Application::update()
         SceneFileData data;
         if (loadSceneFile(path, data)) {
             scene.clearScene(cmdQueue);
-            scene.loadTeapot(device.Get(), cmdQueue);
+            scene.loadTeapot(*gfxDevice, cmdQueue);
             for (const auto& entry : std::filesystem::directory_iterator(MODELS_DIR)) {
                 if (entry.path().extension() == ".glb") {
-                    scene.loadGltf(entry.path().string(), device.Get(), cmdQueue, true);
+                    scene.loadGltf(entry.path().string(), *gfxDevice, cmdQueue, true);
                 }
             }
             applySceneData(data);
             if (!runtimeConfig.singleTeapotMode) {
-                gizmo.init(scene, device.Get(), cmdQueue);
+                gizmo.init(scene, *gfxDevice, cmdQueue);
             }
             spawningStopped = data.spawning.stopped;
             recentFrameHead = 0;
@@ -957,7 +957,7 @@ void Application::update()
         });
     }
 
-    scene.updateLightBuffer(device.Get(), cmdQueue);
+    scene.updateLightBuffer(*gfxDevice, cmdQueue);
 }
 
 // ---------------------------------------------------------------------------
