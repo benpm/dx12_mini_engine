@@ -140,7 +140,7 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **Migration status (2026-05-01):**
 - P0 ✅ — gfx skeleton + D3D12 backend stubs landed.
 - P1 ✅ — `Application` owns `gfx::IDevice` + `gfx::ISwapChain`; `Window` no longer creates the device. Legacy `device`/`swapChain` ComPtrs are refcounted aliases of the gfx-owned natives so subsystem APIs that still take `ID3D12Device2*` keep working through P2-P13.
-- P3 ✅ — `rg::RenderGraph` callbacks take `gfx::ICommandList&` instead of `ID3D12GraphicsCommandList2*`. Pass lambdas extract the native pointer via `cmdRef.nativeHandle()`. The graph wraps the legacy `CommandQueue`-allocated raw list via `gfx::wrapNativeCommandList` so the engine doesn't yet need to dissolve `CommandQueue` into `gfx::IQueue`.
+- P3 ✅ — `rg::RenderGraph` callbacks take `gfx::ICommandList&`. `importTexture` now takes `gfx::TextureHandle` + `gfx::ResourceState` (was `ID3D12Resource*` + `D3D12_RESOURCE_STATES`). `execute()` emits barriers via `cmd.barrier()` for all imported resources. `RenderGraph` ctor takes `gfx::IDevice&`. `ResourceRecord` stores `gfx::TextureHandle gfxHandle` for external resources; `PassRecord::readStates`/`writeStates` are `gfx::ResourceState`.
 - P4 ✅ — `GBuffer::createResources/resize/transition` take `gfx::IDevice&` / `gfx::ICommandList&`.
 - P5 ✅ — `ShadowRenderer::createResources/reloadPSO/render` take gfx types.
 - P6 ✅ — `SsaoRenderer::createResources/resize/render/transitionResource` take gfx types.
@@ -163,7 +163,7 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - `ComPtr<ID3D12DescriptorHeap>` in all subsystems and Application (gfx doesn't model descriptor heaps — deferred to bindless rewrite).
 - Root signatures and PSOs in subsystems that use custom root sigs (SSAO, Bloom, Billboard — deferred to bindless).
 - `D3D12_VERTEX_BUFFER_VIEW` / `D3D12_INDEX_BUFFER_VIEW` for mega-buffers and billboard VBs (use `nativeResource()->GetGPUVirtualAddress()` pattern).
-- `D3D12_RESOURCE_STATES` on internal barrier-emitting calls in render passes.
+- `D3D12_RESOURCE_STATES` in render pass lambdas for D3D12 binding/clear calls (the render graph resource state tracking itself now uses `gfx::ResourceState`).
 
 These migrate when the bindless model lands (P2) and gfx gains descriptor heap + root sig creation APIs.
 

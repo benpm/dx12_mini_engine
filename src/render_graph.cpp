@@ -16,7 +16,7 @@ using Microsoft::WRL::ComPtr;
 namespace rg
 {
 
-    RenderGraph::RenderGraph(ID3D12Device2* device) : device(device)
+    RenderGraph::RenderGraph(gfx::IDevice& dev) : device(&dev)
     {
         resources.reserve(16);
         passes.reserve(16);
@@ -33,8 +33,8 @@ namespace rg
 
     ResourceHandle RenderGraph::importTexture(
         const std::string& name,
-        ID3D12Resource* resource,
-        D3D12_RESOURCE_STATES initialState
+        gfx::TextureHandle handle,
+        gfx::ResourceState initialState
     )
     {
         if (externalResources.count(name)) {
@@ -43,15 +43,14 @@ namespace rg
 
         ResourceRecord record;
         record.name = name;
-        record.resource = resource;
-        record.desc = resource->GetDesc();
+        record.gfxHandle = handle;
         record.currentState = initialState;
         record.isExternal = true;
 
-        ResourceHandle handle = getNextHandle();
+        ResourceHandle rh = getNextHandle();
         resources.push_back(record);
-        externalResources[name] = handle;
-        return handle;
+        externalResources[name] = rh;
+        return rh;
     }
 
     void RenderGraph::addPass(
@@ -66,7 +65,6 @@ namespace rg
         pass.writes.reserve(8);
         pass.readStates.reserve(8);
         pass.writeStates.reserve(8);
-        pass.barriersScratch.reserve(16);
         pass.execute = execute;
 
         BuilderImpl builder(*this, pass);
@@ -77,49 +75,33 @@ namespace rg
 
     void RenderGraph::execute(gfx::ICommandList& cmd)
     {
-        // For now the graph still emits ResourceBarrier directly via the
-        // native pointer. Migration of the internal barrier emission to
-        // cmd.barrier() happens once the imported resources are themselves
-        // gfx::TextureHandles (P12+).
-        auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmd.nativeHandle());
         for (auto& pass : passes) {
-            // Handle transitions
-            auto& barriers = pass.barriersScratch;
-            barriers.clear();
-
             for (size_t i = 0; i < pass.reads.size(); ++i) {
                 ResourceHandle h = pass.reads[i];
-                D3D12_RESOURCE_STATES targetState = pass.readStates[i];
-                if (resources[h.id].currentState != targetState) {
-                    barriers.push_back(
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                            resources[h.id].resource.Get(), resources[h.id].currentState,
-                            targetState
-                        )
-                    );
-                    resources[h.id].currentState = targetState;
+                gfx::ResourceState target = pass.readStates[i];
+                if (resources[h.id].currentState != target) {
+                    if (resources[h.id].isExternal) {
+                        cmd.barrier(
+                            resources[h.id].gfxHandle, resources[h.id].currentState, target
+                        );
+                    }
+                    resources[h.id].currentState = target;
                 }
             }
 
             for (size_t i = 0; i < pass.writes.size(); ++i) {
                 ResourceHandle h = pass.writes[i];
-                D3D12_RESOURCE_STATES targetState = pass.writeStates[i];
-                if (resources[h.id].currentState != targetState) {
-                    barriers.push_back(
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                            resources[h.id].resource.Get(), resources[h.id].currentState,
-                            targetState
-                        )
-                    );
-                    resources[h.id].currentState = targetState;
+                gfx::ResourceState target = pass.writeStates[i];
+                if (resources[h.id].currentState != target) {
+                    if (resources[h.id].isExternal) {
+                        cmd.barrier(
+                            resources[h.id].gfxHandle, resources[h.id].currentState, target
+                        );
+                    }
+                    resources[h.id].currentState = target;
                 }
             }
 
-            if (!barriers.empty()) {
-                cmdList->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
-            }
-
-            // Execute pass
             BuilderImpl builder(*this, pass);
             pass.execute(cmd, builder);
         }
@@ -129,10 +111,8 @@ namespace rg
     ResourceHandle
     RenderGraph::BuilderImpl::createTexture(const std::string& name, const TextureDesc& desc)
     {
-        // Simple: search for existing internal resource by name
         for (uint32_t i = 0; i < graph.resources.size(); ++i) {
             if (!graph.resources[i].isExternal && graph.resources[i].name == name) {
-                // Check if desc matches (simplification: assume it does or recreate if needed)
                 return { i };
             }
         }
@@ -140,19 +120,20 @@ namespace rg
         ResourceRecord record;
         record.name = name;
         record.isExternal = false;
+        record.currentState = gfx::ResourceState::Common;
 
         D3D12_RESOURCE_DESC d3dDesc = CD3DX12_RESOURCE_DESC::Tex2D(
             desc.format, desc.width, desc.height, 1, desc.mipLevels, 1, 0, desc.flags
         );
         record.desc = d3dDesc;
-        record.currentState = D3D12_RESOURCE_STATE_COMMON;
 
         CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
         D3D12_CLEAR_VALUE* clearValPtr =
             desc.useClearValue ? const_cast<D3D12_CLEAR_VALUE*>(&desc.clearValue) : nullptr;
 
-        graph.device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &d3dDesc, record.currentState, clearValPtr,
+        auto* d3dDevice = static_cast<ID3D12Device2*>(graph.device->nativeHandle());
+        d3dDevice->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &d3dDesc, D3D12_RESOURCE_STATE_COMMON, clearValPtr,
             IID_PPV_ARGS(&record.resource)
         );
 
@@ -167,7 +148,7 @@ namespace rg
     )
     {
         pass.writes.push_back(handle);
-        pass.writeStates.push_back(D3D12_RESOURCE_STATE_RENDER_TARGET);
+        pass.writeStates.push_back(gfx::ResourceState::RenderTarget);
     }
 
     void RenderGraph::BuilderImpl::writeDepthStencil(
@@ -176,10 +157,10 @@ namespace rg
     )
     {
         pass.writes.push_back(handle);
-        pass.writeStates.push_back(D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        pass.writeStates.push_back(gfx::ResourceState::DepthWrite);
     }
 
-    void RenderGraph::BuilderImpl::readTexture(ResourceHandle handle, D3D12_RESOURCE_STATES state)
+    void RenderGraph::BuilderImpl::readTexture(ResourceHandle handle, gfx::ResourceState state)
     {
         pass.reads.push_back(handle);
         pass.readStates.push_back(state);
@@ -187,7 +168,11 @@ namespace rg
 
     ID3D12Resource* RenderGraph::BuilderImpl::getResource(ResourceHandle handle)
     {
-        return graph.resources[handle.id].resource.Get();
+        auto& rec = graph.resources[handle.id];
+        if (rec.isExternal) {
+            return static_cast<ID3D12Resource*>(graph.device->nativeResource(rec.gfxHandle));
+        }
+        return rec.resource.Get();
     }
 
 }  // namespace rg

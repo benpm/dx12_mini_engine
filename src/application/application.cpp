@@ -106,7 +106,7 @@ Application::Application()
 #endif
           return gfx::createDevice(gfx::BackendKind::D3D12, dd);
       })()),
-      renderGraph(static_cast<ID3D12Device2*>(gfxDevice->nativeHandle()))
+      renderGraph(*gfxDevice)
 {
     spdlog::info("Application constructor start");
 

@@ -197,44 +197,28 @@ void Application::render()
     // --- Render Graph Setup ---
     renderGraph.reset();
     auto hBackBuffer =
-        renderGraph.importTexture("BackBuffer", backBufferRes, D3D12_RESOURCE_STATE_PRESENT);
-    auto hDepthBuffer = renderGraph.importTexture(
-        "MainDepth", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer)),
-        D3D12_RESOURCE_STATE_DEPTH_WRITE
-    );
+        renderGraph.importTexture("BackBuffer", backBuffer, gfx::ResourceState::Present);
+    auto hDepthBuffer =
+        renderGraph.importTexture("MainDepth", depthBuffer, gfx::ResourceState::DepthWrite);
     auto hShadowMap = renderGraph.importTexture(
-        "ShadowMap", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(shadow.shadowMap)),
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "ShadowMap", shadow.shadowMap, gfx::ResourceState::PixelShaderResource
     );
     auto hNormalRT = renderGraph.importTexture(
-        "NormalRT",
-        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Normal])),
-        D3D12_RESOURCE_STATE_COMMON
+        "NormalRT", gbuffer.resources[GBuffer::Normal], gfx::ResourceState::Common
     );
     auto hAlbedoRT = renderGraph.importTexture(
-        "AlbedoRT",
-        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Albedo])),
-        D3D12_RESOURCE_STATE_COMMON
+        "AlbedoRT", gbuffer.resources[GBuffer::Albedo], gfx::ResourceState::Common
     );
     auto hMaterialRT = renderGraph.importTexture(
-        "MaterialRT",
-        static_cast<ID3D12Resource*>(
-            gfxDevice->nativeResource(gbuffer.resources[GBuffer::Material])
-        ),
-        D3D12_RESOURCE_STATE_COMMON
+        "MaterialRT", gbuffer.resources[GBuffer::Material], gfx::ResourceState::Common
     );
     auto hMotionRT = renderGraph.importTexture(
-        "MotionRT",
-        static_cast<ID3D12Resource*>(gfxDevice->nativeResource(gbuffer.resources[GBuffer::Motion])),
-        D3D12_RESOURCE_STATE_COMMON
+        "MotionRT", gbuffer.resources[GBuffer::Motion], gfx::ResourceState::Common
     );
-    auto hHdrRT = renderGraph.importTexture(
-        "HdrRT", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(bloom.hdrRT)),
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    );
+    auto hHdrRT =
+        renderGraph.importTexture("HdrRT", bloom.hdrRT, gfx::ResourceState::PixelShaderResource);
     auto hCubemap = renderGraph.importTexture(
-        "Cubemap", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapTexture)),
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "Cubemap", cubemapTexture, gfx::ResourceState::PixelShaderResource
     );
 
     // --- Shadow pass ---
@@ -634,7 +618,7 @@ void Application::render()
                 builder.writeRenderTarget(
                     hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
-                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+                builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
@@ -662,7 +646,7 @@ void Application::render()
                 builder.writeRenderTarget(
                     hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
-                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+                builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 PROFILE_ZONE_NAMED("Outline Pass");
@@ -750,7 +734,7 @@ void Application::render()
                 builder.writeRenderTarget(
                     hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
                 );
-                builder.readTexture(hDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ);
+                builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
@@ -832,7 +816,7 @@ void Application::render()
     renderGraph.addPass(
         "Present Pass",
         [&](rg::RenderGraphBuilder& builder) {
-            builder.readTexture(hBackBuffer, D3D12_RESOURCE_STATE_PRESENT);
+            builder.readTexture(hBackBuffer, gfx::ResourceState::Present);
         },
         [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
             (void)cmdRef;

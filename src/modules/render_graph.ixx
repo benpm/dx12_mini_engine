@@ -47,7 +47,7 @@ namespace rg
         virtual void writeDepthStencil(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE dsv) = 0;
         virtual void readTexture(
             ResourceHandle handle,
-            D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+            gfx::ResourceState state = gfx::ResourceState::PixelShaderResource
         ) = 0;
         virtual ID3D12Resource* getResource(ResourceHandle handle) = 0;
     };
@@ -61,7 +61,7 @@ namespace rg
     export class RenderGraph
     {
        public:
-        RenderGraph(ID3D12Device2* device);
+        RenderGraph(gfx::IDevice& device);
         ~RenderGraph();
 
         void reset();
@@ -71,8 +71,8 @@ namespace rg
             std::string name;
             std::vector<ResourceHandle> inputs;
             std::vector<ResourceHandle> outputs;
-            std::vector<D3D12_RESOURCE_STATES> inputStates;
-            std::vector<D3D12_RESOURCE_STATES> outputStates;
+            std::vector<gfx::ResourceState> inputStates;
+            std::vector<gfx::ResourceState> outputStates;
             PassExecuteCallback execute;
         };
 
@@ -87,17 +87,18 @@ namespace rg
         // External resources (like backbuffer, main depth)
         ResourceHandle importTexture(
             const std::string& name,
-            ID3D12Resource* resource,
-            D3D12_RESOURCE_STATES initialState
+            gfx::TextureHandle handle,
+            gfx::ResourceState initialState
         );
 
        private:
         struct ResourceRecord
         {
             std::string name;
-            Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+            gfx::TextureHandle gfxHandle{};                   // for external (imported) resources
+            Microsoft::WRL::ComPtr<ID3D12Resource> resource;  // for internal (createTexture)
             D3D12_RESOURCE_DESC desc;
-            D3D12_RESOURCE_STATES currentState;
+            gfx::ResourceState currentState{};
             bool isExternal = false;
         };
 
@@ -106,9 +107,8 @@ namespace rg
             std::string name;
             std::vector<ResourceHandle> reads;
             std::vector<ResourceHandle> writes;
-            std::vector<D3D12_RESOURCE_STATES> readStates;
-            std::vector<D3D12_RESOURCE_STATES> writeStates;
-            std::vector<D3D12_RESOURCE_BARRIER> barriersScratch;
+            std::vector<gfx::ResourceState> readStates;
+            std::vector<gfx::ResourceState> writeStates;
             PassExecuteCallback execute;
         };
 
@@ -119,7 +119,7 @@ namespace rg
             ResourceHandle createTexture(const std::string& name, const TextureDesc& desc) override;
             void writeRenderTarget(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE rtv) override;
             void writeDepthStencil(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE dsv) override;
-            void readTexture(ResourceHandle handle, D3D12_RESOURCE_STATES state) override;
+            void readTexture(ResourceHandle handle, gfx::ResourceState state) override;
             ID3D12Resource* getResource(ResourceHandle handle) override;
 
            private:
@@ -127,7 +127,7 @@ namespace rg
             PassRecord& pass;
         };
 
-        ID3D12Device2* device;
+        gfx::IDevice* device;
         std::vector<ResourceRecord> resources;
         std::vector<PassRecord> passes;
         std::map<std::string, ResourceHandle> externalResources;
