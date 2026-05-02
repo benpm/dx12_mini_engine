@@ -176,7 +176,6 @@ void Scene::populateDrawCommands(
 
 void Scene::createMegaBuffers(gfx::IDevice& dev)
 {
-    auto* device = nativeDev(dev);
     spdlog::info(
         "Scene::createMegaBuffers (VB={} KB, IB={} KB)", megaVBCapacity * sizeof(VertexPBR) / 1024,
         megaIBCapacity * sizeof(uint32_t) / 1024
@@ -184,26 +183,26 @@ void Scene::createMegaBuffers(gfx::IDevice& dev)
 
     {
         size_t byteSize = megaVBCapacity * sizeof(VertexPBR);
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
-            IID_PPV_ARGS(&megaVB)
-        ));
-        megaVBV.BufferLocation = megaVB->GetGPUVirtualAddress();
+        gfx::BufferDesc bd{};
+        bd.size = byteSize;
+        bd.usage = gfx::BufferUsage::Vertex;
+        bd.debugName = "scene_megaVB";
+        megaVB = dev.createBuffer(bd);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(megaVB));
+        megaVBV.BufferLocation = res->GetGPUVirtualAddress();
         megaVBV.StrideInBytes = sizeof(VertexPBR);
         megaVBV.SizeInBytes = (UINT)byteSize;
     }
 
     {
         size_t byteSize = megaIBCapacity * sizeof(uint32_t);
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
-            IID_PPV_ARGS(&megaIB)
-        ));
-        megaIBV.BufferLocation = megaIB->GetGPUVirtualAddress();
+        gfx::BufferDesc bd{};
+        bd.size = byteSize;
+        bd.usage = gfx::BufferUsage::Index;
+        bd.debugName = "scene_megaIB";
+        megaIB = dev.createBuffer(bd);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(megaIB));
+        megaIBV.BufferLocation = res->GetGPUVirtualAddress();
         megaIBV.Format = DXGI_FORMAT_R32_UINT;
         megaIBV.SizeInBytes = (UINT)byteSize;
     }
@@ -306,7 +305,8 @@ MeshRef Scene::appendToMegaBuffers(
         chkDX(upload->Map(0, nullptr, &mapped));
         memcpy(mapped, vertices.data(), byteSize);
         upload->Unmap(0, nullptr);
-        cmdList->CopyBufferRegion(megaVB.Get(), dstOffset, upload.Get(), 0, byteSize);
+        auto* megaVBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaVB));
+        cmdList->CopyBufferRegion(megaVBRes, dstOffset, upload.Get(), 0, byteSize);
         temps.push_back(std::move(upload));
     }
 
@@ -324,7 +324,8 @@ MeshRef Scene::appendToMegaBuffers(
         chkDX(upload->Map(0, nullptr, &mapped));
         memcpy(mapped, indices.data(), byteSize);
         upload->Unmap(0, nullptr);
-        cmdList->CopyBufferRegion(megaIB.Get(), dstOffset, upload.Get(), 0, byteSize);
+        auto* megaIBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaIB));
+        cmdList->CopyBufferRegion(megaIBRes, dstOffset, upload.Get(), 0, byteSize);
         temps.push_back(std::move(upload));
     }
 
@@ -695,13 +696,15 @@ void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef&
     D3D12_RAYTRACING_GEOMETRY_DESC geomDesc = {};
     geomDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
     geomDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    auto* megaVBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaVB));
+    auto* megaIBRes = static_cast<ID3D12Resource*>(dev.nativeResource(megaIB));
     geomDesc.Triangles.VertexBuffer.StartAddress =
-        megaVB->GetGPUVirtualAddress() + mesh.vertexOffset * sizeof(VertexPBR);
+        megaVBRes->GetGPUVirtualAddress() + mesh.vertexOffset * sizeof(VertexPBR);
     geomDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(VertexPBR);
     geomDesc.Triangles.VertexCount = mesh.vertexCount;
     geomDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
     geomDesc.Triangles.IndexBuffer =
-        megaIB->GetGPUVirtualAddress() + mesh.indexOffset * sizeof(uint32_t);
+        megaIBRes->GetGPUVirtualAddress() + mesh.indexOffset * sizeof(uint32_t);
     geomDesc.Triangles.IndexCount = mesh.indexCount;
     geomDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
 
@@ -759,7 +762,6 @@ void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef&
 
 void Scene::updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue)
 {
-    auto* device = nativeDev(dev);
     std::vector<LightData> lights;
     lightQuery.each([&](flecs::entity e, PointLight& pl) {
         if (lights.size() >= maxLightsRRT) {
@@ -786,19 +788,17 @@ void Scene::updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue)
     }
 
     size_t bufferSize = maxLightsRRT * sizeof(LightData);
-    if (!lightBuffer) {
-        const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-        chkDX(device->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&lightBuffer)
-        ));
+    if (!lightBuffer.isValid()) {
+        gfx::BufferDesc bd{};
+        bd.size = bufferSize;
+        bd.usage = gfx::BufferUsage::Upload;
+        bd.debugName = "scene_lightBuffer";
+        lightBuffer = dev.createBuffer(bd);
     }
 
-    void* mapped = nullptr;
-    chkDX(lightBuffer->Map(0, nullptr, &mapped));
+    void* mapped = dev.map(lightBuffer);
     memcpy(mapped, lights.data(), lights.size() * sizeof(LightData));
-    lightBuffer->Unmap(0, nullptr);
+    dev.unmap(lightBuffer);
 }
 
 void Scene::updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBackBufIdx)

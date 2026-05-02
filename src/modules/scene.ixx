@@ -129,8 +129,8 @@ export class Scene
     flecs::query<PointLight> lightQuery{ ecsWorld.query<PointLight>() };
     flecs::query<Scripted> scriptQuery{ ecsWorld.query<Scripted>() };
 
-    ComPtr<ID3D12Resource> megaVB;
-    ComPtr<ID3D12Resource> megaIB;
+    gfx::BufferHandle megaVB{};
+    gfx::BufferHandle megaIB{};
     D3D12_VERTEX_BUFFER_VIEW megaVBV{};
     D3D12_INDEX_BUFFER_VIEW megaIBV{};
     uint32_t megaVBCapacity = 1024 * 1024;  // 1M verts
@@ -149,7 +149,7 @@ export class Scene
     UINT sceneSrvDescSize = 0;
 
     // Light Buffer for Raytracing/ReSTIR
-    ComPtr<ID3D12Resource> lightBuffer;
+    gfx::BufferHandle lightBuffer{};
     uint32_t activeLightCount = 0;
     static constexpr uint32_t maxLightsRRT = 1024;
 
