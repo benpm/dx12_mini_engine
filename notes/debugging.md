@@ -1,5 +1,51 @@
 # Debugging notes
 
+---
+
+## SSAO PSO created with depth enabled — undefined behaviour, visual corruption on WARP
+
+**Symptom**: After migrating `SsaoRenderer` PSOs from raw
+`CreateGraphicsPipelineState` to `gfx::createGraphicsPipeline`, the WARP
+integration test screenshot showed extreme "spiky" artefacts covering the
+lower half of the viewport.  The artifacts were actually the existing
+pre-migration baseline (identical pixel data), but the investigation revealed
+a latent PSO mismatch:
+
+**Root cause**: `gfx::GraphicsPipelineDesc::depthStencil.depthEnable` defaults
+to `true` (mirroring D3D12 defaults for safety — callers opt out). The SSAO
+and blur passes are fullscreen-triangle compute-style passes that must have
+depth disabled. The original hand-written `D3D12_GRAPHICS_PIPELINE_STATE_DESC`
+explicitly set `DepthStencilState.DepthEnable = FALSE`; the gfx-migrated
+version forgot to set `pd.depthStencil.depthEnable = false`.
+
+The visual artefacts in the test scene turned out to be a pre-existing SSAO
+issue (extreme hemisphere-sampling noise on the infinite grid plane) that was
+already in the committed baseline — not a regression from the PSO migration.
+But the wrong `depthEnable` value was still a real latent bug.
+
+**Fix**: Add to both SSAO and blur PSO descriptors:
+```cpp
+pd.depthStencil.depthEnable = false;
+pd.depthStencil.depthWrite  = false;
+```
+
+**Also fixed in same commit**: `gfx::TextureUsage::operator|` was defined
+in `include/gfx_types.h` (global module fragment of `gfx.ixx`) and therefore
+not exported.  Added `using ::gfx::operator|;` to the `export namespace gfx`
+block in `src/modules/gfx.ixx`.
+
+**Also fixed**: `gfx::ShaderDesc` bytecode size field is `bytecodeSize`, not
+`size`. Any migration that uses `ShaderDesc` should use `.bytecodeSize =`.
+
+**Lesson**: when converting PSO creation to `gfx::GraphicsPipelineDesc`,
+always explicitly set every non-default rasterizer/depth/blend state that the
+original hand-written descriptor set — don't assume the gfx defaults match
+D3D12 defaults (they don't for depth: gfx defaults `depthEnable = true`
+because it's the common case for scene passes; pure fullscreen passes must
+opt out).
+
+---
+
 Running log of non-obvious issues hit during development and the fixes that
 made them go away. Format: one section per issue, newest at top. Include
 enough context that the same issue is recognisable next time.

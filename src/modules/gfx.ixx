@@ -59,6 +59,8 @@ export namespace gfx
     using ::gfx::VertexAttribute;
     using ::gfx::Viewport;
 
+    using ::gfx::operator|;
+
     using ::gfx::ICommandList;
     using ::gfx::IDevice;
     using ::gfx::IQueue;

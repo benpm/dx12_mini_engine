@@ -34,6 +34,39 @@ struct SsaoCBData
 };
 static_assert(sizeof(SsaoCBData) == 768);
 
+SsaoRenderer::~SsaoRenderer()
+{
+    if (devForDestroy) {
+        if (ssaoRT.isValid()) {
+            devForDestroy->destroy(ssaoRT);
+        }
+        if (ssaoBlurRT.isValid()) {
+            devForDestroy->destroy(ssaoBlurRT);
+        }
+        if (noiseTexture.isValid()) {
+            devForDestroy->destroy(noiseTexture);
+        }
+        if (cbvBuffer.isValid()) {
+            devForDestroy->destroy(cbvBuffer);
+        }
+        if (ssaoPSO.isValid()) {
+            devForDestroy->destroy(ssaoPSO);
+        }
+        if (blurPSO.isValid()) {
+            devForDestroy->destroy(blurPSO);
+        }
+        if (vsHandle.isValid()) {
+            devForDestroy->destroy(vsHandle);
+        }
+        if (ssaoPsHandle.isValid()) {
+            devForDestroy->destroy(ssaoPsHandle);
+        }
+        if (blurPsHandle.isValid()) {
+            devForDestroy->destroy(blurPsHandle);
+        }
+    }
+}
+
 void SsaoRenderer::transitionResource(
     gfx::ICommandList& cmdRef,
     ID3D12Resource* resource,
@@ -61,21 +94,32 @@ D3D12_CPU_DESCRIPTOR_HANDLE SsaoRenderer::blurRtvCpu() const
 }
 
 void SsaoRenderer::createRTs(
-    ID3D12Device2* device,
+    gfx::IDevice& dev,
     uint32_t width,
     uint32_t height,
-    ID3D12Resource* normalBuffer,
-    ID3D12Resource* depthBuffer,
+    gfx::TextureHandle normalBuffer,
+    gfx::TextureHandle depthBuffer,
     ID3D12DescriptorHeap* sceneSrvHeap,
     UINT sceneSrvDescSize,
     INT ssaoSlot
 )
 {
+    auto* device = nativeDev(dev);
     width = std::max(1u, width);
     height = std::max(1u, height);
 
-    // Use provided normalBuffer for SRV at internal slot 0
+    if (ssaoRT.isValid()) {
+        dev.destroy(ssaoRT);
+        ssaoRT = {};
+    }
+    if (ssaoBlurRT.isValid()) {
+        dev.destroy(ssaoBlurRT);
+        ssaoBlurRT = {};
+    }
+
+    // Normal SRV at internal slot 0
     {
+        auto* normalRes = static_cast<ID3D12Resource*>(dev.nativeResource(normalBuffer));
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -84,11 +128,12 @@ void SsaoRenderer::createRTs(
         CD3DX12_CPU_DESCRIPTOR_HANDLE normalSrv(
             srvHeap->GetCPUDescriptorHandleForHeapStart(), 0, srvDescSize
         );
-        device->CreateShaderResourceView(normalBuffer, &srvDesc, normalSrv);
+        device->CreateShaderResourceView(normalRes, &srvDesc, normalSrv);
     }
 
-    // depthBuffer SRV at internal slot 1
+    // Depth SRV at internal slot 1
     {
+        auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -98,20 +143,21 @@ void SsaoRenderer::createRTs(
         CD3DX12_CPU_DESCRIPTOR_HANDLE depthSrv(
             srvHeap->GetCPUDescriptorHandleForHeapStart(), 1, srvDescSize
         );
-        device->CreateShaderResourceView(depthBuffer, &srvDesc, depthSrv);
+        device->CreateShaderResourceView(depthRes, &srvDesc, depthSrv);
     }
 
     // ssaoRT
     {
-        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-        D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R8_UNORM, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr,
-            IID_PPV_ARGS(&ssaoRT)
-        );
-        device->CreateRenderTargetView(ssaoRT.Get(), nullptr, ssaoRtvCpu());
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::R8Unorm;
+        td.usage = gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::PixelShaderResource;
+        td.debugName = "ssao_rt";
+        ssaoRT = dev.createTexture(td);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoRT));
+        device->CreateRenderTargetView(res, nullptr, ssaoRtvCpu());
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R8_UNORM;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -120,20 +166,21 @@ void SsaoRenderer::createRTs(
         CD3DX12_CPU_DESCRIPTOR_HANDLE ssaoSrv(
             srvHeap->GetCPUDescriptorHandleForHeapStart(), 3, srvDescSize
         );
-        device->CreateShaderResourceView(ssaoRT.Get(), &srvDesc, ssaoSrv);
+        device->CreateShaderResourceView(res, &srvDesc, ssaoSrv);
     }
 
     // ssaoBlurRT
     {
-        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-        D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-            DXGI_FORMAT_R8_UNORM, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-        );
-        device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr,
-            IID_PPV_ARGS(&ssaoBlurRT)
-        );
-        device->CreateRenderTargetView(ssaoBlurRT.Get(), nullptr, blurRtvCpu());
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::R8Unorm;
+        td.usage = gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::PixelShaderResource;
+        td.debugName = "ssao_blur_rt";
+        ssaoBlurRT = dev.createTexture(td);
+        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoBlurRT));
+        device->CreateRenderTargetView(res, nullptr, blurRtvCpu());
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R8_UNORM;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -142,7 +189,7 @@ void SsaoRenderer::createRTs(
         CD3DX12_CPU_DESCRIPTOR_HANDLE sceneSrv(
             sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(), ssaoSlot, sceneSrvDescSize
         );
-        device->CreateShaderResourceView(ssaoBlurRT.Get(), &srvDesc, sceneSrv);
+        device->CreateShaderResourceView(res, &srvDesc, sceneSrv);
     }
 }
 
@@ -150,13 +197,14 @@ void SsaoRenderer::createResources(
     gfx::IDevice& dev,
     uint32_t width,
     uint32_t height,
-    ID3D12Resource* normalBuffer,
-    ID3D12Resource* depthBuffer,
+    gfx::TextureHandle normalBuffer,
+    gfx::TextureHandle depthBuffer,
     ID3D12DescriptorHeap* sceneSrvHeap,
     UINT sceneSrvDescSize,
     INT ssaoSlot
 )
 {
+    devForDestroy = &dev;
     auto* device = nativeDev(dev);
     rtvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -221,44 +269,53 @@ void SsaoRenderer::createResources(
     }
 
     {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-        psoDesc.pRootSignature = ssaoRootSig.Get();
-        psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
-        psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_ssao_ps, sizeof(g_ssao_ps));
-        psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        psoDesc.DepthStencilState.DepthEnable = FALSE;
-        psoDesc.SampleMask = UINT_MAX;
-        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8_UNORM;
-        psoDesc.SampleDesc = { 1, 0 };
-        device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&ssaoPSO));
+        gfx::ShaderDesc vsd{};
+        vsd.bytecode = g_fullscreen_vs;
+        vsd.bytecodeSize = sizeof(g_fullscreen_vs);
+        vsd.stage = gfx::ShaderStage::Vertex;
+        vsHandle = dev.createShader(vsd);
+
+        gfx::ShaderDesc psd{};
+        psd.bytecode = g_ssao_ps;
+        psd.bytecodeSize = sizeof(g_ssao_ps);
+        psd.stage = gfx::ShaderStage::Pixel;
+        ssaoPsHandle = dev.createShader(psd);
+
+        gfx::GraphicsPipelineDesc pd{};
+        pd.vs = vsHandle;
+        pd.ps = ssaoPsHandle;
+        pd.renderTargetFormats[0] = gfx::Format::R8Unorm;
+        pd.numRenderTargets = 1;
+        pd.depthStencil.depthEnable = false;
+        pd.depthStencil.depthWrite = false;
+        pd.nativeRootSignatureOverride = ssaoRootSig.Get();
+        ssaoPSO = dev.createGraphicsPipeline(pd);
     }
     {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-        psoDesc.pRootSignature = blurRootSig.Get();
-        psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_fullscreen_vs, sizeof(g_fullscreen_vs));
-        psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_ssao_blur_ps, sizeof(g_ssao_blur_ps));
-        psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        psoDesc.DepthStencilState.DepthEnable = FALSE;
-        psoDesc.SampleMask = UINT_MAX;
-        psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8_UNORM;
-        psoDesc.SampleDesc = { 1, 0 };
-        device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&blurPSO));
+        gfx::ShaderDesc psd{};
+        psd.bytecode = g_ssao_blur_ps;
+        psd.bytecodeSize = sizeof(g_ssao_blur_ps);
+        psd.stage = gfx::ShaderStage::Pixel;
+        blurPsHandle = dev.createShader(psd);
+
+        gfx::GraphicsPipelineDesc pd{};
+        pd.vs = vsHandle;
+        pd.ps = blurPsHandle;
+        pd.renderTargetFormats[0] = gfx::Format::R8Unorm;
+        pd.numRenderTargets = 1;
+        pd.depthStencil.depthEnable = false;
+        pd.depthStencil.depthWrite = false;
+        pd.nativeRootSignatureOverride = blurRootSig.Get();
+        blurPSO = dev.createGraphicsPipeline(pd);
     }
 
     {
-        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(SsaoCBData));
-        device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&cbvBuffer)
-        );
-        cbvBuffer->Map(0, nullptr, &cbvMapped);
+        gfx::BufferDesc bd{};
+        bd.size = sizeof(SsaoCBData);
+        bd.usage = gfx::BufferUsage::Upload;
+        bd.debugName = "ssao_cb";
+        cbvBuffer = dev.createBuffer(bd);
+        cbvMapped = dev.map(cbvBuffer);
     }
 
     std::mt19937 rng(42);
@@ -272,37 +329,42 @@ void SsaoRenderer::createResources(
     }
 
     {
-        const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-        D3D12_RESOURCE_DESC desc =
-            CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R32G32_FLOAT, 4, 4, 1, 1);
-        device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            IID_PPV_ARGS(&noiseTexture)
-        );
+        gfx::TextureDesc td{};
+        td.width = 4;
+        td.height = 4;
+        td.format = gfx::Format::RG32Float;
+        td.usage = gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::CopyDest;
+        td.debugName = "ssao_noise";
+        noiseTexture = dev.createTexture(td);
+
+        auto* noiseRes = static_cast<ID3D12Resource*>(dev.nativeResource(noiseTexture));
+        auto noiseDesc = noiseRes->GetDesc();
         UINT64 uploadSize = 0;
-        device->GetCopyableFootprints(&desc, 0, 1, 0, &noiseFp, nullptr, nullptr, &uploadSize);
+        device->GetCopyableFootprints(&noiseDesc, 0, 1, 0, &noiseFp, nullptr, nullptr, &uploadSize);
+
         const CD3DX12_HEAP_PROPERTIES uhp(D3D12_HEAP_TYPE_UPLOAD);
         const CD3DX12_RESOURCE_DESC ubDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
-        ComPtr<ID3D12Resource> uploadBuf;
         device->CreateCommittedResource(
             &uhp, D3D12_HEAP_FLAG_NONE, &ubDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&uploadBuf)
+            IID_PPV_ARGS(&noiseUploadBuf)
         );
+
         XMFLOAT2 noiseData[16];
         for (int i = 0; i < 16; ++i) {
             noiseData[i] = { dist(rng) * 2.0f - 1.0f, dist(rng) * 2.0f - 1.0f };
         }
         void* mapped = nullptr;
-        uploadBuf->Map(0, nullptr, &mapped);
+        noiseUploadBuf->Map(0, nullptr, &mapped);
         uint8_t* dst = static_cast<uint8_t*>(mapped) + noiseFp.Offset;
         for (uint32_t row = 0; row < 4; ++row) {
             memcpy(
                 dst + row * noiseFp.Footprint.RowPitch, &noiseData[row * 4], 4 * sizeof(XMFLOAT2)
             );
         }
-        uploadBuf->Unmap(0, nullptr);
-        noiseUploadBuf = uploadBuf;
+        noiseUploadBuf->Unmap(0, nullptr);
         noisePendingUpload = true;
+
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -311,11 +373,11 @@ void SsaoRenderer::createResources(
         CD3DX12_CPU_DESCRIPTOR_HANDLE noiseSrv(
             srvHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize
         );
-        device->CreateShaderResourceView(noiseTexture.Get(), &srvDesc, noiseSrv);
+        device->CreateShaderResourceView(noiseRes, &srvDesc, noiseSrv);
     }
 
     createRTs(
-        device, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
+        dev, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
     );
 }
 
@@ -323,16 +385,15 @@ void SsaoRenderer::resize(
     gfx::IDevice& dev,
     uint32_t width,
     uint32_t height,
-    ID3D12Resource* normalBuffer,
-    ID3D12Resource* depthBuffer,
+    gfx::TextureHandle normalBuffer,
+    gfx::TextureHandle depthBuffer,
     ID3D12DescriptorHeap* sceneSrvHeap,
     UINT sceneSrvDescSize,
     INT ssaoSlot
 )
 {
     createRTs(
-        nativeDev(dev), width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize,
-        ssaoSlot
+        dev, width, height, normalBuffer, depthBuffer, sceneSrvHeap, sceneSrvDescSize, ssaoSlot
     );
 }
 
@@ -349,18 +410,23 @@ void SsaoRenderer::render(
         return;
     }
 
+    auto* ssaoRtRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(ssaoRT));
+    auto* ssaoBlurRtRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(ssaoBlurRT));
+    auto* noiseRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(noiseTexture));
+    auto* cbvRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(cbvBuffer));
+
     if (noisePendingUpload) {
         D3D12_TEXTURE_COPY_LOCATION src = {};
         src.pResource = noiseUploadBuf.Get();
         src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.PlacedFootprint = noiseFp;
         D3D12_TEXTURE_COPY_LOCATION dst = {};
-        dst.pResource = noiseTexture.Get();
+        dst.pResource = noiseRes;
         dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         dst.SubresourceIndex = 0;
         cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
         transitionResource(
-            cmdRef, noiseTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+            cmdRef, noiseRes, D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
         noisePendingUpload = false;
@@ -386,13 +452,13 @@ void SsaoRenderer::render(
 
     {
         transitionResource(
-            cmdRef, ssaoRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
         auto rtv = ssaoRtvCpu();
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
-        cmdList->SetPipelineState(ssaoPSO.Get());
+        cmdRef.bindPipeline(ssaoPSO);
         cmdList->SetGraphicsRootSignature(ssaoRootSig.Get());
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
@@ -401,21 +467,21 @@ void SsaoRenderer::render(
         ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
         cmdList->SetDescriptorHeaps(1, heaps);
         cmdList->SetGraphicsRootDescriptorTable(0, srvHeap->GetGPUDescriptorHandleForHeapStart());
-        cmdList->SetGraphicsRootConstantBufferView(1, cbvBuffer->GetGPUVirtualAddress());
+        cmdList->SetGraphicsRootConstantBufferView(1, cbvRes->GetGPUVirtualAddress());
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionResource(
-            cmdRef, ssaoRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+            cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
     }
 
     {
         transitionResource(
-            cmdRef, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            cmdRef, ssaoBlurRtRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
         auto rtv = blurRtvCpu();
-        cmdList->SetPipelineState(blurPSO.Get());
+        cmdRef.bindPipeline(blurPSO);
         cmdList->SetGraphicsRootSignature(blurRootSig.Get());
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
@@ -428,7 +494,7 @@ void SsaoRenderer::render(
         cmdList->SetGraphicsRootDescriptorTable(0, ssaoSrv);
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionResource(
-            cmdRef, ssaoBlurRT.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
+            cmdRef, ssaoBlurRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
     }

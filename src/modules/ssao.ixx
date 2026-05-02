@@ -15,7 +15,6 @@ export import gfx;
 export class SsaoRenderer
 {
    public:
-    // Settings
     bool enabled = true;
     float radius = 0.5f;
     float bias = 0.025f;
@@ -28,8 +27,8 @@ export class SsaoRenderer
         gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
-        ID3D12Resource* normalBuffer,
-        ID3D12Resource* depthBuffer,
+        gfx::TextureHandle normalBuffer,
+        gfx::TextureHandle depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,
         INT ssaoSlot
@@ -39,14 +38,13 @@ export class SsaoRenderer
         gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
-        ID3D12Resource* normalBuffer,
-        ID3D12Resource* depthBuffer,
+        gfx::TextureHandle normalBuffer,
+        gfx::TextureHandle depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,
         INT ssaoSlot
     );
 
-    // Run SSAO + blur. normalBuffer must be in PIXEL_SHADER_RESOURCE state on entry.
     void render(
         gfx::ICommandList& cmdRef,
         const mat4& view,
@@ -55,45 +53,51 @@ export class SsaoRenderer
         uint32_t height
     );
 
-    static void transitionResource(
-        gfx::ICommandList& cmdRef,
-        ID3D12Resource* resource,
-        D3D12_RESOURCE_STATES before,
-        D3D12_RESOURCE_STATES after
-    );
+    ~SsaoRenderer();
 
    private:
-    Microsoft::WRL::ComPtr<ID3D12Resource> ssaoRT;
-    Microsoft::WRL::ComPtr<ID3D12Resource> ssaoBlurRT;
-    Microsoft::WRL::ComPtr<ID3D12Resource> noiseTexture;
+    gfx::TextureHandle ssaoRT{};
+    gfx::TextureHandle ssaoBlurRT{};
+    gfx::TextureHandle noiseTexture{};
     Microsoft::WRL::ComPtr<ID3D12Resource> noiseUploadBuf;
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT noiseFp = {};
     bool noisePendingUpload = false;
-    Microsoft::WRL::ComPtr<ID3D12Resource> cbvBuffer;
+    gfx::BufferHandle cbvBuffer{};
     void* cbvMapped = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;  // [0]=ssaoRT [1]=blurRT
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
-        srvHeap;  // [0]=normal [1]=depth [2]=noise [3]=ssao
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
     UINT rtvDescSize = 0;
     UINT srvDescSize = 0;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> ssaoRootSig;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> blurRootSig;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> ssaoPSO;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> blurPSO;
+    gfx::PipelineHandle ssaoPSO{};
+    gfx::PipelineHandle blurPSO{};
+    gfx::ShaderHandle vsHandle{};
+    gfx::ShaderHandle ssaoPsHandle{};
+    gfx::ShaderHandle blurPsHandle{};
 
     DirectX::XMFLOAT4 kernel[32] = {};
 
+    gfx::IDevice* devForDestroy = nullptr;
+
     void createRTs(
-        ID3D12Device2* device,
+        gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
-        ID3D12Resource* normalBuffer,
-        ID3D12Resource* depthBuffer,
+        gfx::TextureHandle normalBuffer,
+        gfx::TextureHandle depthBuffer,
         ID3D12DescriptorHeap* sceneSrvHeap,
         UINT sceneSrvDescSize,
         INT ssaoSlot
+    );
+
+    void transitionResource(
+        gfx::ICommandList& cmdRef,
+        ID3D12Resource* resource,
+        D3D12_RESOURCE_STATES before,
+        D3D12_RESOURCE_STATES after
     );
 
     static ID3D12Device2* nativeDev(gfx::IDevice& dev)
