@@ -1,6 +1,5 @@
 module;
 
-#include <d3d12.h>
 #include <flecs.h>
 #include <cstdint>
 
@@ -29,7 +28,7 @@ export struct GizmoState
         Scene& scene,
         flecs::entity& selectedEntity,
         const OrbitCamera& cam,
-        const D3D12_VIEWPORT& viewport,
+        const gfx::Viewport& viewport,
         vec2 mousePos,
         bool leftDown,
         bool leftWasDown,

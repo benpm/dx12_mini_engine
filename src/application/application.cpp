@@ -132,12 +132,10 @@ Application::Application()
         std::exit(EXIT_FAILURE);
     }
 
-    this->viewport = CD3DX12_VIEWPORT(
-        0.0f, 0.0f, static_cast<float>(this->clientWidth), static_cast<float>(this->clientHeight)
-    );
-    this->scissorRect = CD3DX12_RECT(
-        0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
-    );
+    this->viewport = gfx::Viewport{ 0.0f, 0.0f, static_cast<float>(this->clientWidth),
+                                    static_cast<float>(this->clientHeight) };
+    this->scissorRect = gfx::ScissorRect{ 0, 0, static_cast<int32_t>(this->clientWidth),
+                                          static_cast<int32_t>(this->clientHeight) };
 
     spdlog::info("Creating CommandQueue (adopting gfx queue)");
     {
@@ -404,21 +402,18 @@ void Application::transitionResource(
 
 void Application::clearRTV(
     ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+    uint64_t rtv,
     FLOAT clearColor[4]
 )
 {
-    cmdList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    cmdList->ClearRenderTargetView(D3D12_CPU_DESCRIPTOR_HANDLE{ rtv }, clearColor, 0, nullptr);
 }
 
-void Application::clearDepth(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv,
-    FLOAT depth
-)
+void Application::clearDepth(ComPtr<ID3D12GraphicsCommandList2> cmdList, uint64_t dsv, FLOAT depth)
 {
     cmdList->ClearDepthStencilView(
-        dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, depth, 0, 0, nullptr
+        D3D12_CPU_DESCRIPTOR_HANDLE{ dsv }, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+        depth, 0, 0, nullptr
     );
 }
 
@@ -637,9 +632,9 @@ void Application::update()
                 createScenePSO();
                 createGBufferPSO();
                 auto vsData = shaderCompiler.data(sceneVSIdx);
-                D3D12_SHADER_BYTECODE vs =
-                    vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                           : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+                gfx::ShaderBytecode vs =
+                    vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(sceneVSIdx) }
+                           : gfx::ShaderBytecode{};
                 shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (scene): {}", e.what());
@@ -649,12 +644,12 @@ void Application::update()
             try {
                 auto vsData = shaderCompiler.data(outlineVSIdx);
                 auto psData = shaderCompiler.data(outlinePSIdx);
-                D3D12_SHADER_BYTECODE vs =
-                    vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(outlineVSIdx) }
-                           : D3D12_SHADER_BYTECODE{};
-                D3D12_SHADER_BYTECODE ps =
-                    psData ? D3D12_SHADER_BYTECODE{ psData, shaderCompiler.size(outlinePSIdx) }
-                           : D3D12_SHADER_BYTECODE{};
+                gfx::ShaderBytecode vs =
+                    vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(outlineVSIdx) }
+                           : gfx::ShaderBytecode{};
+                gfx::ShaderBytecode ps =
+                    psData ? gfx::ShaderBytecode{ psData, shaderCompiler.size(outlinePSIdx) }
+                           : gfx::ShaderBytecode{};
                 outline.reloadPSO(*gfxDevice, rootSignature.Get(), vs, ps);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (outline): {}", e.what());
@@ -669,10 +664,10 @@ void Application::update()
         }
         if (bloomChanged) {
             try {
-                auto bc = [&](size_t idx) -> D3D12_SHADER_BYTECODE {
+                auto bc = [&](size_t idx) -> gfx::ShaderBytecode {
                     auto d = shaderCompiler.data(idx);
-                    return d ? D3D12_SHADER_BYTECODE{ d, shaderCompiler.size(idx) }
-                             : D3D12_SHADER_BYTECODE{};
+                    return d ? gfx::ShaderBytecode{ d, shaderCompiler.size(idx) }
+                             : gfx::ShaderBytecode{};
                 };
                 bloom.reloadPipelines(
                     *gfxDevice, bc(bloomFsVsIdx), bc(bloomPreIdx), bc(bloomDownIdx), bc(bloomUpIdx),

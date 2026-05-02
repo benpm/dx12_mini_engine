@@ -6,7 +6,6 @@ module;
 #include <cmath>
 #include <cstdint>
 #include <vector>
-#include "d3dx12_clean.h"
 #include "vertex_shader_cso.h"
 
 module shadow;
@@ -40,7 +39,7 @@ ShadowRenderer::~ShadowRenderer()
 void ShadowRenderer::createResources(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE vs
+    gfx::ShaderBytecode vs
 )
 {
     devForDestroy = &dev;
@@ -66,7 +65,7 @@ void ShadowRenderer::createResources(
 void ShadowRenderer::reloadPSO(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE vs
+    gfx::ShaderBytecode vs
 )
 {
     devForDestroy = &dev;
@@ -77,14 +76,14 @@ void ShadowRenderer::reloadPSO(
         dev.destroy(vsHandle);
     }
     // Fall back to embedded CSO if no hot-reload data
-    if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
-        vs = CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+    if (vs.data == nullptr || vs.size == 0) {
+        vs = { g_vertex_shader, sizeof(g_vertex_shader) };
     }
 
     gfx::ShaderDesc vsDesc{};
     vsDesc.stage = gfx::ShaderStage::Vertex;
-    vsDesc.bytecode = vs.pShaderBytecode;
-    vsDesc.bytecodeSize = vs.BytecodeLength;
+    vsDesc.bytecode = vs.data;
+    vsDesc.bytecodeSize = vs.size;
     vsDesc.debugName = "shadow_vs";
     vsHandle = dev.createShader(vsDesc);
 
@@ -146,7 +145,7 @@ void ShadowRenderer::render(
     gfx::ICommandList& cmdRef,
     const gfx::VertexBufferView& vbv,
     const gfx::IndexBufferView& ibv,
-    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
+    uint64_t perObjHandle,
     const std::vector<DrawCmd>& drawCmds,
     uint32_t totalSlots
 )
@@ -173,7 +172,7 @@ void ShadowRenderer::render(
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
-    cmdList->SetGraphicsRootDescriptorTable(4, perObjHandle);
+    cmdList->SetGraphicsRootDescriptorTable(4, D3D12_GPU_DESCRIPTOR_HANDLE{ perObjHandle });
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
         cmdList->SetGraphicsRoot32BitConstant(2, totalSlots + drawCmds[i].baseDrawIndex, 0);

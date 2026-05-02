@@ -115,10 +115,12 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
     {
         CD3DX12_DESCRIPTOR_RANGE1 srvRange0, srvRange1;
         srvRange0.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
         );
         srvRange1.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
         );
 
         CD3DX12_ROOT_PARAMETER1 bloomRootParams[3];
@@ -251,16 +253,18 @@ static void reloadBloomPipelinesNative(
 
 void BloomRenderer::reloadPipelines(
     gfx::IDevice& dev,
-    D3D12_SHADER_BYTECODE fullscreenVS,
-    D3D12_SHADER_BYTECODE prefilterPS,
-    D3D12_SHADER_BYTECODE downsamplePS,
-    D3D12_SHADER_BYTECODE upsamplePS,
-    D3D12_SHADER_BYTECODE compositePS
+    gfx::ShaderBytecode fullscreenVS,
+    gfx::ShaderBytecode prefilterPS,
+    gfx::ShaderBytecode downsamplePS,
+    gfx::ShaderBytecode upsamplePS,
+    gfx::ShaderBytecode compositePS
 )
 {
     reloadBloomPipelinesNative(
-        nativeDev(dev), bloomRootSignature.Get(), fullscreenVS, prefilterPS, downsamplePS,
-        upsamplePS, compositePS, prefilterPSO, downsamplePSO, upsamplePSO, compositePSO
+        nativeDev(dev), bloomRootSignature.Get(), { fullscreenVS.data, fullscreenVS.size },
+        { prefilterPS.data, prefilterPS.size }, { downsamplePS.data, downsamplePS.size },
+        { upsamplePS.data, upsamplePS.size }, { compositePS.data, compositePS.size }, prefilterPSO,
+        downsamplePSO, upsamplePSO, compositePSO
     );
 }
 
@@ -270,7 +274,7 @@ void BloomRenderer::reloadPipelines(
 
 void BloomRenderer::render(
     gfx::ICommandList& cmdRef,
-    D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
+    uint64_t backBufRtvVal,
     uint32_t width,
     uint32_t height,
     float threshold,
@@ -280,6 +284,7 @@ void BloomRenderer::render(
 )
 {
     auto* cmdList = nativeCmd(cmdRef);
+    D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv{ backBufRtvVal };
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);

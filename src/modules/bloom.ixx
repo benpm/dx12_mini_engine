@@ -41,7 +41,7 @@ export class BloomRenderer
 
     void render(
         gfx::ICommandList& cmdRef,
-        D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv,
+        uint64_t backBufRtv,
         uint32_t width,
         uint32_t height,
         float threshold,
@@ -52,11 +52,11 @@ export class BloomRenderer
 
     void reloadPipelines(
         gfx::IDevice& dev,
-        D3D12_SHADER_BYTECODE fullscreenVS,
-        D3D12_SHADER_BYTECODE prefilterPS,
-        D3D12_SHADER_BYTECODE downsamplePS,
-        D3D12_SHADER_BYTECODE upsamplePS,
-        D3D12_SHADER_BYTECODE compositePS
+        gfx::ShaderBytecode fullscreenVS = {},
+        gfx::ShaderBytecode prefilterPS = {},
+        gfx::ShaderBytecode downsamplePS = {},
+        gfx::ShaderBytecode upsamplePS = {},
+        gfx::ShaderBytecode compositePS = {}
     );
 
     ~BloomRenderer();

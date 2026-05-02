@@ -8,12 +8,12 @@ module;
 #include <Windows.h>
 #include <wrl.h>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "d3dx12_clean.h"
 #include "icons.h"
 
 export module application;
@@ -140,8 +140,8 @@ export class Application
     float gridMajorSize = 10.0f;
     int gridSubdivisions = 10;
     void createGridPSO();
-    D3D12_VIEWPORT viewport;
-    D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    gfx::Viewport viewport{};
+    gfx::ScissorRect scissorRect{ 0, 0, INT32_MAX, INT32_MAX };
     float fov = 55.0f;
     mat4 matModel;
     mat4 prevViewProj;
@@ -267,12 +267,12 @@ export class Application
     );
     void clearRTV(
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+        uint64_t rtv,
         FLOAT clearColor[4]
     );
     void clearDepth(
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        D3D12_CPU_DESCRIPTOR_HANDLE dsv,
+        uint64_t dsv,
         FLOAT depth = 1.0f
     );
     void resizeDepthBuffer(uint32_t width, uint32_t height);

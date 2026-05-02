@@ -390,9 +390,9 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     if (shadowPsoDirty) {
         auto vsData = shaderCompiler.data(sceneVSIdx);
-        D3D12_SHADER_BYTECODE vs =
-            vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                   : D3D12_SHADER_BYTECODE{};
+        gfx::ShaderBytecode vs =
+            vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(sceneVSIdx) }
+                   : gfx::ShaderBytecode{};
         shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
     }
 

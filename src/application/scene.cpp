@@ -260,9 +260,9 @@ void Application::applySceneData(const SceneFileData& d)
         if (shadowRasterChanged) {
             spdlog::info("Reloading shadow PSO...");
             auto vsData = shaderCompiler.data(sceneVSIdx);
-            D3D12_SHADER_BYTECODE vs =
-                vsData ? D3D12_SHADER_BYTECODE{ vsData, shaderCompiler.size(sceneVSIdx) }
-                       : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
+            gfx::ShaderBytecode vs =
+                vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(sceneVSIdx) }
+                       : gfx::ShaderBytecode{};
             shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
             spdlog::info("Shadow PSO reloaded.");
         }

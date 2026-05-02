@@ -4,7 +4,6 @@ module;
     #define FMT_CONSTEVAL
 #endif
 
-#include <d3d12.h>
 #include <DirectXMath.h>
 #include <flecs.h>
 #include <spdlog/spdlog.h>
@@ -109,7 +108,7 @@ static void generateArrowMesh(std::vector<VertexPBR>& verts, std::vector<uint32_
 }
 
 // Project a world-space point to screen-space pixels
-static vec2 worldToScreen(const vec3& worldPos, const mat4& viewProj, const D3D12_VIEWPORT& vp)
+static vec2 worldToScreen(const vec3& worldPos, const mat4& viewProj, const gfx::Viewport& vp)
 {
     XMVECTOR p = XMVectorSet(worldPos.x, worldPos.y, worldPos.z, 1.0f);
     XMVECTOR clip = XMVector4Transform(p, viewProj.load());
@@ -119,8 +118,7 @@ static vec2 worldToScreen(const vec3& worldPos, const mat4& viewProj, const D3D1
     }
     float ndcX = XMVectorGetX(clip) / w;
     float ndcY = XMVectorGetY(clip) / w;
-    return { (ndcX * 0.5f + 0.5f) * vp.Width + vp.TopLeftX,
-             (-ndcY * 0.5f + 0.5f) * vp.Height + vp.TopLeftY };
+    return { (ndcX * 0.5f + 0.5f) * vp.width + vp.x, (-ndcY * 0.5f + 0.5f) * vp.height + vp.y };
 }
 
 void GizmoState::init(Scene& scene, gfx::IDevice& dev, CommandQueue& cmdQueue)
@@ -167,7 +165,7 @@ void GizmoState::update(
     Scene& scene,
     flecs::entity& selectedEntity,
     const OrbitCamera& cam,
-    const D3D12_VIEWPORT& viewport,
+    const gfx::Viewport& viewport,
     vec2 mousePos,
     bool leftDown,
     bool leftWasDown,
@@ -249,7 +247,7 @@ void GizmoState::update(
             float projection = dot(mouseDelta, dragScreenDir);
 
             // Convert pixel displacement to world units
-            float sensitivity = dist / viewport.Height;
+            float sensitivity = dist / viewport.height;
             float worldDisp = projection * sensitivity;
 
             vec3 newPos = dragStartEntityPos;

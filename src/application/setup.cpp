@@ -315,7 +315,7 @@ bool Application::loadContent()
 
     shadow.createResources(
         *gfxDevice, rootSignature.Get(),
-        CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader))
+        gfx::ShaderBytecode{ g_vertex_shader, sizeof(g_vertex_shader) }
     );
     // Create typed R32_FLOAT SRV for the shadow map (R32Typeless resource) in the gfx heap.
     shadowSrvIdx = gfxDevice->createTypedSrv(shadow.shadowMap, gfx::Format::R32Float);
@@ -326,7 +326,7 @@ bool Application::loadContent()
         { g_outline_ps, sizeof(g_outline_ps) }
     );
     gbuffer.createResources(*gfxDevice, clientWidth, clientHeight);
-    picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature);
+    picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature.Get());
 
     billboards.init(*gfxDevice, L"resources/icons/light.png");
     gizmo.init(scene, *gfxDevice, cmdQueue);
@@ -476,13 +476,10 @@ void Application::onResize(uint32_t width, uint32_t height)
         for (int i = 0; i < this->nBuffers; ++i) {
             this->backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
         }
-        this->viewport = CD3DX12_VIEWPORT(
-            0.0f, 0.0f, static_cast<float>(this->clientWidth),
-            static_cast<float>(this->clientHeight)
-        );
-        this->scissorRect = CD3DX12_RECT(
-            0, 0, static_cast<LONG>(this->clientWidth), static_cast<LONG>(this->clientHeight)
-        );
+        this->viewport = gfx::Viewport{ 0.0f, 0.0f, static_cast<float>(this->clientWidth),
+                                        static_cast<float>(this->clientHeight) };
+        this->scissorRect = gfx::ScissorRect{ 0, 0, static_cast<int32_t>(this->clientWidth),
+                                              static_cast<int32_t>(this->clientHeight) };
         this->resizeDepthBuffer(this->clientWidth, this->clientHeight);
         gbuffer.resize(*gfxDevice, clientWidth, height);
         bloom.resize(*gfxDevice, clientWidth, height);

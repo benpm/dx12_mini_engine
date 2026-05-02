@@ -19,13 +19,13 @@ export struct OutlineRenderContext
     ID3D12RootSignature* rootSig = nullptr;
     gfx::VertexBufferView vbv{};
     gfx::IndexBufferView ibv{};
-    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle{};
-    D3D12_GPU_VIRTUAL_ADDRESS perFrameAddr = 0;
-    D3D12_GPU_VIRTUAL_ADDRESS perPassAddr = 0;
-    D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv{};
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
-    const D3D12_VIEWPORT* viewport = nullptr;
-    const D3D12_RECT* scissorRect = nullptr;
+    uint64_t perObjHandle = 0;
+    uint64_t perFrameAddr = 0;
+    uint64_t perPassAddr = 0;
+    uint64_t hdrRtv = 0;
+    uint64_t dsv = 0;
+    const gfx::Viewport* viewport = nullptr;
+    const gfx::ScissorRect* scissorRect = nullptr;
 };
 
 export class OutlineRenderer
@@ -41,15 +41,15 @@ export class OutlineRenderer
     void createResources(
         gfx::IDevice& dev,
         ID3D12RootSignature* rootSig,
-        D3D12_SHADER_BYTECODE vs,
-        D3D12_SHADER_BYTECODE ps
+        gfx::ShaderBytecode vs = {},
+        gfx::ShaderBytecode ps = {}
     );
 
     void reloadPSO(
         gfx::IDevice& dev,
         ID3D12RootSignature* rootSig,
-        D3D12_SHADER_BYTECODE vs,
-        D3D12_SHADER_BYTECODE ps
+        gfx::ShaderBytecode vs = {},
+        gfx::ShaderBytecode ps = {}
     );
 
     void render(

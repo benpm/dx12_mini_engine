@@ -2,16 +2,12 @@ module;
 
 #include <d3d12.h>
 #include <Windows.h>
-#include <wrl.h>
 #include <cstdint>
-#include "d3dx12_clean.h"
 
 export module object_picking;
 
 import common;
 export import gfx;
-
-using Microsoft::WRL::ComPtr;
 
 export class ObjectPicker
 {
@@ -22,7 +18,7 @@ export class ObjectPicker
         gfx::IDevice& dev,
         uint32_t width,
         uint32_t height,
-        ComPtr<ID3D12RootSignature> rootSig
+        ID3D12RootSignature* rootSig
     );
     void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
@@ -35,8 +31,8 @@ export class ObjectPicker
     // Copy the pixel at (x, y) from the ID RT to the readback buffer
     void copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32_t y);
 
-    D3D12_CPU_DESCRIPTOR_HANDLE getRTV() const;
-    D3D12_CPU_DESCRIPTOR_HANDLE getDSV() const;
+    uint64_t getRTV() const;
+    uint64_t getDSV() const;
 
     gfx::PipelineHandle pso{};
 

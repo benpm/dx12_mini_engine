@@ -48,6 +48,7 @@ export namespace gfx
     using ::gfx::SamplerDesc;
     using ::gfx::SamplerHandle;
     using ::gfx::ScissorRect;
+    using ::gfx::ShaderBytecode;
     using ::gfx::ShaderDesc;
     using ::gfx::ShaderHandle;
     using ::gfx::ShaderStage;

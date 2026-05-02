@@ -5,7 +5,6 @@ module;
 #include <wrl.h>
 #include <cstdint>
 #include <vector>
-#include "d3dx12_clean.h"
 #include "outline_ps_cso.h"
 #include "outline_vs_cso.h"
 
@@ -40,8 +39,8 @@ OutlineRenderer::~OutlineRenderer()
 void OutlineRenderer::createResources(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE vs,
-    D3D12_SHADER_BYTECODE ps
+    gfx::ShaderBytecode vs,
+    gfx::ShaderBytecode ps
 )
 {
     reloadPSO(dev, rootSig, vs, ps);
@@ -50,8 +49,8 @@ void OutlineRenderer::createResources(
 void OutlineRenderer::reloadPSO(
     gfx::IDevice& dev,
     ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE vs,
-    D3D12_SHADER_BYTECODE ps
+    gfx::ShaderBytecode vs,
+    gfx::ShaderBytecode ps
 )
 {
     devForDestroy = &dev;
@@ -65,24 +64,24 @@ void OutlineRenderer::reloadPSO(
         dev.destroy(psHandle);
     }
 
-    if (vs.pShaderBytecode == nullptr || vs.BytecodeLength == 0) {
-        vs = CD3DX12_SHADER_BYTECODE(g_outline_vs, sizeof(g_outline_vs));
+    if (vs.data == nullptr || vs.size == 0) {
+        vs = { g_outline_vs, sizeof(g_outline_vs) };
     }
-    if (ps.pShaderBytecode == nullptr || ps.BytecodeLength == 0) {
-        ps = CD3DX12_SHADER_BYTECODE(g_outline_ps, sizeof(g_outline_ps));
+    if (ps.data == nullptr || ps.size == 0) {
+        ps = { g_outline_ps, sizeof(g_outline_ps) };
     }
 
     gfx::ShaderDesc vsDesc{};
     vsDesc.stage = gfx::ShaderStage::Vertex;
-    vsDesc.bytecode = vs.pShaderBytecode;
-    vsDesc.bytecodeSize = vs.BytecodeLength;
+    vsDesc.bytecode = vs.data;
+    vsDesc.bytecodeSize = vs.size;
     vsDesc.debugName = "outline_vs";
     vsHandle = dev.createShader(vsDesc);
 
     gfx::ShaderDesc psDesc{};
     psDesc.stage = gfx::ShaderStage::Pixel;
-    psDesc.bytecode = ps.pShaderBytecode;
-    psDesc.bytecodeSize = ps.BytecodeLength;
+    psDesc.bytecode = ps.data;
+    psDesc.bytecodeSize = ps.size;
     psDesc.debugName = "outline_ps";
     psHandle = dev.createShader(psDesc);
 
@@ -128,9 +127,11 @@ void OutlineRenderer::render(
     cmdRef.bindPipeline(pso);
     cmdList->SetGraphicsRootSignature(ctx.rootSig);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdList->RSSetViewports(1, ctx.viewport);
-    cmdList->RSSetScissorRects(1, ctx.scissorRect);
-    cmdList->OMSetRenderTargets(1, &ctx.hdrRtv, true, &ctx.dsv);
+    cmdRef.setViewport(*ctx.viewport);
+    cmdRef.setScissor(*ctx.scissorRect);
+    D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv{ ctx.hdrRtv };
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv{ ctx.dsv };
+    cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
     cmdList->OMSetStencilRef(1);
 
     D3D12_VERTEX_BUFFER_VIEW d3dVbv{ ctx.vbv.gpuAddress, ctx.vbv.sizeInBytes,
@@ -146,7 +147,8 @@ void OutlineRenderer::render(
     cmdList->SetGraphicsRootConstantBufferView(0, ctx.perFrameAddr);
     cmdList->SetGraphicsRootConstantBufferView(1, ctx.perPassAddr);
 
-    cmdList->SetGraphicsRootDescriptorTable(4, ctx.perObjHandle);
+    D3D12_GPU_DESCRIPTOR_HANDLE perObjH{ ctx.perObjHandle };
+    cmdList->SetGraphicsRootDescriptorTable(4, perObjH);
 
     auto drawOutline = [&](flecs::entity e, float width, float r, float g, float b) {
         for (uint32_t i = 0; i < static_cast<uint32_t>(drawIndexToEntity.size()); ++i) {

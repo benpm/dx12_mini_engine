@@ -291,6 +291,12 @@ namespace gfx
         IndexFormat format = IndexFormat::Uint32;
     };
 
+    struct ShaderBytecode
+    {
+        const void* data = nullptr;
+        size_t size = 0;
+    };
+
     struct BufferDesc
     {
         uint64_t size = 0;

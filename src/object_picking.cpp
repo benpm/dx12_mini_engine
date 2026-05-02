@@ -43,7 +43,7 @@ void ObjectPicker::createResources(
     gfx::IDevice& dev,
     uint32_t width,
     uint32_t height,
-    ComPtr<ID3D12RootSignature> rootSig
+    ID3D12RootSignature* rootSig
 )
 {
     devForDestroy = &dev;
@@ -122,7 +122,7 @@ void ObjectPicker::createResources(
         gd.depthStencil.depthEnable = true;
         gd.depthStencil.depthWrite = true;
         gd.depthStencil.depthCompare = gfx::CompareOp::Less;
-        gd.nativeRootSignatureOverride = rootSig.Get();
+        gd.nativeRootSignatureOverride = rootSig;
         gd.debugName = "picker_pso";
         pso = dev.createGraphicsPipeline(gd);
     }
@@ -170,18 +170,14 @@ void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
     }
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getRTV() const
+uint64_t ObjectPicker::getRTV() const
 {
-    D3D12_CPU_DESCRIPTOR_HANDLE h;
-    h.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(idRT));
-    return h;
+    return devForDestroy->rtvHandle(idRT);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getDSV() const
+uint64_t ObjectPicker::getDSV() const
 {
-    D3D12_CPU_DESCRIPTOR_HANDLE h;
-    h.ptr = static_cast<SIZE_T>(devForDestroy->dsvHandle(depthBuffer));
-    return h;
+    return devForDestroy->dsvHandle(depthBuffer);
 }
 
 void ObjectPicker::copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32_t y)

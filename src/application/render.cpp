@@ -138,8 +138,12 @@ void Application::render()
 
     auto bindSharedGeometry = [&](ID3D12GraphicsCommandList2* cmd) {
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->RSSetViewports(1, &this->viewport);
-        cmd->RSSetScissorRects(1, &this->scissorRect);
+        D3D12_VIEWPORT d3dVp{ viewport.x,      viewport.y,        viewport.width,
+                              viewport.height, viewport.minDepth, viewport.maxDepth };
+        D3D12_RECT d3dSr{ scissorRect.x, scissorRect.y, scissorRect.x + scissorRect.width,
+                          scissorRect.y + scissorRect.height };
+        cmd->RSSetViewports(1, &d3dVp);
+        cmd->RSSetScissorRects(1, &d3dSr);
         D3D12_VERTEX_BUFFER_VIEW vbv{ scene.megaVBV.gpuAddress, scene.megaVBV.sizeInBytes,
                                       scene.megaVBV.strideInBytes };
         D3D12_INDEX_BUFFER_VIEW ibv{ scene.megaIBV.gpuAddress, scene.megaIBV.sizeInBytes,
@@ -254,7 +258,9 @@ void Application::render()
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
                 bindPerFrameAndPass(cmd, shadowPassAddr);
 
-                shadow.render(cmdRef, scene.megaVBV, scene.megaIBV, perObjHandle, sceneDrawCmds, 0);
+                shadow.render(
+                    cmdRef, scene.megaVBV, scene.megaIBV, perObjHandle.ptr, sceneDrawCmds, 0
+                );
             }
         );
     }
@@ -363,8 +369,8 @@ void Application::render()
                     D3D12_CPU_DESCRIPTOR_HANDLE faceDsv;
                     faceDsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(cubemapDepth, face));
                     FLOAT clearColor[] = { 0, 0, 0, 1 };
-                    this->clearRTV(cmd, faceRtv, clearColor);
-                    this->clearDepth(cmd, faceDsv);
+                    this->clearRTV(cmd, faceRtv.ptr, clearColor);
+                    this->clearDepth(cmd, faceDsv.ptr);
                     cmd->RSSetViewports(1, &cubeVP);
                     cmd->RSSetScissorRects(1, &cubeScissor);
                     cmd->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
@@ -424,7 +430,7 @@ void Application::render()
             cmd->ClearRenderTargetView(rtvs[1], clearZero, 0, nullptr);
             cmd->ClearRenderTargetView(rtvs[2], clearZero, 0, nullptr);
             cmd->ClearRenderTargetView(rtvs[3], clearZero, 0, nullptr);
-            this->clearDepth(cmd, dsv);
+            this->clearDepth(cmd, dsv.ptr);
 
             cmdRef.bindPipeline(this->gbufferPSO);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -482,7 +488,7 @@ void Application::render()
             cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
             D3D12_CPU_DESCRIPTOR_HANDLE dsv;
             dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-            this->clearDepth(cmd, dsv);
+            this->clearDepth(cmd, dsv.ptr);
 
             cmdRef.bindPipeline(this->pipelineState);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -525,7 +531,7 @@ void Application::render()
                 PROFILE_ZONE_NAMED("Gizmo Pass");
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-                this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
+                this->clearDepth(cmd, dsv.ptr);  // clear depth so gizmo renders on top
                 D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
                 hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
 
@@ -590,8 +596,15 @@ void Application::render()
                 cmdRef.bindPipeline(gridPSO);
                 cmd->SetGraphicsRootSignature(gridRootSig.Get());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                cmd->RSSetViewports(1, &this->viewport);
-                cmd->RSSetScissorRects(1, &this->scissorRect);
+                {
+                    D3D12_VIEWPORT d3dVp{ viewport.x,      viewport.y,        viewport.width,
+                                          viewport.height, viewport.minDepth, viewport.maxDepth };
+                    D3D12_RECT d3dSr{ scissorRect.x, scissorRect.y,
+                                      scissorRect.x + scissorRect.width,
+                                      scissorRect.y + scissorRect.height };
+                    cmd->RSSetViewports(1, &d3dVp);
+                    cmd->RSSetScissorRects(1, &d3dSr);
+                }
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
                 cmd->SetGraphicsRootConstantBufferView(0, getPassCBAddress(10));
                 cmd->DrawInstanced(3, 1, 0, 0);
@@ -627,11 +640,11 @@ void Application::render()
                 outlineCtx.rootSig = this->rootSignature.Get();
                 outlineCtx.vbv = scene.megaVBV;
                 outlineCtx.ibv = scene.megaIBV;
-                outlineCtx.perObjHandle = perObjHandle;
+                outlineCtx.perObjHandle = perObjHandle.ptr;
                 outlineCtx.perFrameAddr = perFrameAddr;
                 outlineCtx.perPassAddr = perPassAddr;
-                outlineCtx.hdrRtv = hdrRtv;
-                outlineCtx.dsv = dsv;
+                outlineCtx.hdrRtv = hdrRtv.ptr;
+                outlineCtx.dsv = dsv.ptr;
                 outlineCtx.viewport = &this->viewport;
                 outlineCtx.scissorRect = &this->scissorRect;
 
@@ -658,8 +671,8 @@ void Application::render()
             ) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("ID Pass");
-                auto idRtv = picker.getRTV();
-                auto idDsv = picker.getDSV();
+                D3D12_CPU_DESCRIPTOR_HANDLE idRtv{ picker.getRTV() };
+                D3D12_CPU_DESCRIPTOR_HANDLE idDsv{ picker.getDSV() };
                 FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
                 cmd->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
                 cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
@@ -702,8 +715,15 @@ void Application::render()
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
                 hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
-                cmd->RSSetViewports(1, &this->viewport);
-                cmd->RSSetScissorRects(1, &this->scissorRect);
+                {
+                    D3D12_VIEWPORT d3dVp{ viewport.x,      viewport.y,        viewport.width,
+                                          viewport.height, viewport.minDepth, viewport.maxDepth };
+                    D3D12_RECT d3dSr{ scissorRect.x, scissorRect.y,
+                                      scissorRect.x + scissorRect.width,
+                                      scissorRect.y + scissorRect.height };
+                    cmd->RSSetViewports(1, &d3dVp);
+                    cmd->RSSetScissorRects(1, &d3dSr);
+                }
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
                 billboards.render(cmdRef, viewProj, vec3(cameraPos.x, cameraPos.y, cameraPos.z));
             }
@@ -737,11 +757,9 @@ void Application::render()
             skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
             skyParams.time = lightTime;
 
-            D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv;
-            backBufRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(backBuffer));
             bloom.render(
-                cmdRef, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
-                tonemapMode, skyParams
+                cmdRef, gfxDevice->rtvHandle(backBuffer), clientWidth, clientHeight, bloomThreshold,
+                bloomIntensity, tonemapMode, skyParams
             );
         }
     );

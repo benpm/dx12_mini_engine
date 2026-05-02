@@ -34,9 +34,10 @@ export class ShadowRenderer
     gfx::IDevice* devForDestroy = nullptr;
     ~ShadowRenderer();
 
-    void createResources(gfx::IDevice& dev, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
+    void
+    createResources(gfx::IDevice& dev, ID3D12RootSignature* rootSig, gfx::ShaderBytecode vs = {});
 
-    void reloadPSO(gfx::IDevice& dev, ID3D12RootSignature* rootSig, D3D12_SHADER_BYTECODE vs);
+    void reloadPSO(gfx::IDevice& dev, ID3D12RootSignature* rootSig, gfx::ShaderBytecode vs = {});
 
     // Compute the light view-proj matrix from the current config.
     // dirLightDir is the direction FROM the light (as stored in Application::dirLightDir).
@@ -46,7 +47,7 @@ export class ShadowRenderer
         gfx::ICommandList& cmdRef,
         const gfx::VertexBufferView& vbv,
         const gfx::IndexBufferView& ibv,
-        D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle,
+        uint64_t perObjHandle,
         const std::vector<DrawCmd>& drawCmds,
         uint32_t totalSlots
     );
