@@ -257,6 +257,13 @@ namespace gfx
         uint32_t depthOrArraySize = 1;
         uint32_t mipLevels = 1;
         Format format = Format::Unknown;
+        // Optional typed view format. When `format` is a typeless variant
+        // (e.g. R32G8X24Typeless), the optimized clear value's format must be
+        // a typed format compatible with the resource (e.g. D32FloatS8X24Uint).
+        // If left as Format::Unknown, the gfx backend uses `format` for the
+        // clear value — which is invalid for typeless resources and on WARP
+        // can TDR.
+        Format viewFormat = Format::Unknown;
         TextureUsage usage = TextureUsage::ShaderResource;
         bool isCubemap = false;
         ResourceState initialState = ResourceState::Common;

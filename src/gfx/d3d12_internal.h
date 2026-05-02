@@ -149,11 +149,19 @@ namespace gfxd3d12
         if (gfx::any(u, gfx::TextureUsage::UnorderedAccess)) {
             f |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         }
-        if (!gfx::any(u, gfx::TextureUsage::ShaderResource) &&
-            gfx::any(u, gfx::TextureUsage::DepthStencil)) {
-            f |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
-        }
+        // Don't add DENY_SHADER_RESOURCE automatically — that's an
+        // optimization hint that prevents SRV reads, but several engine
+        // subsystems (SSAO, anything that samples depth) need to view a
+        // depth target as SRV with a custom format. The caller can opt in
+        // to denying SRV by leaving ShaderResource off and explicitly
+        // skipping the auto-SRV creation path; we leave that to the
+        // future when D3D12 compression hints actually matter.
         return f;
+    }
+
+    inline bool isTypelessFormat(gfx::Format f)
+    {
+        return f == gfx::Format::R32Typeless || f == gfx::Format::R32G8X24Typeless;
     }
 
     inline D3D12_PRIMITIVE_TOPOLOGY_TYPE toTopologyType(gfx::PrimitiveTopology t)

@@ -130,7 +130,7 @@ export class Application
     bool leftClickActive = false;
 
     // Depth buffer + scene PSOs
-    Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer;
+    gfx::TextureHandle depthBuffer{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     // Scene + GBuffer PSOs migrated to gfx; the engine still owns the root sig

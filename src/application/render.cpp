@@ -191,8 +191,10 @@ void Application::render()
     renderGraph.reset();
     auto hBackBuffer =
         renderGraph.importTexture("BackBuffer", backBuffer.Get(), D3D12_RESOURCE_STATE_PRESENT);
-    auto hDepthBuffer =
-        renderGraph.importTexture("MainDepth", depthBuffer.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+    auto hDepthBuffer = renderGraph.importTexture(
+        "MainDepth", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer)),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE
+    );
     auto hShadowMap = renderGraph.importTexture(
         "ShadowMap", shadow.shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );

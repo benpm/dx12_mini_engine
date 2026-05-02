@@ -267,6 +267,9 @@ Application::~Application()
         if (gbufferPS.isValid()) {
             gfxDevice->destroy(gbufferPS);
         }
+        if (depthBuffer.isValid()) {
+            gfxDevice->destroy(depthBuffer);
+        }
     }
 }
 
@@ -430,18 +433,27 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     width = std::max(1u, width);
     height = std::max(1u, height);
 
-    D3D12_CLEAR_VALUE optimizedClearValue = {};
-    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-    optimizedClearValue.DepthStencil = { 1.0f, 0 };
-    const CD3DX12_HEAP_PROPERTIES pHeapProperties(D3D12_HEAP_TYPE_DEFAULT);
-    const CD3DX12_RESOURCE_DESC pDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_R32G8X24_TYPELESS, width, height, 1, 0, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-    );
-    chkDX(device->CreateCommittedResource(
-        &pHeapProperties, D3D12_HEAP_FLAG_NONE, &pDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE,
-        &optimizedClearValue, IID_PPV_ARGS(&this->depthBuffer)
-    ));
+    if (depthBuffer.isValid()) {
+        gfxDevice->destroy(depthBuffer);
+    }
+    gfx::TextureDesc td{};
+    td.width = width;
+    td.height = height;
+    td.format = gfx::Format::R32G8X24Typeless;
+    td.viewFormat = gfx::Format::D32FloatS8X24Uint;
+    // SSAO reads depth as an SRV. We just need DepthStencil here — gfx no
+    // longer adds DENY_SHADER_RESOURCE automatically, and the typeless
+    // resource format means gfx skips auto-SRV creation; the engine
+    // creates its own typed SRV inside SsaoRenderer.
+    td.usage = gfx::TextureUsage::DepthStencil;
+    td.initialState = gfx::ResourceState::DepthWrite;
+    td.useClearValue = true;
+    td.clearDepth = 1.0f;
+    td.clearStencil = 0;
+    td.debugName = "depth_buffer";
+    depthBuffer = gfxDevice->createTexture(td);
+
+    auto* depthRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer));
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
@@ -449,7 +461,7 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     dsvDesc.Texture2D.MipSlice = 0;
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
     device->CreateDepthStencilView(
-        this->depthBuffer.Get(), &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
+        depthRes, &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
     );
 }
 

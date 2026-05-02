@@ -173,7 +173,11 @@ namespace gfxd3d12
         rd.Flags = toD3D12ResourceFlags(d.usage);
 
         D3D12_CLEAR_VALUE cv{};
-        cv.Format = toDXGI(d.format);
+        // Use the typed view format for the optimized clear value when the
+        // resource format is typeless (e.g. R32G8X24_TYPELESS resource +
+        // D32_FLOAT_S8X24_UINT view). Falls back to the resource format when
+        // viewFormat is unset.
+        cv.Format = d.viewFormat != gfx::Format::Unknown ? toDXGI(d.viewFormat) : toDXGI(d.format);
         if (gfx::any(d.usage, gfx::TextureUsage::DepthStencil)) {
             cv.DepthStencil.Depth = d.clearDepth;
             cv.DepthStencil.Stencil = d.clearStencil;
@@ -211,7 +215,11 @@ namespace gfxd3d12
         rec.desc = d;
         rec.currentState = toD3D12States(d.initialState);
 
-        if (gfx::any(d.usage, gfx::TextureUsage::ShaderResource)) {
+        if (gfx::any(d.usage, gfx::TextureUsage::ShaderResource) && !isTypelessFormat(d.format)) {
+            // Typeless resource formats can't be SRV'd directly — the caller
+            // (e.g. SSAO sampling depth) creates a typed SRV via
+            // device->CreateShaderResourceView on the underlying resource
+            // (obtainable via gfx::IDevice::nativeResource).
             rec.srvIndex = resourceHeap.allocate();
             writeSrvForTexture(rec);
         }
