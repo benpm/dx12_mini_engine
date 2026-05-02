@@ -335,7 +335,9 @@ namespace gfxd3d12
         }
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
-        pd.pRootSignature = rootSignature.Get();
+        pd.pRootSignature = d.nativeRootSignatureOverride
+                                ? static_cast<ID3D12RootSignature*>(d.nativeRootSignatureOverride)
+                                : rootSignature.Get();
         pd.VS = { vs->bytecode.data(), vs->bytecode.size() };
         if (ps) {
             pd.PS = { ps->bytecode.data(), ps->bytecode.size() };
@@ -371,6 +373,34 @@ namespace gfxd3d12
         pd.DepthStencilState.StencilEnable = d.depthStencil.stencilEnable;
         pd.DepthStencilState.StencilReadMask = d.depthStencil.stencilReadMask;
         pd.DepthStencilState.StencilWriteMask = d.depthStencil.stencilWriteMask;
+        auto toStencilOp = [](gfx::StencilOp op) {
+            switch (op) {
+                case gfx::StencilOp::Keep:
+                    return D3D12_STENCIL_OP_KEEP;
+                case gfx::StencilOp::Zero:
+                    return D3D12_STENCIL_OP_ZERO;
+                case gfx::StencilOp::Replace:
+                    return D3D12_STENCIL_OP_REPLACE;
+                case gfx::StencilOp::IncrementClamp:
+                    return D3D12_STENCIL_OP_INCR_SAT;
+                case gfx::StencilOp::DecrementClamp:
+                    return D3D12_STENCIL_OP_DECR_SAT;
+                case gfx::StencilOp::Invert:
+                    return D3D12_STENCIL_OP_INVERT;
+                case gfx::StencilOp::IncrementWrap:
+                    return D3D12_STENCIL_OP_INCR;
+                case gfx::StencilOp::DecrementWrap:
+                    return D3D12_STENCIL_OP_DECR;
+            }
+            return D3D12_STENCIL_OP_KEEP;
+        };
+        D3D12_DEPTH_STENCILOP_DESC sop{};
+        sop.StencilFailOp = toStencilOp(d.depthStencil.stencilFail);
+        sop.StencilDepthFailOp = toStencilOp(d.depthStencil.stencilDepthFail);
+        sop.StencilPassOp = toStencilOp(d.depthStencil.stencilPass);
+        sop.StencilFunc = toCompare(d.depthStencil.stencilCompare);
+        pd.DepthStencilState.FrontFace = sop;
+        pd.DepthStencilState.BackFace = sop;
 
         pd.InputLayout = { elems.data(), static_cast<UINT>(elems.size()) };
         pd.PrimitiveTopologyType = toTopologyType(d.topology);
@@ -413,7 +443,9 @@ namespace gfxd3d12
         }
 
         D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
-        pd.pRootSignature = rootSignature.Get();
+        pd.pRootSignature = d.nativeRootSignatureOverride
+                                ? static_cast<ID3D12RootSignature*>(d.nativeRootSignatureOverride)
+                                : rootSignature.Get();
         pd.CS = { cs->bytecode.data(), cs->bytecode.size() };
         ComPtr<ID3D12PipelineState> pso;
         chkDX(

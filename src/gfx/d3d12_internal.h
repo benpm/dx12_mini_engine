@@ -59,6 +59,8 @@ namespace gfxd3d12
                 return DXGI_FORMAT_R32_FLOAT;
             case Format::RG32Float:
                 return DXGI_FORMAT_R32G32_FLOAT;
+            case Format::RGB32Float:
+                return DXGI_FORMAT_R32G32B32_FLOAT;
             case Format::RGBA32Float:
                 return DXGI_FORMAT_R32G32B32A32_FLOAT;
             case Format::R32Uint:
@@ -71,10 +73,18 @@ namespace gfxd3d12
                 return DXGI_FORMAT_R11G11B10_FLOAT;
             case Format::RGB10A2Unorm:
                 return DXGI_FORMAT_R10G10B10A2_UNORM;
+            case Format::D16Unorm:
+                return DXGI_FORMAT_D16_UNORM;
             case Format::D32Float:
                 return DXGI_FORMAT_D32_FLOAT;
             case Format::D24UnormS8Uint:
                 return DXGI_FORMAT_D24_UNORM_S8_UINT;
+            case Format::D32FloatS8X24Uint:
+                return DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+            case Format::R32Typeless:
+                return DXGI_FORMAT_R32_TYPELESS;
+            case Format::R32G8X24Typeless:
+                return DXGI_FORMAT_R32G8X24_TYPELESS;
         }
         return DXGI_FORMAT_UNKNOWN;
     }

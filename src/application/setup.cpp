@@ -52,45 +52,58 @@ using namespace DirectX;
 
 void Application::createScenePSO()
 {
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,
-          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
+    // Tear down the previous PSO + shader handles (hot reload path).
+    if (pipelineState.isValid()) {
+        gfxDevice->destroy(pipelineState);
+    }
+    if (scenePsoVS.isValid()) {
+        gfxDevice->destroy(scenePsoVS);
+    }
+    if (scenePsoPS.isValid()) {
+        gfxDevice->destroy(scenePsoPS);
+    }
 
     auto vsData = shaderCompiler.data(sceneVSIdx);
     auto psData = shaderCompiler.data(scenePSIdx);
 
-    auto vs = vsData ? CD3DX12_SHADER_BYTECODE(vsData, shaderCompiler.size(sceneVSIdx))
-                     : CD3DX12_SHADER_BYTECODE(g_vertex_shader, sizeof(g_vertex_shader));
-    auto ps = psData ? CD3DX12_SHADER_BYTECODE(psData, shaderCompiler.size(scenePSIdx))
-                     : CD3DX12_SHADER_BYTECODE(g_pixel_shader, sizeof(g_pixel_shader));
+    gfx::ShaderDesc vsDesc{};
+    vsDesc.stage = gfx::ShaderStage::Vertex;
+    vsDesc.bytecode = vsData ? vsData : static_cast<const void*>(g_vertex_shader);
+    vsDesc.bytecodeSize = vsData ? shaderCompiler.size(sceneVSIdx) : sizeof(g_vertex_shader);
+    vsDesc.debugName = "scene_vs";
+    scenePsoVS = gfxDevice->createShader(vsDesc);
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = this->rootSignature.Get();
-    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.VS = vs;
-    psoDesc.PS = ps;
-    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    psoDesc.SampleDesc = { 1, 0 };
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    gfx::ShaderDesc psDesc{};
+    psDesc.stage = gfx::ShaderStage::Pixel;
+    psDesc.bytecode = psData ? psData : static_cast<const void*>(g_pixel_shader);
+    psDesc.bytecodeSize = psData ? shaderCompiler.size(scenePSIdx) : sizeof(g_pixel_shader);
+    psDesc.debugName = "scene_ps";
+    scenePsoPS = gfxDevice->createShader(psDesc);
 
-    CD3DX12_DEPTH_STENCIL_DESC dsDesc(D3D12_DEFAULT);
-    dsDesc.StencilEnable = TRUE;
-    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
-    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-    dsDesc.BackFace = dsDesc.FrontFace;
-    psoDesc.DepthStencilState = dsDesc;
+    static constexpr gfx::VertexAttribute attrs[] = {
+        { "POSITION", 0, gfx::Format::RGB32Float, 0 },
+        { "NORMAL", 0, gfx::Format::RGB32Float, 12 },
+        { "TEXCOORD", 0, gfx::Format::RG32Float, 24 },
+    };
 
-    chkDX(this->device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&this->pipelineState)));
+    gfx::GraphicsPipelineDesc gd{};
+    gd.vs = scenePsoVS;
+    gd.ps = scenePsoPS;
+    gd.vertexAttributes = attrs;
+    gd.vertexStride = 32;
+    gd.topology = gfx::PrimitiveTopology::TriangleList;
+    gd.numRenderTargets = 1;
+    gd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
+    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencil.depthEnable = true;
+    gd.depthStencil.depthWrite = true;
+    gd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    gd.depthStencil.stencilEnable = true;
+    gd.depthStencil.stencilCompare = gfx::CompareOp::Always;
+    gd.depthStencil.stencilPass = gfx::StencilOp::Replace;
+    gd.nativeRootSignatureOverride = this->rootSignature.Get();
+    gd.debugName = "scene_pso";
+    pipelineState = gfxDevice->createGraphicsPipeline(gd);
 }
 
 void Application::createGridPSO()

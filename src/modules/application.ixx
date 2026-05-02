@@ -133,7 +133,12 @@ export class Application
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
+    // Scene + GBuffer PSOs migrated to gfx; the engine still owns the root sig
+    // (descriptor-table layout) and passes it via nativeRootSignatureOverride
+    // until P2 lands the bindless rewrite.
+    gfx::PipelineHandle pipelineState{};
+    gfx::ShaderHandle scenePsoVS{};
+    gfx::ShaderHandle scenePsoPS{};
     Microsoft::WRL::ComPtr<ID3D12PipelineState> gbufferPSO;
 
     // Infinite grid

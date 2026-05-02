@@ -238,6 +238,18 @@ Application::~Application()
     }
 #endif
     this->imguiLayer.shutdown();
+
+    if (gfxDevice) {
+        if (pipelineState.isValid()) {
+            gfxDevice->destroy(pipelineState);
+        }
+        if (scenePsoVS.isValid()) {
+            gfxDevice->destroy(scenePsoVS);
+        }
+        if (scenePsoPS.isValid()) {
+            gfxDevice->destroy(scenePsoPS);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

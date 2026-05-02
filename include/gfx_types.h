@@ -69,14 +69,21 @@ namespace gfx
         RGBA16Float,
         R32Float,
         RG32Float,
+        RGB32Float,
         RGBA32Float,
         R32Uint,
         RG32Uint,
         RGBA32Uint,
         R11G11B10Float,
         RGB10A2Unorm,
+        D16Unorm,
         D32Float,
         D24UnormS8Uint,
+        D32FloatS8X24Uint,
+        // Typeless variants for depth/stencil resources whose typed view differs
+        // from the underlying resource format (D3D12 idiom).
+        R32Typeless,
+        R32G8X24Typeless,
     };
 
     enum class ResourceState : uint32_t
@@ -338,12 +345,20 @@ namespace gfx
         Format depthStencilFormat = Format::Unknown;
         RasterizerState rasterizer;
         uint32_t sampleCount = 1;
+        // Optional escape hatch: when non-null, the backend uses this native
+        // root-signature pointer instead of its own bindless root sig. Engine
+        // PSOs that use descriptor-table layouts (scene, gbuffer, grid, etc.)
+        // pass an `ID3D12RootSignature*` here as a transitional measure until
+        // the bindless rewrite (P2) lands. NULL means "use the bindless root
+        // sig that gfx::IDevice owns".
+        void* nativeRootSignatureOverride = nullptr;
         std::string_view debugName;
     };
 
     struct ComputePipelineDesc
     {
         ShaderHandle cs;
+        void* nativeRootSignatureOverride = nullptr;
         std::string_view debugName;
     };
 

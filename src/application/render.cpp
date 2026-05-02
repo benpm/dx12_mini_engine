@@ -331,7 +331,7 @@ void Application::render()
                                           0, 1 };
                 D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
 
-                cmd->SetPipelineState(this->pipelineState.Get());
+                cmdRef.bindPipeline(this->pipelineState);
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
                 bindSharedGeometry(cmd);
                 bindSceneHeapAndObjects(cmd);
@@ -481,7 +481,7 @@ void Application::render()
             auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
             this->clearDepth(cmd, dsv);
 
-            cmd->SetPipelineState(this->pipelineState.Get());
+            cmdRef.bindPipeline(this->pipelineState);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
             bindSharedGeometry(cmd);
             cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
@@ -542,7 +542,7 @@ void Application::render()
                 this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
 
-                cmd->SetPipelineState(this->pipelineState.Get());
+                cmdRef.bindPipeline(this->pipelineState);
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
                 bindSharedGeometry(cmd);
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
