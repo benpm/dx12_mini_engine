@@ -65,14 +65,5 @@ export class BloomRenderer
     gfx::IDevice* devForDestroy = nullptr;
 
     void createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, uint32_t height);
-    void createPipelines(ID3D12Device2* device);
-
-    static ID3D12Device2* nativeDev(gfx::IDevice& dev)
-    {
-        return static_cast<ID3D12Device2*>(dev.nativeHandle());
-    }
-    static ID3D12GraphicsCommandList2* nativeCmd(gfx::ICommandList& cmdRef)
-    {
-        return static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-    }
+    void createPipelines(gfx::IDevice& dev);
 };

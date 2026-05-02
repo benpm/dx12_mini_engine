@@ -2,7 +2,6 @@ module;
 
 #include <d3d12.h>
 #include <DirectXMath.h>
-#include <dxgi1_6.h>
 #include <flecs.h>
 #include <gainput/gainput.h>
 #include <Windows.h>
@@ -259,22 +258,6 @@ export class Application
     size_t gridVSIdx = 0;
     size_t gridPSIdx = 0;
 
-    void transitionResource(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        Microsoft::WRL::ComPtr<ID3D12Resource> resource,
-        D3D12_RESOURCE_STATES beforeState,
-        D3D12_RESOURCE_STATES afterState
-    );
-    void clearRTV(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        uint64_t rtv,
-        FLOAT clearColor[4]
-    );
-    void clearDepth(
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList,
-        uint64_t dsv,
-        FLOAT depth = 1.0f
-    );
     void resizeDepthBuffer(uint32_t width, uint32_t height);
     void setFullscreen(bool val);
     void flush();
@@ -282,5 +265,5 @@ export class Application
     void onResize(uint32_t width, uint32_t height);
     void createScenePSO();
     void createGBufferPSO();
-    void renderImGui(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> cmdList);
+    void renderImGui(gfx::ICommandList& cmdRef);
 };

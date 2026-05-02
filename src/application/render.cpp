@@ -369,8 +369,11 @@ void Application::render()
                     D3D12_CPU_DESCRIPTOR_HANDLE faceDsv;
                     faceDsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(cubemapDepth, face));
                     FLOAT clearColor[] = { 0, 0, 0, 1 };
-                    this->clearRTV(cmd, faceRtv.ptr, clearColor);
-                    this->clearDepth(cmd, faceDsv.ptr);
+                    cmd->ClearRenderTargetView(faceRtv, clearColor, 0, nullptr);
+                    cmd->ClearDepthStencilView(
+                        faceDsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
+                        nullptr
+                    );
                     cmd->RSSetViewports(1, &cubeVP);
                     cmd->RSSetScissorRects(1, &cubeScissor);
                     cmd->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
@@ -430,7 +433,9 @@ void Application::render()
             cmd->ClearRenderTargetView(rtvs[1], clearZero, 0, nullptr);
             cmd->ClearRenderTargetView(rtvs[2], clearZero, 0, nullptr);
             cmd->ClearRenderTargetView(rtvs[3], clearZero, 0, nullptr);
-            this->clearDepth(cmd, dsv.ptr);
+            cmd->ClearDepthStencilView(
+                dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
+            );
 
             cmdRef.bindPipeline(this->gbufferPSO);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -488,7 +493,9 @@ void Application::render()
             cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
             D3D12_CPU_DESCRIPTOR_HANDLE dsv;
             dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-            this->clearDepth(cmd, dsv.ptr);
+            cmd->ClearDepthStencilView(
+                dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
+            );
 
             cmdRef.bindPipeline(this->pipelineState);
             cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -531,7 +538,9 @@ void Application::render()
                 PROFILE_ZONE_NAMED("Gizmo Pass");
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-                this->clearDepth(cmd, dsv.ptr);  // clear depth so gizmo renders on top
+                cmd->ClearDepthStencilView(
+                    dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
+                );  // clear depth so gizmo renders on top
                 D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
                 hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
 
@@ -770,9 +779,8 @@ void Application::render()
             "ImGui Pass",
             [&](rg::RenderGraphBuilder& builder) { builder.writeRenderTarget(hBackBuffer); },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
-                auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("ImGui Pass");
-                this->renderImGui(cmd);
+                this->renderImGui(cmdRef);
             }
         );
     }

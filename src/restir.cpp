@@ -9,39 +9,44 @@ module restir;
 
 using Microsoft::WRL::ComPtr;
 
-void ReStirRenderer::createResources(ID3D12Device2* device, uint32_t width, uint32_t height)
+void ReStirRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
+    devForDestroy = &dev;
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     createTextures(device, width, height);
     createShaders(device);
 }
 
-void ReStirRenderer::resize(ID3D12Device2* device, uint32_t width, uint32_t height)
+void ReStirRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
     reservoirs[0].Reset();
     reservoirs[1].Reset();
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     createTextures(device, width, height);
 }
 
 void ReStirRenderer::render(
-    ID3D12GraphicsCommandList2* cmd,
-    ID3D12Resource* tlas,
-    ID3D12Resource* lightBuffer,
+    gfx::ICommandList& cmdRef,
+    gfx::TextureHandle /*tlas*/,
+    gfx::BufferHandle /*lightBuffer*/,
     uint32_t lightCount,
-    ID3D12Resource* normalRT,
-    ID3D12Resource* albedoRT,
-    ID3D12Resource* materialRT,
-    ID3D12Resource* motionRT,
-    ID3D12Resource* depthBuffer,
-    ID3D12Resource* outputHdrRT,
-    D3D12_GPU_VIRTUAL_ADDRESS perFrameCB,
-    uint32_t width,
-    uint32_t height,
-    uint32_t frameIndex
+    gfx::TextureHandle /*normalRT*/,
+    gfx::TextureHandle /*albedoRT*/,
+    gfx::TextureHandle /*materialRT*/,
+    gfx::TextureHandle /*motionRT*/,
+    gfx::TextureHandle /*depthBuffer*/,
+    gfx::TextureHandle /*outputHdrRT*/,
+    uint64_t perFrameCBAddr,
+    uint32_t /*width*/,
+    uint32_t /*height*/,
+    uint32_t /*frameIndex*/
 )
 {
     if (!settings.enabled || lightCount == 0) {
         return;
     }
+
+    auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
 
     // Transition reservoirs to UAV
     D3D12_RESOURCE_BARRIER barriers[2] = {
@@ -55,15 +60,12 @@ void ReStirRenderer::render(
     cmd->ResourceBarrier(2, barriers);
 
     cmd->SetComputeRootSignature(rootSig.Get());
-    cmd->SetComputeRootConstantBufferView(3, perFrameCB);
-    // TLAS is a special case, passed via GPU VA for RayQuery
-    cmd->SetComputeRootShaderResourceView(2, tlas->GetGPUVirtualAddress());
+    cmd->SetComputeRootConstantBufferView(3, perFrameCBAddr);
+    // TODO: bind TLAS via GPU VA once AccelStruct is tracked by gfx backend.
 
-    // Bind descriptor tables (handled by Application usually, but here we manage our own)
     ID3D12DescriptorHeap* heaps[] = { uavHeap.Get() };
     cmd->SetDescriptorHeaps(1, heaps);
-    // TODO: Create a combined heap or use Application's heap.
-    // For now, I'll just skip the actual dispatch until I have shaders ready and verified.
+    // TODO: dispatch once shaders are ready.
 
     // Resolve pass transitions
     D3D12_RESOURCE_BARRIER resolveBarriers[2] = {
@@ -100,9 +102,7 @@ void ReStirRenderer::createShaders(ID3D12Device2* device)
         CD3DX12_DESCRIPTOR_RANGE1 uavRange;
         uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);
         CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0
-        );  // Normal, Albedo, Material, Motion, Depth, LightBuffer
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);
 
         CD3DX12_ROOT_PARAMETER1 params[5];
         params[0].InitAsDescriptorTable(1, &uavRange);

@@ -27,8 +27,9 @@ using namespace DirectX;
 // ImGui render (app-specific UI)
 // ---------------------------------------------------------------------------
 
-void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
+void Application::renderImGui(gfx::ICommandList& cmdRef)
 {
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -663,5 +664,5 @@ void Application::renderImGui(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     ID3D12DescriptorHeap* heaps[] = { imguiLayer.srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
-    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList.Get());
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList);
 }

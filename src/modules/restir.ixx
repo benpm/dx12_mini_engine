@@ -4,11 +4,11 @@ module;
 #include <wrl.h>
 #include <cstdint>
 #include <vector>
-#include "d3dx12_clean.h"
 
 export module restir;
 
 export import common;
+export import gfx;
 export import math;
 
 export class ReStirRenderer
@@ -23,37 +23,37 @@ export class ReStirRenderer
         int spatialSamples = 4;
     } settings;
 
-    void createResources(ID3D12Device2* device, uint32_t width, uint32_t height);
-    void resize(ID3D12Device2* device, uint32_t width, uint32_t height);
+    void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
+    void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     void render(
-        ID3D12GraphicsCommandList2* cmd,
-        ID3D12Resource* tlas,
-        ID3D12Resource* lightBuffer,
+        gfx::ICommandList& cmd,
+        gfx::TextureHandle tlas,  // acceleration structure (RT-only)
+        gfx::BufferHandle lightBuffer,
         uint32_t lightCount,
-        ID3D12Resource* normalRT,
-        ID3D12Resource* albedoRT,
-        ID3D12Resource* materialRT,
-        ID3D12Resource* motionRT,
-        ID3D12Resource* depthBuffer,
-        ID3D12Resource* outputHdrRT,
-        D3D12_GPU_VIRTUAL_ADDRESS perFrameCB,
+        gfx::TextureHandle normalRT,
+        gfx::TextureHandle albedoRT,
+        gfx::TextureHandle materialRT,
+        gfx::TextureHandle motionRT,
+        gfx::TextureHandle depthBuffer,
+        gfx::TextureHandle outputHdrRT,
+        uint64_t perFrameCBAddr,
         uint32_t width,
         uint32_t height,
         uint32_t frameIndex
     );
 
    private:
-    Microsoft::WRL::ComPtr<ID3D12Resource> reservoirs[2];  // uint4 {lightIdx, w_sum, M, W}
-
+    Microsoft::WRL::ComPtr<ID3D12Resource> reservoirs[2];
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> uavHeap;
     UINT uavDescSize = 0;
-
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSig;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> initialPSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> temporalPSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> spatialPSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> resolvePSO;
+
+    gfx::IDevice* devForDestroy = nullptr;
 
     void createShaders(ID3D12Device2* device);
     void createTextures(ID3D12Device2* device, uint32_t width, uint32_t height);

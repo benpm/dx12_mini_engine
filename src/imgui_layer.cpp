@@ -15,6 +15,20 @@ module imgui_layer;
 
 using Microsoft::WRL::ComPtr;
 
+static DXGI_FORMAT toDXGI(gfx::Format f)
+{
+    switch (f) {
+        case gfx::Format::RGBA8Unorm:
+            return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case gfx::Format::BGRA8Unorm:
+            return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case gfx::Format::R11G11B10Float:
+            return DXGI_FORMAT_R11G11B10_FLOAT;
+        default:
+            return DXGI_FORMAT_UNKNOWN;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ImGuiLayer::styleColorsDracula
 // ---------------------------------------------------------------------------
@@ -90,7 +104,7 @@ void ImGuiLayer::init(
     gfx::IDevice& dev,
     ID3D12CommandQueue* queue,
     UINT frameCount,
-    DXGI_FORMAT rtvFormat
+    gfx::Format rtvFormat
 )
 {
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
@@ -153,7 +167,7 @@ void ImGuiLayer::init(
     initInfo.Device = device;
     initInfo.CommandQueue = queue;
     initInfo.NumFramesInFlight = frameCount;
-    initInfo.RTVFormat = rtvFormat;
+    initInfo.RTVFormat = toDXGI(rtvFormat);
     initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;
     initInfo.SrvDescriptorHeap = srvHeap.Get();
     initInfo.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* info,

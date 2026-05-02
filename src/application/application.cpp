@@ -203,7 +203,7 @@ Application::Application()
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
-        hWnd, *gfxDevice, cmdQueue.queue.Get(), nBuffers, DXGI_FORMAT_R8G8B8A8_UNORM
+        hWnd, *gfxDevice, cmdQueue.queue.Get(), nBuffers, gfx::Format::RGBA8Unorm
     );
 
     // Fullscreen applied later via applyConfig (after message loop starts).
@@ -382,39 +382,6 @@ std::string Application::iconLabel(const char* key, const char* label) const
         return it->second + label;
     }
     return label;
-}
-
-// ---------------------------------------------------------------------------
-// Low-level helpers
-// ---------------------------------------------------------------------------
-
-void Application::transitionResource(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    ComPtr<ID3D12Resource> resource,
-    D3D12_RESOURCE_STATES beforeState,
-    D3D12_RESOURCE_STATES afterState
-)
-{
-    CD3DX12_RESOURCE_BARRIER barrier =
-        CD3DX12_RESOURCE_BARRIER::Transition(resource.Get(), beforeState, afterState);
-    cmdList->ResourceBarrier(1, &barrier);
-}
-
-void Application::clearRTV(
-    ComPtr<ID3D12GraphicsCommandList2> cmdList,
-    uint64_t rtv,
-    FLOAT clearColor[4]
-)
-{
-    cmdList->ClearRenderTargetView(D3D12_CPU_DESCRIPTOR_HANDLE{ rtv }, clearColor, 0, nullptr);
-}
-
-void Application::clearDepth(ComPtr<ID3D12GraphicsCommandList2> cmdList, uint64_t dsv, FLOAT depth)
-{
-    cmdList->ClearDepthStencilView(
-        D3D12_CPU_DESCRIPTOR_HANDLE{ dsv }, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-        depth, 0, 0, nullptr
-    );
 }
 
 // ---------------------------------------------------------------------------

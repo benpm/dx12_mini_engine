@@ -1,7 +1,6 @@
 module;
 
 #include <d3d12.h>
-#include <dxgi1_6.h>
 #include <Windows.h>
 #include <wrl.h>
 
@@ -27,7 +26,7 @@ export class ImGuiLayer
         gfx::IDevice& dev,
         ID3D12CommandQueue* queue,
         UINT frameCount,
-        DXGI_FORMAT rtvFormat
+        gfx::Format rtvFormat
     );
     void shutdown();
     static void styleColorsDracula();

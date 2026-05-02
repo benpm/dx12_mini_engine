@@ -102,8 +102,9 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
 // BloomRenderer::createPipelines
 // ---------------------------------------------------------------------------
 
-void BloomRenderer::createPipelines(ID3D12Device2* device)
+void BloomRenderer::createPipelines(gfx::IDevice& dev)
 {
+    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
     if (FAILED(device->CheckFeatureSupport(
@@ -168,7 +169,7 @@ void BloomRenderer::createPipelines(ID3D12Device2* device)
 void BloomRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
     devForDestroy = &dev;
-    createPipelines(nativeDev(dev));
+    createPipelines(dev);
     createTexturesAndHeaps(dev, width, height);
 }
 
@@ -261,10 +262,11 @@ void BloomRenderer::reloadPipelines(
 )
 {
     reloadBloomPipelinesNative(
-        nativeDev(dev), bloomRootSignature.Get(), { fullscreenVS.data, fullscreenVS.size },
-        { prefilterPS.data, prefilterPS.size }, { downsamplePS.data, downsamplePS.size },
-        { upsamplePS.data, upsamplePS.size }, { compositePS.data, compositePS.size }, prefilterPSO,
-        downsamplePSO, upsamplePSO, compositePSO
+        static_cast<ID3D12Device2*>(dev.nativeHandle()), bloomRootSignature.Get(),
+        { fullscreenVS.data, fullscreenVS.size }, { prefilterPS.data, prefilterPS.size },
+        { downsamplePS.data, downsamplePS.size }, { upsamplePS.data, upsamplePS.size },
+        { compositePS.data, compositePS.size }, prefilterPSO, downsamplePSO, upsamplePSO,
+        compositePSO
     );
 }
 
@@ -283,7 +285,7 @@ void BloomRenderer::render(
     const SkyParams& sky
 )
 {
-    auto* cmdList = nativeCmd(cmdRef);
+    auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv{ backBufRtvVal };
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };

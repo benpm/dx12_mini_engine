@@ -4,12 +4,12 @@ set(CMAKE_COLOR_DIAGNOSTICS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 include(CTest)
 
-# Use static CRT for MSVC and Clang-cl (so no VCRUNTIME dlls are required)
+#Use static CRT for MSVC and Clang - cl(so no VCRUNTIME dlls are required)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-# -------------------------------
-# Dependencies
-# -------------------------------
+#-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -
+#Dependencies
+#-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -
 find_package(directxtk12 CONFIG REQUIRED)
 find_package(directxmath CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -17,9 +17,9 @@ find_package(directx-headers CONFIG REQUIRED)
 
 include(FetchContent)
 
-# Fetch gainput. GAINPUT_BUILD_SHARED must stay ON - gainput's CMakeLists.txt
-# unconditionally calls target_link_libraries(gainput ...) on Windows regardless of
-# whether the shared target was built, so disabling it causes a CMake error.
+#Fetch gainput.GAINPUT_BUILD_SHARED must stay ON - gainput's CMakeLists.txt
+#unconditionally calls target_link_libraries(gainput...) on Windows regardless of
+#whether the shared target was built, so disabling it causes a CMake error.
 set(GAINPUT_BUILD_SHARED ON CACHE BOOL "" FORCE)
 set(GAINPUT_TESTS OFF CACHE BOOL "" FORCE)
 set(GAINPUT_SAMPLES OFF CACHE BOOL "" FORCE)
@@ -43,7 +43,7 @@ foreach(_t gainputstatic gainput)
     endif()
 endforeach()
 
-# Fetch imgui (no CMakeLists.txt — build as static lib manually)
+#Fetch imgui(no CMakeLists.txt — build as static lib manually)
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -69,7 +69,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(imgui_lib PRIVATE -Wno-everything)
 endif()
 
-# Fetch tinyobjloader
+#Fetch tinyobjloader
 FetchContent_Declare(
     tinyobjloader
     GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
@@ -77,7 +77,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
-# Fetch tinygltf (header-only, bundles stb_image)
+#Fetch tinygltf(header - only, bundles stb_image)
 FetchContent_Declare(
     tinygltf
     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
@@ -88,7 +88,7 @@ set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(tinygltf)
 
-# Fetch PerlinNoise (header-only)
+#Fetch PerlinNoise(header - only)
 FetchContent_Declare(
     perlin_noise
     GIT_REPOSITORY https://github.com/Reputeless/PerlinNoise.git
@@ -96,7 +96,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(perlin_noise)
 
-# Fetch flecs ECS
+#Fetch flecs ECS
 set(FLECS_STATIC ON CACHE BOOL "" FORCE)
 set(FLECS_SHARED OFF CACHE BOOL "" FORCE)
 set(FLECS_PIC OFF CACHE BOOL "" FORCE)
@@ -110,7 +110,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(flecs_static PRIVATE -Wno-everything)
 endif()
 
-# Fetch glaze (JSON serialization, header-only)
+#Fetch glaze(JSON serialization, header - only)
 FetchContent_Declare(
     glaze
     GIT_REPOSITORY https://github.com/stephenberry/glaze.git
@@ -119,7 +119,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glaze)
 
-# Fetch Lua 5.4 (small C library, no CMakeLists.txt — build as static lib manually)
+#Fetch Lua 5.4(small C library, no CMakeLists.txt — build as static lib manually)
 FetchContent_Declare(
     lua
     GIT_REPOSITORY https://github.com/lua/lua.git
@@ -236,6 +236,7 @@ add_executable(main
     src/outline.cpp
     src/render_graph.cpp
     src/gbuffer.cpp
+    src/restir.cpp
     src/lua_scripting.cpp
     src/lua_scripting_impl.cpp
     src/gfx/d3d12_backend.cpp
@@ -270,6 +271,7 @@ target_sources(main
     src/modules/outline.ixx
     src/modules/render_graph.ixx
     src/modules/gbuffer.ixx
+    src/modules/restir.ixx
     src/modules/lua_scripting.ixx
     src/modules/application.ixx
     src/modules/window.ixx
