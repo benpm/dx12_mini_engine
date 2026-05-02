@@ -270,6 +270,12 @@ Application::~Application()
         if (depthBuffer.isValid()) {
             gfxDevice->destroy(depthBuffer);
         }
+        if (cubemapTexture.isValid()) {
+            gfxDevice->destroy(cubemapTexture);
+        }
+        if (cubemapDepth.isValid()) {
+            gfxDevice->destroy(cubemapDepth);
+        }
     }
 }
 

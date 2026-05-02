@@ -367,15 +367,27 @@ bool Application::loadContent()
 
 void Application::createCubemapResources()
 {
-    D3D12_RESOURCE_DESC texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_R11G11B10_FLOAT, cubemapResolution, cubemapResolution, 6, 1, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-    );
-    const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-    chkDX(device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &texDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        nullptr, IID_PPV_ARGS(&cubemapTexture)
-    ));
+    if (cubemapTexture.isValid()) {
+        gfxDevice->destroy(cubemapTexture);
+    }
+    if (cubemapDepth.isValid()) {
+        gfxDevice->destroy(cubemapDepth);
+    }
+
+    {
+        gfx::TextureDesc td{};
+        td.width = cubemapResolution;
+        td.height = cubemapResolution;
+        td.depthOrArraySize = 6;
+        td.format = gfx::Format::R11G11B10Float;
+        td.usage = gfx::TextureUsage::RenderTarget;
+        td.initialState = gfx::ResourceState::PixelShaderResource;
+        td.isCubemap = true;
+        td.debugName = "cubemap";
+        cubemapTexture = gfxDevice->createTexture(td);
+    }
+    auto* cubemapRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapTexture));
+
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 6,
                                                D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
     chkDX(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&cubemapRtvHeap)));
@@ -387,18 +399,25 @@ void Application::createCubemapResources()
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < 6; ++i) {
         rtvDesc.Texture2DArray.FirstArraySlice = i;
-        device->CreateRenderTargetView(cubemapTexture.Get(), &rtvDesc, rtvHandle);
+        device->CreateRenderTargetView(cubemapRes, &rtvDesc, rtvHandle);
         rtvHandle.Offset(1, rtvSize);
     }
-    D3D12_RESOURCE_DESC depthDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_D32_FLOAT, cubemapResolution, cubemapResolution, 6, 1, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-    );
-    D3D12_CLEAR_VALUE depthClear = { DXGI_FORMAT_D32_FLOAT, { 1.0f, 0 } };
-    chkDX(device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &depthDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &depthClear,
-        IID_PPV_ARGS(&cubemapDepth)
-    ));
+
+    {
+        gfx::TextureDesc td{};
+        td.width = cubemapResolution;
+        td.height = cubemapResolution;
+        td.depthOrArraySize = 6;
+        td.format = gfx::Format::D32Float;
+        td.usage = gfx::TextureUsage::DepthStencil;
+        td.initialState = gfx::ResourceState::DepthWrite;
+        td.useClearValue = true;
+        td.clearDepth = 1.0f;
+        td.debugName = "cubemap_depth";
+        cubemapDepth = gfxDevice->createTexture(td);
+    }
+    auto* cubemapDepthRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapDepth));
+
     D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 6,
                                                D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
     chkDX(device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&cubemapDsvHeap)));
@@ -410,7 +429,7 @@ void Application::createCubemapResources()
     CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < 6; ++i) {
         dsvDesc.Texture2DArray.FirstArraySlice = i;
-        device->CreateDepthStencilView(cubemapDepth.Get(), &dsvDesc, dsvHandle);
+        device->CreateDepthStencilView(cubemapDepthRes, &dsvDesc, dsvHandle);
         dsvHandle.Offset(1, dsvSize);
     }
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = { DXGI_FORMAT_R11G11B10_FLOAT,
@@ -421,7 +440,7 @@ void Application::createCubemapResources()
         scene.sceneSrvHeap->GetCPUDescriptorHandleForHeapStart(),
         static_cast<INT>(app_slots::srvSlotCubemap), scene.sceneSrvDescSize
     );
-    device->CreateShaderResourceView(cubemapTexture.Get(), &srvDesc, srvHandle);
+    device->CreateShaderResourceView(cubemapRes, &srvDesc, srvHandle);
 }
 
 void Application::createGBufferPSO()

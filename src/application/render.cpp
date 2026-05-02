@@ -214,7 +214,8 @@ void Application::render()
         "HdrRT", bloom.hdrRenderTarget.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     auto hCubemap = renderGraph.importTexture(
-        "Cubemap", cubemapTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        "Cubemap", static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapTexture)),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
 
     // --- Shadow pass ---

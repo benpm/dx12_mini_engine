@@ -29,8 +29,8 @@
   - [x] P10: BillboardRenderer + ImGuiLayer signatures use gfx types
   - [x] P11: GizmoState init takes gfx types
   - [x] P12 (partial): Scene methods take `gfx::IDevice&`. Still pending: dissolve `CommandQueue` into `gfx::IQueue`, migrate ComPtr fields to gfx handles, BLAS/TLAS gating on `caps.raytracing`.
-  - [x] P13 (partial): scene PSO, gbuffer PSO, grid PSO are `gfx::PipelineHandle` (use `nativeRootSignatureOverride` escape hatch). New `IDevice::nativeResource()` accessor. Main `depthBuffer` migrated to `gfx::TextureHandle` via the new `TextureDesc::viewFormat` field.
-  - [ ] P13 (remainder): dsvHeap, cubemap heaps, rootSignature ComPtrs.
+  - [x] P13 (partial): scene PSO, gbuffer PSO, grid PSO are `gfx::PipelineHandle` (use `nativeRootSignatureOverride` escape hatch). New `IDevice::nativeResource()` accessor. Main `depthBuffer`, cubemap color + depth migrated to `gfx::TextureHandle` via the new `TextureDesc::viewFormat` / `TextureUsage` semantics.
+  - [ ] P13 (remainder): dsvHeap / cubemap RTV+DSV heaps, rootSignature ComPtrs.
   - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, orthogonal)
   - [ ] P14: Cleanup — verify no `ID3D12*` outside `src/gfx/`, remove `nativeHandle()` escape hatches
 - [ ] Use flecs

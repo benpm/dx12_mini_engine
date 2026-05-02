@@ -160,8 +160,8 @@ export class Application
     bool contentLoaded = false;
 
     // Cubemap reflections
-    Microsoft::WRL::ComPtr<ID3D12Resource> cubemapTexture;
-    Microsoft::WRL::ComPtr<ID3D12Resource> cubemapDepth;
+    gfx::TextureHandle cubemapTexture{};
+    gfx::TextureHandle cubemapDepth{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapRtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapDsvHeap;
     UINT cubemapRtvDescSize = 0;
