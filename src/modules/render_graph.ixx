@@ -1,13 +1,10 @@
 module;
 
-#include <d3d12.h>
-#include <wrl.h>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-#include "d3dx12_clean.h"
 
 export module render_graph;
 
@@ -29,13 +26,17 @@ namespace rg
 
     export struct TextureDesc
     {
-        DXGI_FORMAT format;
-        uint32_t width;
-        uint32_t height;
+        gfx::Format format = gfx::Format::RGBA8Unorm;
+        uint32_t width = 0;
+        uint32_t height = 0;
         uint32_t mipLevels = 1;
-        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-        D3D12_CLEAR_VALUE clearValue = {};
+        gfx::TextureUsage usage =
+            gfx::TextureUsage::RenderTarget | gfx::TextureUsage::ShaderResource;
+        float clearColor[4] = { 0.f, 0.f, 0.f, 0.f };
+        float clearDepth = 1.0f;
+        uint8_t clearStencil = 0;
         bool useClearValue = false;
+        gfx::ResourceState initialState = gfx::ResourceState::RenderTarget;
     };
 
     export class RenderGraphBuilder
@@ -43,13 +44,13 @@ namespace rg
        public:
         virtual ~RenderGraphBuilder() = default;
         virtual ResourceHandle createTexture(const std::string& name, const TextureDesc& desc) = 0;
-        virtual void writeRenderTarget(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE rtv) = 0;
-        virtual void writeDepthStencil(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE dsv) = 0;
+        virtual void writeRenderTarget(ResourceHandle handle, uint32_t arraySlice = 0) = 0;
+        virtual void writeDepthStencil(ResourceHandle handle, uint32_t arraySlice = 0) = 0;
         virtual void readTexture(
             ResourceHandle handle,
             gfx::ResourceState state = gfx::ResourceState::PixelShaderResource
         ) = 0;
-        virtual ID3D12Resource* getResource(ResourceHandle handle) = 0;
+        virtual gfx::TextureHandle getTexture(ResourceHandle handle) = 0;
     };
 
     // Pass execute callback. The first argument is a backend-agnostic
@@ -95,9 +96,7 @@ namespace rg
         struct ResourceRecord
         {
             std::string name;
-            gfx::TextureHandle gfxHandle{};                   // for external (imported) resources
-            Microsoft::WRL::ComPtr<ID3D12Resource> resource;  // for internal (createTexture)
-            D3D12_RESOURCE_DESC desc;
+            gfx::TextureHandle gfxHandle{};  // valid for both imported and created resources
             gfx::ResourceState currentState{};
             bool isExternal = false;
         };
@@ -117,10 +116,10 @@ namespace rg
            public:
             BuilderImpl(RenderGraph& graph, PassRecord& pass) : graph(graph), pass(pass) {}
             ResourceHandle createTexture(const std::string& name, const TextureDesc& desc) override;
-            void writeRenderTarget(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE rtv) override;
-            void writeDepthStencil(ResourceHandle handle, D3D12_CPU_DESCRIPTOR_HANDLE dsv) override;
+            void writeRenderTarget(ResourceHandle handle, uint32_t arraySlice = 0) override;
+            void writeDepthStencil(ResourceHandle handle, uint32_t arraySlice = 0) override;
             void readTexture(ResourceHandle handle, gfx::ResourceState state) override;
-            ID3D12Resource* getResource(ResourceHandle handle) override;
+            gfx::TextureHandle getTexture(ResourceHandle handle) override;
 
            private:
             RenderGraph& graph;

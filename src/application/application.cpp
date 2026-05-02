@@ -162,13 +162,10 @@ Application::Application()
     }
     this->curBackBufIdx = this->gfxSwapChain->currentIndex();
 
-    spdlog::info("Creating rtvHeap");
-    this->rtvHeap = this->createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, this->nBuffers);
-    this->rtvDescSize = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle())
-                            ->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-    spdlog::info("updateRenderTargetViews");
-    this->updateRenderTargetViews(this->rtvHeap);
+    // Back-buffer handles come from the swap chain (RTVs created by the gfx backend).
+    for (int i = 0; i < this->nBuffers; ++i) {
+        this->backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
+    }
 
     spdlog::info("Setup gainput");
     this->keyboardID = inputManager.CreateDevice<gainput::InputDeviceKeyboard>();
@@ -455,50 +452,7 @@ void Application::resizeDepthBuffer(uint32_t width, uint32_t height)
     td.clearStencil = 0;
     td.debugName = "depth_buffer";
     depthBuffer = gfxDevice->createTexture(td);
-
-    auto* depthRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(depthBuffer));
-
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dsvDesc.Texture2D.MipSlice = 0;
-    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-    static_cast<ID3D12Device2*>(gfxDevice->nativeHandle())
-        ->CreateDepthStencilView(
-            depthRes, &dsvDesc, this->dsvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-}
-
-// ---------------------------------------------------------------------------
-// Swap chain / descriptor heaps
-// ---------------------------------------------------------------------------
-
-ComPtr<ID3D12DescriptorHeap>
-Application::createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors)
-{
-    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
-    ComPtr<ID3D12DescriptorHeap> descriptorHeap;
-    D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    desc.NumDescriptors = numDescriptors;
-    desc.Type = type;
-    chkDX(d3dDev->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
-    return descriptorHeap;
-}
-
-void Application::updateRenderTargetViews(ComPtr<ID3D12DescriptorHeap> descriptorHeap)
-{
-    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
-    UINT rtvDescriptorSize =
-        d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(descriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-    for (int i = 0; i < this->nBuffers; ++i) {
-        backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
-        auto* nativeBB =
-            static_cast<ID3D12Resource*>(this->gfxDevice->nativeResource(backBuffers[i]));
-        d3dDev->CreateRenderTargetView(nativeBB, nullptr, rtvHandle);
-        rtvHandle.Offset(static_cast<INT>(rtvDescriptorSize));
-    }
+    // DSV is created automatically by the gfx backend (TextureUsage::DepthStencil).
 }
 
 // ---------------------------------------------------------------------------

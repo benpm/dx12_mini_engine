@@ -109,6 +109,8 @@ namespace gfxd3d12
             d3dDevice.Get(), 256, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, true,
             L"gfx_bindless_sampler_heap"
         );
+        rtvHeap_.init(d3dDevice.Get(), 512, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, false, L"gfx_rtv_heap");
+        dsvHeap_.init(d3dDevice.Get(), 256, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, false, L"gfx_dsv_heap");
     }
 
     void Device::createBindlessRootSignature()
@@ -223,6 +225,18 @@ namespace gfxd3d12
             rec.srvIndex = resourceHeap.allocate();
             writeSrvForTexture(rec);
         }
+        if (gfx::any(d.usage, gfx::TextureUsage::RenderTarget)) {
+            uint32_t slices = std::max(1u, static_cast<uint32_t>(d.depthOrArraySize));
+            rec.rtvBase = rtvHeap_.allocateBatch(slices);
+            rec.rtvSlices = slices;
+            writeRtvForTexture(rec);
+        }
+        if (gfx::any(d.usage, gfx::TextureUsage::DepthStencil)) {
+            uint32_t slices = std::max(1u, static_cast<uint32_t>(d.depthOrArraySize));
+            rec.dsvBase = dsvHeap_.allocateBatch(slices);
+            rec.dsvSlices = slices;
+            writeDsvForTexture(rec);
+        }
         return { slot };
     }
 
@@ -245,6 +259,79 @@ namespace gfxd3d12
         d3dDevice->CreateShaderResourceView(
             tex.resource.Get(), &sd, resourceHeap.cpuHandle(tex.srvIndex)
         );
+    }
+
+    void Device::writeRtvForTexture(TextureRecord& tex)
+    {
+        DXGI_FORMAT fmt = tex.desc.viewFormat != gfx::Format::Unknown ? toDXGI(tex.desc.viewFormat)
+                                                                      : toDXGI(tex.desc.format);
+        uint32_t slices = tex.rtvSlices;
+        for (uint32_t i = 0; i < slices; ++i) {
+            D3D12_RENDER_TARGET_VIEW_DESC rd{};
+            rd.Format = fmt;
+            if (slices > 1) {
+                rd.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                rd.Texture2DArray.FirstArraySlice = i;
+                rd.Texture2DArray.ArraySize = 1;
+                rd.Texture2DArray.MipSlice = 0;
+            } else {
+                rd.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+                rd.Texture2D.MipSlice = 0;
+            }
+            d3dDevice->CreateRenderTargetView(
+                tex.resource.Get(), &rd, rtvHeap_.cpuHandle(tex.rtvBase + i)
+            );
+        }
+    }
+
+    void Device::writeDsvForTexture(TextureRecord& tex)
+    {
+        DXGI_FORMAT fmt = tex.desc.viewFormat != gfx::Format::Unknown ? toDXGI(tex.desc.viewFormat)
+                                                                      : toDXGI(tex.desc.format);
+        uint32_t slices = tex.dsvSlices;
+        for (uint32_t i = 0; i < slices; ++i) {
+            D3D12_DEPTH_STENCIL_VIEW_DESC dd{};
+            dd.Format = fmt;
+            dd.Flags = D3D12_DSV_FLAG_NONE;
+            if (slices > 1) {
+                dd.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+                dd.Texture2DArray.FirstArraySlice = i;
+                dd.Texture2DArray.ArraySize = 1;
+                dd.Texture2DArray.MipSlice = 0;
+            } else {
+                dd.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+                dd.Texture2D.MipSlice = 0;
+            }
+            d3dDevice->CreateDepthStencilView(
+                tex.resource.Get(), &dd, dsvHeap_.cpuHandle(tex.dsvBase + i)
+            );
+        }
+    }
+
+    uint64_t Device::rtvHandle(gfx::TextureHandle h, uint32_t arraySlice) const
+    {
+        if (h.id == 0 || h.id >= textures.size()) {
+            return 0;
+        }
+        const auto& rec = textures[h.id];
+        if (rec.rtvBase == UINT_MAX) {
+            return 0;
+        }
+        uint32_t idx = rec.rtvBase + (arraySlice < rec.rtvSlices ? arraySlice : 0);
+        return rtvHeap_.cpuHandle(idx).ptr;
+    }
+
+    uint64_t Device::dsvHandle(gfx::TextureHandle h, uint32_t arraySlice) const
+    {
+        if (h.id == 0 || h.id >= textures.size()) {
+            return 0;
+        }
+        const auto& rec = textures[h.id];
+        if (rec.dsvBase == UINT_MAX) {
+            return 0;
+        }
+        uint32_t idx = rec.dsvBase + (arraySlice < rec.dsvSlices ? arraySlice : 0);
+        return dsvHeap_.cpuHandle(idx).ptr;
     }
 
     gfx::BufferHandle Device::createBuffer(const gfx::BufferDesc& d)
@@ -552,10 +639,16 @@ namespace gfxd3d12
         }
         std::lock_guard<std::mutex> lk(poolMu);
         auto& rec = textures[h.id];
+        if (rec.srvIndex) {
+            resourceHeap.free(rec.srvIndex);
+        }
+        if (rec.rtvBase != UINT_MAX) {
+            rtvHeap_.freeBatch(rec.rtvBase, rec.rtvSlices);
+        }
+        if (rec.dsvBase != UINT_MAX) {
+            dsvHeap_.freeBatch(rec.dsvBase, rec.dsvSlices);
+        }
         if (!rec.external && rec.resource) {
-            if (rec.srvIndex) {
-                resourceHeap.free(rec.srvIndex);
-            }
             pendingDestroys.push_back({ queue->signal().value, std::move(rec.resource) });
         }
         rec = {};
@@ -784,11 +877,21 @@ namespace gfxd3d12
             textures.emplace_back();
         }
         auto& rec = textures[slot];
-        rec.resource = std::move(resource);
+        rec.resource = resource;  // keep ref for RTV creation below (don't move yet)
         rec.desc.format = format;
         rec.desc.usage = gfx::TextureUsage::RenderTarget;
+        rec.desc.depthOrArraySize = 1;
         rec.currentState = D3D12_RESOURCE_STATE_PRESENT;
         rec.external = true;
+        // Allocate one RTV slot for this back buffer.
+        rec.rtvBase = rtvHeap_.allocateBatch(1);
+        rec.rtvSlices = 1;
+        D3D12_RENDER_TARGET_VIEW_DESC rd{};
+        rd.Format = toDXGI(format);
+        rd.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        rd.Texture2D.MipSlice = 0;
+        d3dDevice->CreateRenderTargetView(resource.Get(), &rd, rtvHeap_.cpuHandle(rec.rtvBase));
+        rec.resource = std::move(resource);
         return { slot };
     }
 
@@ -798,7 +901,11 @@ namespace gfxd3d12
             return;
         }
         std::lock_guard<std::mutex> lk(poolMu);
-        textures[h.id] = {};
+        auto& rec = textures[h.id];
+        if (rec.rtvBase != UINT_MAX) {
+            rtvHeap_.freeBatch(rec.rtvBase, rec.rtvSlices);
+        }
+        rec = {};
         freeTextures.push_back(h.id);
     }
 

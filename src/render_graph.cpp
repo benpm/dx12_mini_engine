@@ -1,17 +1,12 @@
 module;
 
-#include <d3d12.h>
-#include <wrl.h>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-#include "d3dx12_clean.h"
 
 module render_graph;
-
-using Microsoft::WRL::ComPtr;
 
 namespace rg
 {
@@ -80,7 +75,7 @@ namespace rg
                 ResourceHandle h = pass.reads[i];
                 gfx::ResourceState target = pass.readStates[i];
                 if (resources[h.id].currentState != target) {
-                    if (resources[h.id].isExternal) {
+                    if (resources[h.id].gfxHandle.isValid()) {
                         cmd.barrier(
                             resources[h.id].gfxHandle, resources[h.id].currentState, target
                         );
@@ -93,7 +88,7 @@ namespace rg
                 ResourceHandle h = pass.writes[i];
                 gfx::ResourceState target = pass.writeStates[i];
                 if (resources[h.id].currentState != target) {
-                    if (resources[h.id].isExternal) {
+                    if (resources[h.id].gfxHandle.isValid()) {
                         cmd.barrier(
                             resources[h.id].gfxHandle, resources[h.id].currentState, target
                         );
@@ -117,44 +112,36 @@ namespace rg
             }
         }
 
+        gfx::TextureDesc td{};
+        td.format = desc.format;
+        td.width = desc.width;
+        td.height = desc.height;
+        td.mipLevels = desc.mipLevels;
+        td.usage = desc.usage;
+        std::memcpy(td.clearColor, desc.clearColor, sizeof(float) * 4);
+        td.clearDepth = desc.clearDepth;
+        td.clearStencil = desc.clearStencil;
+        td.useClearValue = desc.useClearValue;
+        td.initialState = desc.initialState;
+
         ResourceRecord record;
         record.name = name;
         record.isExternal = false;
-        record.currentState = gfx::ResourceState::Common;
-
-        D3D12_RESOURCE_DESC d3dDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-            desc.format, desc.width, desc.height, 1, desc.mipLevels, 1, 0, desc.flags
-        );
-        record.desc = d3dDesc;
-
-        CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-        D3D12_CLEAR_VALUE* clearValPtr =
-            desc.useClearValue ? const_cast<D3D12_CLEAR_VALUE*>(&desc.clearValue) : nullptr;
-
-        auto* d3dDevice = static_cast<ID3D12Device2*>(graph.device->nativeHandle());
-        d3dDevice->CreateCommittedResource(
-            &heapProps, D3D12_HEAP_FLAG_NONE, &d3dDesc, D3D12_RESOURCE_STATE_COMMON, clearValPtr,
-            IID_PPV_ARGS(&record.resource)
-        );
+        record.gfxHandle = graph.device->createTexture(td);
+        record.currentState = desc.initialState;
 
         ResourceHandle handle = graph.getNextHandle();
         graph.resources.push_back(record);
         return handle;
     }
 
-    void RenderGraph::BuilderImpl::writeRenderTarget(
-        ResourceHandle handle,
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv
-    )
+    void RenderGraph::BuilderImpl::writeRenderTarget(ResourceHandle handle, uint32_t /*arraySlice*/)
     {
         pass.writes.push_back(handle);
         pass.writeStates.push_back(gfx::ResourceState::RenderTarget);
     }
 
-    void RenderGraph::BuilderImpl::writeDepthStencil(
-        ResourceHandle handle,
-        D3D12_CPU_DESCRIPTOR_HANDLE dsv
-    )
+    void RenderGraph::BuilderImpl::writeDepthStencil(ResourceHandle handle, uint32_t /*arraySlice*/)
     {
         pass.writes.push_back(handle);
         pass.writeStates.push_back(gfx::ResourceState::DepthWrite);
@@ -166,13 +153,9 @@ namespace rg
         pass.readStates.push_back(state);
     }
 
-    ID3D12Resource* RenderGraph::BuilderImpl::getResource(ResourceHandle handle)
+    gfx::TextureHandle RenderGraph::BuilderImpl::getTexture(ResourceHandle handle)
     {
-        auto& rec = graph.resources[handle.id];
-        if (rec.isExternal) {
-            return static_cast<ID3D12Resource*>(graph.device->nativeResource(rec.gfxHandle));
-        }
-        return rec.resource.Get();
+        return graph.resources[handle.id].gfxHandle;
     }
 
 }  // namespace rg

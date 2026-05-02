@@ -18,7 +18,6 @@ module;
 #include <cassert>
 #include <cmath>
 #include <vector>
-#include "d3dx12_clean.h"
 #include "profiling.h"
 
 module application;
@@ -241,11 +240,7 @@ void Application::render()
 
         renderGraph.addPass(
             "Shadow Pass",
-            [&](rg::RenderGraphBuilder& builder) {
-                builder.writeDepthStencil(
-                    hShadowMap, shadow.dsvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
-            },
+            [&](rg::RenderGraphBuilder& builder) { builder.writeDepthStencil(hShadowMap); },
             [&, shadowPassAddr = getPassCBAddress(1)](
                 gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
             ) {
@@ -267,9 +262,7 @@ void Application::render()
         renderGraph.addPass(
             "Cubemap Pass",
             [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hCubemap, cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
+                builder.writeRenderTarget(hCubemap);
                 builder.readTexture(hShadowMap);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
@@ -363,14 +356,10 @@ void Application::render()
                 cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
 
                 for (uint32_t face = 0; face < 6; ++face) {
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE faceRtv(
-                        cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart(),
-                        static_cast<INT>(face), cubemapRtvDescSize
-                    );
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE faceDsv(
-                        cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart(),
-                        static_cast<INT>(face), cubemapDsvDescSize
-                    );
+                    D3D12_CPU_DESCRIPTOR_HANDLE faceRtv;
+                    faceRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(cubemapTexture, face));
+                    D3D12_CPU_DESCRIPTOR_HANDLE faceDsv;
+                    faceDsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(cubemapDepth, face));
                     FLOAT clearColor[] = { 0, 0, 0, 1 };
                     this->clearRTV(cmd, faceRtv, clearColor);
                     this->clearDepth(cmd, faceDsv);
@@ -408,11 +397,11 @@ void Application::render()
     renderGraph.addPass(
         "G-Buffer Pass",
         [&](rg::RenderGraphBuilder& builder) {
-            builder.writeRenderTarget(hNormalRT, gbuffer.getRtv(GBuffer::Normal));
-            builder.writeRenderTarget(hAlbedoRT, gbuffer.getRtv(GBuffer::Albedo));
-            builder.writeRenderTarget(hMaterialRT, gbuffer.getRtv(GBuffer::Material));
-            builder.writeRenderTarget(hMotionRT, gbuffer.getRtv(GBuffer::Motion));
-            builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+            builder.writeRenderTarget(hNormalRT);
+            builder.writeRenderTarget(hAlbedoRT);
+            builder.writeRenderTarget(hMaterialRT);
+            builder.writeRenderTarget(hMotionRT);
+            builder.writeDepthStencil(hDepthBuffer);
         },
         [&, gbufferPassAddr =
                 getPassCBAddress(8)](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
@@ -424,7 +413,8 @@ void Application::render()
                                                    gbuffer.getRtv(GBuffer::Albedo),
                                                    gbuffer.getRtv(GBuffer::Material),
                                                    gbuffer.getRtv(GBuffer::Motion) };
-            auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+            D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+            dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
 
             FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
             FLOAT clearZero[] = { 0, 0, 0, 0 };
@@ -473,10 +463,8 @@ void Application::render()
     renderGraph.addPass(
         "Scene Pass",
         [&](rg::RenderGraphBuilder& builder) {
-            builder.writeRenderTarget(
-                hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-            );
-            builder.writeDepthStencil(hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+            builder.writeRenderTarget(hHdrRT);
+            builder.writeDepthStencil(hDepthBuffer);
             builder.readTexture(hShadowMap);
             builder.readTexture(hCubemap);
             // SSAO blur RT is handled internally by SSAO for now, but we read it in shader
@@ -489,7 +477,8 @@ void Application::render()
             FLOAT clearColor[] = { 0, 0, 0, 1 };
             auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
             cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
-            auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+            D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+            dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
             this->clearDepth(cmd, dsv);
 
             cmdRef.bindPipeline(this->pipelineState);
@@ -523,19 +512,16 @@ void Application::render()
         renderGraph.addPass(
             "Gizmo Pass",
             [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
-                builder.writeDepthStencil(
-                    hDepthBuffer, dsvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
+                builder.writeRenderTarget(hHdrRT);
+                builder.writeDepthStencil(hDepthBuffer);
             },
             [&, scenePassAddr = getPassCBAddress(0)](
                 gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder
             ) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Gizmo Pass");
-                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
 
@@ -588,15 +574,14 @@ void Application::render()
         renderGraph.addPass(
             "Grid Pass",
             [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
+                builder.writeRenderTarget(hHdrRT);
                 builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
-                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 cmdRef.bindPipeline(gridPSO);
                 cmd->SetGraphicsRootSignature(gridRootSig.Get());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -616,14 +601,13 @@ void Application::render()
         renderGraph.addPass(
             "Outline Pass",
             [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
+                builder.writeRenderTarget(hHdrRT);
                 builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 PROFILE_ZONE_NAMED("Outline Pass");
-                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
 
                 auto perFrameAddr =
@@ -703,15 +687,14 @@ void Application::render()
         renderGraph.addPass(
             "Billboards Pass",
             [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hHdrRT, bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart()
-                );
+                builder.writeRenderTarget(hHdrRT);
                 builder.readTexture(hDepthBuffer, gfx::ResourceState::DepthRead);
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Billboards Pass");
-                auto dsv = this->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
                 cmd->RSSetViewports(1, &this->viewport);
                 cmd->RSSetScissorRects(1, &this->scissorRect);
@@ -726,12 +709,7 @@ void Application::render()
         "Bloom Pass",
         [&](rg::RenderGraphBuilder& builder) {
             builder.readTexture(hHdrRT);
-            builder.writeRenderTarget(
-                hBackBuffer, CD3DX12_CPU_DESCRIPTOR_HANDLE(
-                                 rtvHeap->GetCPUDescriptorHandleForHeapStart(),
-                                 static_cast<INT>(curBackBufIdx), rtvDescSize
-                             )
-            );
+            builder.writeRenderTarget(hBackBuffer);
         },
         [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
             auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
@@ -753,10 +731,8 @@ void Application::render()
             skyParams.tanHalfFov = std::tan(cam.fov * 0.5f);
             skyParams.time = lightTime;
 
-            CD3DX12_CPU_DESCRIPTOR_HANDLE backBufRtv(
-                rtvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(curBackBufIdx),
-                rtvDescSize
-            );
+            D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv;
+            backBufRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(backBuffer));
             bloom.render(
                 cmdRef, backBufRtv, clientWidth, clientHeight, bloomThreshold, bloomIntensity,
                 tonemapMode, skyParams
@@ -768,14 +744,7 @@ void Application::render()
     if (!this->runtimeConfig.skipImGui) {
         renderGraph.addPass(
             "ImGui Pass",
-            [&](rg::RenderGraphBuilder& builder) {
-                builder.writeRenderTarget(
-                    hBackBuffer, CD3DX12_CPU_DESCRIPTOR_HANDLE(
-                                     rtvHeap->GetCPUDescriptorHandleForHeapStart(),
-                                     static_cast<INT>(curBackBufIdx), rtvDescSize
-                                 )
-                );
-            },
+            [&](rg::RenderGraphBuilder& builder) { builder.writeRenderTarget(hBackBuffer); },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("ImGui Pass");

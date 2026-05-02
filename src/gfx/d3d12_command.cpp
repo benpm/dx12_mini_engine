@@ -59,13 +59,36 @@ namespace gfxd3d12
         return i;
     }
 
+    uint32_t BindlessHeap::allocateBatch(uint32_t count)
+    {
+        if (count == 0) {
+            return UINT32_MAX;
+        }
+        uint32_t base = next.fetch_add(count, std::memory_order_relaxed);
+        if (base + count > capacity_) {
+            throw std::runtime_error("BindlessHeap: out of descriptors (batch)");
+        }
+        return base;
+    }
+
     void BindlessHeap::free(uint32_t index)
     {
-        if (index == 0) {
+        if (index == 0 || index == UINT32_MAX) {
             return;
         }
         std::lock_guard<std::mutex> lk(mu);
         freeList.push_back(index);
+    }
+
+    void BindlessHeap::freeBatch(uint32_t base, uint32_t count)
+    {
+        if (base == UINT32_MAX || count == 0) {
+            return;
+        }
+        std::lock_guard<std::mutex> lk(mu);
+        for (uint32_t i = 0; i < count; ++i) {
+            freeList.push_back(base + i);
+        }
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE BindlessHeap::cpuHandle(uint32_t index) const
@@ -224,10 +247,52 @@ namespace gfxd3d12
 
     void CommandList::beginRenderPass(const gfx::RenderPassDesc& d)
     {
-        // P0: minimal — no actual descriptor writes since we have no RTV heap yet.
-        // Real impl lands later; for now just clear via OMSetRenderTargets(nullptr).
-        cmd->OMSetRenderTargets(0, nullptr, FALSE, nullptr);
-        (void)d;
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[8];
+        uint32_t rtvCount = 0;
+        for (uint32_t i = 0; i < d.numColorAttachments; ++i) {
+            const auto& ca = d.colorAttachments[i];
+            if (!ca.texture.isValid()) {
+                continue;
+            }
+            rtvHandles[rtvCount].ptr =
+                static_cast<SIZE_T>(device->rtvHandle(ca.texture, ca.arraySlice));
+            ++rtvCount;
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE dsvH{};
+        bool hasDsv = d.hasDepth && d.depthAttachment.texture.isValid();
+        if (hasDsv) {
+            dsvH.ptr = static_cast<SIZE_T>(
+                device->dsvHandle(d.depthAttachment.texture, d.depthAttachment.arraySlice)
+            );
+        }
+
+        cmd->OMSetRenderTargets(
+            rtvCount, rtvCount > 0 ? rtvHandles : nullptr, FALSE, hasDsv ? &dsvH : nullptr
+        );
+
+        for (uint32_t i = 0; i < rtvCount; ++i) {
+            if (d.colorAttachments[i].loadOp == gfx::LoadOp::Clear) {
+                cmd->ClearRenderTargetView(
+                    rtvHandles[i], d.colorAttachments[i].clearColor, 0, nullptr
+                );
+            }
+        }
+        if (hasDsv) {
+            const auto& da = d.depthAttachment;
+            D3D12_CLEAR_FLAGS clearFlags = {};
+            if (da.depthLoadOp == gfx::LoadOp::Clear) {
+                clearFlags |= D3D12_CLEAR_FLAG_DEPTH;
+            }
+            if (da.stencilLoadOp == gfx::LoadOp::Clear) {
+                clearFlags |= D3D12_CLEAR_FLAG_STENCIL;
+            }
+            if (clearFlags) {
+                cmd->ClearDepthStencilView(
+                    dsvH, clearFlags, da.clearDepth, da.clearStencil, 0, nullptr
+                );
+            }
+        }
     }
 
     void CommandList::setViewport(const gfx::Viewport& vp)

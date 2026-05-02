@@ -94,8 +94,6 @@ export class Application
 
     CommandQueue cmdQueue;
     gfx::TextureHandle backBuffers[nBuffers];
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    UINT rtvDescSize;
     UINT curBackBufIdx;
 
     rg::RenderGraph renderGraph;
@@ -119,7 +117,6 @@ export class Application
 
     // Depth buffer + scene PSOs
     gfx::TextureHandle depthBuffer{};
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     // Bindless SRV index for the shadow map typed view (R32Float of R32Typeless resource).
     // Created via gfxDevice->createTypedSrv() after shadow.createResources().
@@ -153,10 +150,6 @@ export class Application
     // Cubemap reflections
     gfx::TextureHandle cubemapTexture{};
     gfx::TextureHandle cubemapDepth{};
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapRtvHeap;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cubemapDsvHeap;
-    UINT cubemapRtvDescSize = 0;
-    UINT cubemapDsvDescSize = 0;
     uint32_t cubemapResolution = 128;
     bool cubemapEnabled = true;
     float cubemapNearPlane = 0.1f;
@@ -283,9 +276,6 @@ export class Application
         FLOAT depth = 1.0f
     );
     void resizeDepthBuffer(uint32_t width, uint32_t height);
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>
-    createDescHeap(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors);
-    void updateRenderTargetViews(Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap);
     void setFullscreen(bool val);
     void flush();
     bool loadContent();

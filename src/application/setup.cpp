@@ -228,14 +228,6 @@ bool Application::loadContent()
         scene.ecsWorld.entity().set(tf).set(meshRef).add<TerrainEntity>();
     }
 
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-        dsvHeapDesc.NumDescriptors = 1;
-        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        chkDX(d3dDev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&this->dsvHeap)));
-    }
-
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
     if (FAILED(d3dDev->CheckFeatureSupport(
@@ -374,7 +366,6 @@ bool Application::loadContent()
 
 void Application::createCubemapResources()
 {
-    auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
     if (cubemapTexture.isValid()) {
         gfxDevice->destroy(cubemapTexture);
     }
@@ -394,22 +385,6 @@ void Application::createCubemapResources()
         td.debugName = "cubemap";
         cubemapTexture = gfxDevice->createTexture(td);
     }
-    auto* cubemapRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapTexture));
-
-    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 6,
-                                               D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
-    chkDX(d3dDev->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&cubemapRtvHeap)));
-    D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = { DXGI_FORMAT_R11G11B10_FLOAT,
-                                              D3D12_RTV_DIMENSION_TEXTURE2DARRAY };
-    rtvDesc.Texture2DArray.ArraySize = 1;
-    rtvDesc.Texture2DArray.MipSlice = 0;
-    UINT rtvSize = d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(cubemapRtvHeap->GetCPUDescriptorHandleForHeapStart());
-    for (int i = 0; i < 6; ++i) {
-        rtvDesc.Texture2DArray.FirstArraySlice = i;
-        d3dDev->CreateRenderTargetView(cubemapRes, &rtvDesc, rtvHandle);
-        rtvHandle.Offset(1, rtvSize);
-    }
 
     {
         gfx::TextureDesc td{};
@@ -424,25 +399,8 @@ void Application::createCubemapResources()
         td.debugName = "cubemap_depth";
         cubemapDepth = gfxDevice->createTexture(td);
     }
-    auto* cubemapDepthRes = static_cast<ID3D12Resource*>(gfxDevice->nativeResource(cubemapDepth));
-
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = { D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 6,
-                                               D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0 };
-    chkDX(d3dDev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&cubemapDsvHeap)));
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = { DXGI_FORMAT_D32_FLOAT,
-                                              D3D12_DSV_DIMENSION_TEXTURE2DARRAY };
-    dsvDesc.Texture2DArray.ArraySize = 1;
-    dsvDesc.Texture2DArray.MipSlice = 0;
-    UINT dsvSize = d3dDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(cubemapDsvHeap->GetCPUDescriptorHandleForHeapStart());
-    for (int i = 0; i < 6; ++i) {
-        dsvDesc.Texture2DArray.FirstArraySlice = i;
-        d3dDev->CreateDepthStencilView(cubemapDepthRes, &dsvDesc, dsvHandle);
-        dsvHandle.Offset(1, dsvSize);
-    }
-    // The cubemap SRV is auto-created in the gfx bindless heap via TextureUsage::ShaderResource.
-    // Access it via gfxDevice->bindlessSrvIndex(cubemapTexture) in the render pass.
-    (void)cubemapRes;
+    // RTVs and DSVs for all 6 faces are created automatically by the gfx backend.
+    // Access via gfxDevice->rtvHandle(cubemapTexture, face) / dsvHandle(cubemapDepth, face).
 }
 
 void Application::createGBufferPSO()
@@ -508,15 +466,16 @@ void Application::onResize(uint32_t width, uint32_t height)
     if (this->isInitialized) {
         this->cmdQueue.flush();
         this->renderGraph.reset();
-        // gfxSwapChain->resize() releases its old back-buffer texture handles
-        // internally before calling ResizeBuffers. Just clear our cached
-        // handles — the new ones come from updateRenderTargetViews below.
+        // gfxSwapChain->resize() releases old back-buffer textures internally.
+        // Clear our cached handles; new ones come from gfxSwapChain->backBufferAt below.
         for (int i = 0; i < this->nBuffers; ++i) {
             this->backBuffers[i] = {};
         }
         this->gfxSwapChain->resize(this->clientWidth, this->clientHeight);
         this->curBackBufIdx = this->gfxSwapChain->currentIndex();
-        this->updateRenderTargetViews(this->rtvHeap);
+        for (int i = 0; i < this->nBuffers; ++i) {
+            this->backBuffers[i] = this->gfxSwapChain->backBufferAt(i);
+        }
         this->viewport = CD3DX12_VIEWPORT(
             0.0f, 0.0f, static_cast<float>(this->clientWidth),
             static_cast<float>(this->clientHeight)

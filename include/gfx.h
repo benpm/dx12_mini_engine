@@ -211,6 +211,15 @@ namespace gfx
         // Needed to call SetDescriptorHeaps with the gfx-owned shader-visible heap.
         virtual void* srvHeapNative() const = 0;
 
+        // Returns the CPU descriptor handle (D3D12_CPU_DESCRIPTOR_HANDLE.ptr) for
+        // the RTV of a texture at a given array slice. Only valid for textures created
+        // with TextureUsage::RenderTarget. arraySlice selects face/layer (0 for 2D).
+        virtual uint64_t rtvHandle(TextureHandle h, uint32_t arraySlice = 0) const = 0;
+
+        // Returns the CPU descriptor handle for the DSV of a texture.
+        // Only valid for textures created with TextureUsage::DepthStencil.
+        virtual uint64_t dsvHandle(TextureHandle h, uint32_t arraySlice = 0) const = 0;
+
         virtual IQueue* graphicsQueue() = 0;
         virtual std::unique_ptr<ISwapChain> createSwapChain(const SwapChainDesc& desc) = 0;
         virtual void retireCompletedResources() = 0;

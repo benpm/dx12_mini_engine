@@ -289,7 +289,10 @@ namespace gfxd3d12
         );
 
         uint32_t allocate();
+        // Allocates `count` consecutive slots from the bump allocator (bypasses free list).
+        uint32_t allocateBatch(uint32_t count);
         void free(uint32_t index);
+        void freeBatch(uint32_t base, uint32_t count);
 
         D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle(uint32_t index) const;
         D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle(uint32_t index) const;
@@ -318,6 +321,12 @@ namespace gfxd3d12
         D3D12_RESOURCE_STATES currentState = D3D12_RESOURCE_STATE_COMMON;
         uint32_t srvIndex = 0;
         uint32_t uavIndex = 0;
+        // Base index into Device::rtvHeap_ / dsvHeap_. For arrays (cubemaps),
+        // slice i uses index (rtvBase + i). UINT_MAX = no view allocated.
+        uint32_t rtvBase = UINT_MAX;
+        uint32_t dsvBase = UINT_MAX;
+        uint32_t rtvSlices = 0;  // number of consecutive RTV slots allocated
+        uint32_t dsvSlices = 0;  // number of consecutive DSV slots allocated
         bool external = false;
     };
 
@@ -562,6 +571,8 @@ namespace gfxd3d12
         uint64_t srvGpuDescriptorHandle(uint32_t bindlessIndex) const override;
         uint32_t createTypedSrv(gfx::TextureHandle h, gfx::Format viewFormat) override;
         void* srvHeapNative() const override { return resourceHeap.native(); }
+        uint64_t rtvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;
+        uint64_t dsvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;
 
         gfx::IQueue* graphicsQueue() override { return queue.get(); }
         std::unique_ptr<gfx::ISwapChain> createSwapChain(const gfx::SwapChainDesc& desc) override;
@@ -605,6 +616,8 @@ namespace gfxd3d12
         void createBindlessRootSignature();
         void initBindlessHeaps(uint32_t capacity);
         void writeSrvForTexture(TextureRecord& tex);
+        void writeRtvForTexture(TextureRecord& tex);
+        void writeDsvForTexture(TextureRecord& tex);
 
         gfx::DeviceDesc desc;
         gfx::Capabilities capabilities;
@@ -616,6 +629,8 @@ namespace gfxd3d12
         std::unique_ptr<Queue> queue;
         BindlessHeap resourceHeap;
         BindlessHeap samplerHeap_;
+        BindlessHeap rtvHeap_;  // CPU-only, non-shader-visible
+        BindlessHeap dsvHeap_;  // CPU-only, non-shader-visible
 
         std::vector<TextureRecord> textures{ TextureRecord{} };
         std::vector<BufferRecord> buffers{ BufferRecord{} };
