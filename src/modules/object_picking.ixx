@@ -55,8 +55,6 @@ export class ObjectPicker
 
     gfx::TextureHandle idRT{};
     gfx::TextureHandle depthBuffer{};
-    ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    ComPtr<ID3D12DescriptorHeap> dsvHeap;
     ReadbackSlot readbackSlots[readbackRingSize];
     uint32_t writeSlot = 0;
     uint32_t width_ = 0;

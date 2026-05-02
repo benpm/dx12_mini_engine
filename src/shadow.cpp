@@ -2,7 +2,6 @@ module;
 
 #include <d3d12.h>
 #include <DirectXMath.h>
-#include <wrl.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -12,7 +11,6 @@ module;
 
 module shadow;
 
-using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
 static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
@@ -45,11 +43,8 @@ void ShadowRenderer::createResources(
     D3D12_SHADER_BYTECODE vs
 )
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     devForDestroy = &dev;
 
-    // Shadow depth texture (R32_TYPELESS + D32_FLOAT DSV; the caller creates
-    // a typed R32_FLOAT SRV via dev.createTypedSrv() and stores the index).
     {
         gfx::TextureDesc td{};
         td.width = mapSize;
@@ -63,22 +58,6 @@ void ShadowRenderer::createResources(
         td.clearStencil = 0;
         td.debugName = "shadow_map";
         shadowMap = dev.createTexture(td);
-    }
-    auto* shadowRes = static_cast<ID3D12Resource*>(dev.nativeResource(shadowMap));
-
-    // DSV heap + view
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
-        dsvDesc.NumDescriptors = 1;
-        dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        chkDX(device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&dsvHeap)));
-
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
-        dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
-        dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(
-            shadowRes, &dsvViewDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
     }
 
     reloadPSO(dev, rootSig, vs);
@@ -174,7 +153,8 @@ void ShadowRenderer::render(
 )
 {
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-    auto shadowDsv = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE shadowDsv;
+    shadowDsv.ptr = static_cast<SIZE_T>(devForDestroy->dsvHandle(shadowMap));
     cmdList->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     cmdRef.bindPipeline(pso);

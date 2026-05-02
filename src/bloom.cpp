@@ -45,9 +45,13 @@ static void transitionResource(
 BloomRenderer::~BloomRenderer()
 {
     if (devForDestroy) {
-        if (hdrRT.isValid()) devForDestroy->destroy(hdrRT);
+        if (hdrRT.isValid()) {
+            devForDestroy->destroy(hdrRT);
+        }
         for (auto& m : bloomMips) {
-            if (m.isValid()) devForDestroy->destroy(m);
+            if (m.isValid()) {
+                devForDestroy->destroy(m);
+            }
         }
     }
 }
@@ -94,20 +98,12 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.NumDescriptors = 1 + bloomMipCount;
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&bloomRtvHeap)));
-    }
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = 1 + bloomMipCount;
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         chkDX(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&srvHeap)));
     }
     srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    UINT rtvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(bloomRtvHeap->GetCPUDescriptorHandleForHeapStart());
     CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(srvHeap->GetCPUDescriptorHandleForHeapStart());
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -117,15 +113,11 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
     srvDesc.Texture2D.MipLevels = 1;
 
     auto* hdrRes = static_cast<ID3D12Resource*>(dev.nativeResource(hdrRT));
-    device->CreateRenderTargetView(hdrRes, nullptr, rtvHandle);
-    rtvHandle.Offset(static_cast<INT>(rtvInc));
     device->CreateShaderResourceView(hdrRes, &srvDesc, srvHandle);
     srvHandle.Offset(static_cast<INT>(srvDescSize));
 
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
         auto* mipRes = static_cast<ID3D12Resource*>(dev.nativeResource(bloomMips[i]));
-        device->CreateRenderTargetView(mipRes, nullptr, rtvHandle);
-        rtvHandle.Offset(static_cast<INT>(rtvInc));
         device->CreateShaderResourceView(mipRes, &srvDesc, srvHandle);
         srvHandle.Offset(static_cast<INT>(srvDescSize));
     }
@@ -211,7 +203,6 @@ void BloomRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
             m = {};
         }
     }
-    bloomRtvHeap.Reset();
     srvHeap.Reset();
     createTexturesAndHeaps(dev, width, height);
 }
@@ -316,17 +307,12 @@ void BloomRenderer::render(
     cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    UINT rtvInc;
-    {
-        ComPtr<ID3D12Device> dev;
-        srvHeap->GetDevice(IID_PPV_ARGS(&dev));
-        rtvInc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    }
-    auto bloomRtvBase = bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
     auto srvGpuBase = srvHeap->GetGPUDescriptorHandleForHeapStart();
 
-    auto getRtv = [&](uint32_t idx) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        return CD3DX12_CPU_DESCRIPTOR_HANDLE(bloomRtvBase, static_cast<INT>(idx), rtvInc);
+    auto getRtv = [&](gfx::TextureHandle h) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        D3D12_CPU_DESCRIPTOR_HANDLE rv;
+        rv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(h));
+        return rv;
     };
     auto getSrvGpu = [&](uint32_t idx) -> D3D12_GPU_DESCRIPTOR_HANDLE {
         return CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuBase, static_cast<INT>(idx), srvDescSize);
@@ -357,7 +343,7 @@ void BloomRenderer::render(
     );
     cmdList->SetPipelineState(prefilterPSO.Get());
     cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(0));
-    auto mip0Rtv = getRtv(1);
+    auto mip0Rtv = getRtv(bloomMips[0]);
     cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
     CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
     D3D12_RECT sr = { 0, 0, (LONG)mipW[0], (LONG)mipH[0] };
@@ -376,7 +362,7 @@ void BloomRenderer::render(
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(1 + i));
-        auto rtv = getRtv(2 + i);
+        auto rtv = getRtv(bloomMips[i + 1]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
         sr = { 0, 0, (LONG)mipW[i + 1], (LONG)mipH[i + 1] };
@@ -399,14 +385,14 @@ void BloomRenderer::render(
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(2 + i));
-        auto rtv = getRtv(1 + i);
+        auto rtv = getRtv(bloomMips[i]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
         sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]),
-               1.0f, 0 };
+        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]), 1.0f,
+               0 };
         cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }

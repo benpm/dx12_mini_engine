@@ -79,20 +79,6 @@ void SsaoRenderer::transitionResource(
     cmdList->ResourceBarrier(1, &b);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE SsaoRenderer::ssaoRtvCpu() const
-{
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        rtvHeap->GetCPUDescriptorHandleForHeapStart(), 0, rtvDescSize
-    );
-}
-
-D3D12_CPU_DESCRIPTOR_HANDLE SsaoRenderer::blurRtvCpu() const
-{
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        rtvHeap->GetCPUDescriptorHandleForHeapStart(), 1, rtvDescSize
-    );
-}
-
 void SsaoRenderer::createRTs(
     gfx::IDevice& dev,
     uint32_t width,
@@ -154,7 +140,6 @@ void SsaoRenderer::createRTs(
         td.debugName = "ssao_rt";
         ssaoRT = dev.createTexture(td);
         auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoRT));
-        device->CreateRenderTargetView(res, nullptr, ssaoRtvCpu());
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R8_UNORM;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -177,8 +162,6 @@ void SsaoRenderer::createRTs(
         td.initialState = gfx::ResourceState::PixelShaderResource;
         td.debugName = "ssao_blur_rt";
         ssaoBlurRT = dev.createTexture(td);
-        auto* res = static_cast<ID3D12Resource*>(dev.nativeResource(ssaoBlurRT));
-        device->CreateRenderTargetView(res, nullptr, blurRtvCpu());
     }
 }
 
@@ -192,15 +175,8 @@ void SsaoRenderer::createResources(
 {
     devForDestroy = &dev;
     auto* device = nativeDev(dev);
-    rtvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = 2;
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&rtvHeap));
-    }
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.NumDescriptors = 4;
@@ -434,7 +410,8 @@ void SsaoRenderer::render(
             cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
-        auto rtv = ssaoRtvCpu();
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv;
+        rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoRT));
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
         cmdRef.bindPipeline(ssaoPSO);
@@ -459,7 +436,8 @@ void SsaoRenderer::render(
             cmdRef, ssaoBlurRtRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
-        auto rtv = blurRtvCpu();
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv;
+        rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoBlurRT));
         cmdRef.bindPipeline(blurPSO);
         cmdList->SetGraphicsRootSignature(blurRootSig.Get());
         cmdList->RSSetViewports(1, &vp);

@@ -409,10 +409,10 @@ void Application::render()
             PROFILE_ZONE_NAMED("G-Buffer Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");
 
-            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[] = { gbuffer.getRtv(GBuffer::Normal),
-                                                   gbuffer.getRtv(GBuffer::Albedo),
-                                                   gbuffer.getRtv(GBuffer::Material),
-                                                   gbuffer.getRtv(GBuffer::Motion) };
+            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[4];
+            for (int i = 0; i < 4; ++i) {
+                rtvs[i].ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(gbuffer.resources[i]));
+            }
             D3D12_CPU_DESCRIPTOR_HANDLE dsv;
             dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
 
@@ -475,7 +475,8 @@ void Application::render()
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Scene");
             // Clear to black — Rayleigh sky fills background in composite pass
             FLOAT clearColor[] = { 0, 0, 0, 1 };
-            auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+            D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
+            hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
             cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
             D3D12_CPU_DESCRIPTOR_HANDLE dsv;
             dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
@@ -523,7 +524,8 @@ void Application::render()
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 this->clearDepth(cmd, dsv);  // clear depth so gizmo renders on top
-                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
+                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
 
                 cmdRef.bindPipeline(this->pipelineState);
                 cmd->SetGraphicsRootSignature(this->rootSignature.Get());
@@ -579,7 +581,8 @@ void Application::render()
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
+                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
                 cmdRef.bindPipeline(gridPSO);
@@ -608,7 +611,8 @@ void Application::render()
                 PROFILE_ZONE_NAMED("Outline Pass");
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
+                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
 
                 auto perFrameAddr =
                     static_cast<ID3D12Resource*>(
@@ -695,7 +699,8 @@ void Application::render()
                 PROFILE_ZONE_NAMED("Billboards Pass");
                 D3D12_CPU_DESCRIPTOR_HANDLE dsv;
                 dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-                auto hdrRtv = bloom.bloomRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
+                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
                 cmd->RSSetViewports(1, &this->viewport);
                 cmd->RSSetScissorRects(1, &this->scissorRect);
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);

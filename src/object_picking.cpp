@@ -47,11 +47,9 @@ void ObjectPicker::createResources(
 )
 {
     devForDestroy = &dev;
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     width_ = width;
     height_ = height;
 
-    // --- ID render target (R32_UINT) ---
     {
         gfx::TextureDesc td{};
         td.width = width;
@@ -65,7 +63,6 @@ void ObjectPicker::createResources(
         idRT = dev.createTexture(td);
     }
 
-    // --- Depth buffer ---
     {
         gfx::TextureDesc td{};
         td.width = width;
@@ -77,36 +74,6 @@ void ObjectPicker::createResources(
         td.clearDepth = 1.0f;
         td.debugName = "picker_depth";
         depthBuffer = dev.createTexture(td);
-    }
-    auto* idRes = static_cast<ID3D12Resource*>(dev.nativeResource(idRT));
-    auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
-
-    // --- RTV heap ---
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 1;
-        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        chkDX(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeap)));
-        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-        rtvDesc.Format = DXGI_FORMAT_R32_UINT;
-        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-        device->CreateRenderTargetView(
-            idRes, &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-    }
-
-    // --- DSV heap ---
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 1;
-        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        chkDX(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&dsvHeap)));
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-        dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
-        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(
-            depthRes, &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
     }
 
     // --- Readback buffer ring ---
@@ -164,14 +131,12 @@ void ObjectPicker::createResources(
 void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
     devForDestroy = &dev;
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
     if (width == 0 || height == 0 || (width == width_ && height == height_)) {
         return;
     }
     width_ = width;
     height_ = height;
 
-    // Recreate ID RT
     if (idRT.isValid()) {
         dev.destroy(idRT);
     }
@@ -187,17 +152,7 @@ void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
         td.debugName = "picker_idRT";
         idRT = dev.createTexture(td);
     }
-    auto* idRes = static_cast<ID3D12Resource*>(dev.nativeResource(idRT));
-    {
-        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-        rtvDesc.Format = DXGI_FORMAT_R32_UINT;
-        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-        device->CreateRenderTargetView(
-            idRes, &rtvDesc, rtvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-    }
 
-    // Recreate depth buffer
     if (depthBuffer.isValid()) {
         dev.destroy(depthBuffer);
     }
@@ -213,25 +168,20 @@ void ObjectPicker::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
         td.debugName = "picker_depth";
         depthBuffer = dev.createTexture(td);
     }
-    auto* depthRes = static_cast<ID3D12Resource*>(dev.nativeResource(depthBuffer));
-    {
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-        dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
-        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(
-            depthRes, &dsvDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart()
-        );
-    }
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getRTV() const
 {
-    return rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE h;
+    h.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(idRT));
+    return h;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE ObjectPicker::getDSV() const
 {
-    return dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE h;
+    h.ptr = static_cast<SIZE_T>(devForDestroy->dsvHandle(depthBuffer));
+    return h;
 }
 
 void ObjectPicker::copyPickedPixel(gfx::ICommandList& cmdRef, uint32_t x, uint32_t y)

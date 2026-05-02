@@ -20,9 +20,6 @@ export class SsaoRenderer
     float bias = 0.025f;
     int kernelSize = 32;
 
-    D3D12_CPU_DESCRIPTOR_HANDLE ssaoRtvCpu() const;
-    D3D12_CPU_DESCRIPTOR_HANDLE blurRtvCpu() const;
-
     void createResources(
         gfx::IDevice& dev,
         uint32_t width,
@@ -61,9 +58,7 @@ export class SsaoRenderer
     gfx::BufferHandle cbvBuffer{};
     void* cbvMapped = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
-    UINT rtvDescSize = 0;
     UINT srvDescSize = 0;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> ssaoRootSig;

@@ -29,7 +29,6 @@ export class ShadowRenderer
     static constexpr uint32_t mapSize = 2048;
 
     gfx::TextureHandle shadowMap{};
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     gfx::PipelineHandle pso{};
     gfx::ShaderHandle vsHandle{};
     gfx::IDevice* devForDestroy = nullptr;
