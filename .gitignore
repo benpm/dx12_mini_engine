@@ -6,3 +6,4 @@ imgui.ini
 config.json
 resources/external_scenes
 *.txt
+.obsidian

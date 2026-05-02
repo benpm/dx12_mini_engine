@@ -1,29 +1,13 @@
 If:
   PathMatch:
-    - build/.*
-    - .*/pch\.hpp
-Diagnostics:
-  Suppress: "*"
-Index:
-  Background: Skip
-
----
-If:
-  PathMatch:
     - .*\.(cpp|hpp|h)$
-  PathExclude:
-    - include/llvm-c/.*
-    - external/.*
-    - build/.*
-    - .*/pch\..*
 
 CompileFlags:
   CompilationDatabase: build
-  Add:
-    - -Ibuild/debug
-    - -Iinclude
 
 Diagnostics:
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
   Includes:
     AnalyzeAngledIncludes: true
   Suppress:
