@@ -144,29 +144,28 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - P4 ✅ — `GBuffer::createResources/resize/transition` take `gfx::IDevice&` / `gfx::ICommandList&`.
 - P5 ✅ — `ShadowRenderer::createResources/reloadPSO/render` take gfx types.
 - P6 ✅ — `SsaoRenderer::createResources/resize/render/transitionResource` take gfx types.
-- P7 ✅ — `BloomRenderer::createResources/resize/render/reloadPipelines` take gfx types. PSO build extracted to a file-static helper.
+- P7 ✅ — `BloomRenderer::createResources/resize/render/reloadPipelines` take gfx types. `hdrRT` + `bloomMips[]` are `gfx::TextureHandle`; PSO/root sig/heaps stay ComPtr.
 - P8 ✅ — `OutlineRenderer::createResources/reloadPSO/render` take gfx types.
 - P9 ✅ — `ObjectPicker::createResources/resize/copyPickedPixel` take gfx types.
-- P10 ✅ — `BillboardRenderer::init/render` take gfx types. `ImGuiLayer::init` takes `gfx::IDevice&`.
+- P10 ✅ — `BillboardRenderer::init/render` take gfx types. `quadVertexBuffer`+`instanceBuffer` are `gfx::BufferHandle`. `ImGuiLayer::init` takes `gfx::IDevice&`. `init()` no longer takes raw `ID3D12CommandQueue*` — uses `dev.graphicsQueue()->nativeHandle()` internally.
 - P11 ✅ — `GizmoState::init` takes `gfx::IDevice&`.
-- P12 (partial) ✅ — `Scene::createMegaBuffers/createDrawDataBuffers/appendToMegaBuffers/loadTeapot/loadGltf/updateLightBuffer/updateTLAS/buildBlasForMesh` all take `gfx::IDevice&`. The `CommandQueue&` parameter remains because `CommandQueue` itself still owns the fence-tracked upload pool; full dissolution into `gfx::IQueue` is deferred.
+- P12 ✅ — `Scene::createMegaBuffers/createDrawDataBuffers/appendToMegaBuffers/loadTeapot/loadGltf/updateLightBuffer/updateTLAS/buildBlasForMesh` all take `gfx::IDevice&`. Mega VB/IB, lightBuffer, perObjectBuffer, perFrameBuffer, perPassBuffer are `gfx::BufferHandle`. `appendToMegaBuffers` uses `dev.uploadBuffer()` — `PendingUploadBatch`/`pendingUploads`/`trackUploadBatch`/`retireCompletedUploads` removed. BLAS scratch lifetime now uses synchronous `cmdQueue.waitForFenceVal()`.
 - P13 (partial) ✅ — Application's scene/gbuffer/grid PSOs are `gfx::PipelineHandle` (use `nativeRootSignatureOverride`). VS/PS bytecodes go through `gfx::ShaderHandle`. The main `depthBuffer`, cubemap color + depth, and back buffers are all `gfx::TextureHandle`. `gfx::IDevice::nativeResource(handle)` returns the underlying `ID3D12Resource*` for D3D12-specific calls; `gfx::ISwapChain::backBufferAt(i)` returns each back-buffer's gfx handle.
-- P12 (more of the partial) ✅ — Scene's mega VB/IB, lightBuffer, perObjectBuffer, perFrameBuffer, perPassBuffer migrated to `gfx::BufferHandle`. Persistent maps go through `IDevice::map()`.
 - P2 (bindless shader rewrite) — postponed; high-risk and orthogonal to subsystem signature migration.
-- P13 (remainder) — `dsvHeap`, `cubemapRtvHeap`, `cubemapDsvHeap` still ComPtr-typed (descriptor heaps that gfx doesn't model); ditto the engine's main rootSignature ComPtr (slated for elimination by the bindless rewrite).
-- P12 (remainder) — fence-keyed `pendingUploads` still uses ComPtr; BLAS/TLAS resources are RT-only and capability-gated; subsystem ComPtrs (Bloom mips, SSAO RTs, Picker readback ring, etc.) all still raw.
+- P13 (remainder) — `dsvHeap`, `cubemapRtvHeap`, `cubemapDsvHeap`, `rtvHeap` still ComPtr-typed (descriptor heaps that gfx doesn't model); ditto the engine's main rootSignature/gridRootSig ComPtrs (slated for elimination by the bindless rewrite).
+- P12 (remainder) — BLAS/TLAS resources (`tlasBuffer`, `tlasScratch`, `tlasInstances`, `blasMap`) still use ComPtr (RT-only, capability-gated). `spriteTexture` in BillboardRenderer stays ComPtr (loaded via DirectX Toolkit; no `adoptTexture` API in gfx yet).
 - P14 — pending.
 
 **`gfx::Format`** now covers RGB32Float, D16Unorm, D24UnormS8Uint, D32Float, D32FloatS8X24Uint, and the typeless variants R32Typeless / R32G8X24Typeless. **`gfx::TextureDesc::viewFormat`** specifies a typed format used for the optimized clear value when the resource format is typeless. The bug where `createGraphicsPipeline` left `pd.DepthStencilState.FrontFace/BackFace` zero-initialised when stencil was enabled is fixed. The gfx backend no longer auto-adds `DENY_SHADER_RESOURCE` for depth-stencil resources, and skips auto-SRV creation when the resource format is typeless (caller creates their own typed SRV via `nativeResource()`).
 
-**What still leaks D3D12 in subsystems (all deferred to P12+):**
-- `ComPtr<ID3D12Resource>` data members for owned textures/buffers.
-- `ComPtr<ID3D12DescriptorHeap>` data members + `D3D12_CPU/GPU_DESCRIPTOR_HANDLE` accessor returns.
-- Root signatures, PSOs, and shader bytecode passed as `ID3D12RootSignature*` / `D3D12_SHADER_BYTECODE`.
-- `D3D12_RESOURCE_STATES` on transition/barrier-emitting methods.
-- `D3D12_VERTEX_BUFFER_VIEW` / `D3D12_INDEX_BUFFER_VIEW` parameters.
+**What still leaks D3D12 in subsystems:**
+- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only, capability-gated) and `spriteTexture` (WIC-loaded; no `adoptTexture` in gfx yet).
+- `ComPtr<ID3D12DescriptorHeap>` in all subsystems and Application (gfx doesn't model descriptor heaps — deferred to bindless rewrite).
+- Root signatures and PSOs in subsystems that use custom root sigs (SSAO, Bloom, Billboard — deferred to bindless).
+- `D3D12_VERTEX_BUFFER_VIEW` / `D3D12_INDEX_BUFFER_VIEW` for mega-buffers and billboard VBs (use `nativeResource()->GetGPUVirtualAddress()` pattern).
+- `D3D12_RESOURCE_STATES` on internal barrier-emitting calls in render passes.
 
-These all migrate together when imported textures become `gfx::TextureHandle`s and the bindless model lands.
+These migrate when the bindless model lands (P2) and gfx gains descriptor heap + root sig creation APIs.
 
 **Bindless model**: a single global SRV/UAV heap (default 65k descriptors) and a single sampler heap; `IDevice::bindlessSrvIndex(handle)` returns the slot. Bindless root signature: `[16 root constants b0][CBV b1][CBV b2][SRV unbounded table][sampler unbounded table]`.
 
