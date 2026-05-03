@@ -39,20 +39,6 @@ export import lua_scripting;
 export import gbuffer;
 export import gfx;
 
-// Global application data and state
-export namespace app_slots
-{
-    // Root signature slot assignments (8-param layout, VOLATILE descriptor tables)
-    inline constexpr UINT rootPerFrameCB = 0;
-    inline constexpr UINT rootPerPassCB = 1;
-    inline constexpr UINT rootDrawIndex = 2;
-    inline constexpr UINT rootOutlineParams = 3;
-    inline constexpr UINT rootPerObjectSrv = 4;  // SRV for per-object StructuredBuffer
-    inline constexpr UINT rootShadowSrv = 5;
-    inline constexpr UINT rootCubemapSrv = 6;
-    inline constexpr UINT rootSsaoSrv = 7;
-}  // namespace app_slots
-
 export class Application
 {
    public:
@@ -116,13 +102,9 @@ export class Application
 
     // Depth buffer + scene PSOs
     gfx::TextureHandle depthBuffer{};
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     // Bindless SRV index for the shadow map typed view (R32Float of R32Typeless resource).
     // Created via gfxDevice->createTypedSrv() after shadow.createResources().
     uint32_t shadowSrvIdx = 0;
-    // Scene + GBuffer PSOs migrated to gfx; the engine still owns the root sig
-    // (descriptor-table layout) and passes it via nativeRootSignatureOverride
-    // until P2 lands the bindless rewrite.
     gfx::PipelineHandle pipelineState{};
     gfx::ShaderHandle scenePsoVS{};
     gfx::ShaderHandle scenePsoPS{};
@@ -197,6 +179,7 @@ export class Application
     uint32_t lastFrameObjectCount = 0;
     uint32_t lastFrameVertexCount = 0;
     uint32_t lastFrameDrawCalls = 0;
+    uint32_t lastFrameOcclusionCulled = 0;
     float lastFrameMs = 0.0f;
     float recentFrameMs[3] = {};
     // FPS history for chart (5 seconds at ~60fps = 300 samples)
@@ -212,6 +195,19 @@ export class Application
     bool animateEntities = true;
     float lightAnimationSpeed = 1.0f;
     bool showLightBillboards = true;
+
+    // Hardware occlusion culling. Results are read after the GPU fence completes
+    // and are applied to the next eligible frame to avoid CPU/GPU synchronization.
+    bool occlusionCullingEnabled = true;
+    static constexpr uint32_t occlusionRefreshInterval = 8;
+    uint64_t occlusionFrameIndex = 0;
+    Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusionQueryHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> occlusionReadback;
+    uint32_t occlusionQueryCapacity = 0;
+    uint32_t occlusionPendingQueryCount = 0;
+    uint64_t occlusionPendingFence = 0;
+    std::vector<uint64_t> occlusionPendingEntityIds;
+    std::unordered_map<uint64_t, bool> occlusionVisibleByEntity;
 
     // Create Entity panel state
     int createMeshIdx = 0;
@@ -266,4 +262,27 @@ export class Application
     void createScenePSO();
     void createGBufferPSO();
     void renderImGui(gfx::ICommandList& cmdRef);
+    void ensureOcclusionQueryResources(uint32_t maxQueries);
+    void pollOcclusionResults();
+    bool isDrawOcclusionVisible(const DrawCmd& dc) const;
+
+   private:
+    // UI components (split from renderImGui)
+    void uiMenuBar(bool& shadowPsoDirty);
+    void uiMetrics();
+    void uiInspector();
+    void uiOverlay();
+
+    // Native file dialogs
+    enum class FileDialogType
+    {
+        Open,
+        Save
+    };
+    std::string openNativeFileDialog(
+        FileDialogType type,
+        const char* title,
+        const std::vector<std::pair<std::string, std::string>>& filters,
+        const char* defaultExtension = nullptr
+    );
 };

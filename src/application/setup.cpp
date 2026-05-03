@@ -101,7 +101,7 @@ void Application::createScenePSO()
     gd.depthStencil.stencilEnable = true;
     gd.depthStencil.stencilCompare = gfx::CompareOp::Always;
     gd.depthStencil.stencilPass = gfx::StencilOp::Replace;
-    gd.nativeRootSignatureOverride = this->rootSignature.Get();
+    gd.nativeRootSignatureOverride = gfxDevice->bindlessRootSigNative();
     gd.debugName = "scene_pso";
     pipelineState = gfxDevice->createGraphicsPipeline(gd);
 }
@@ -228,105 +228,22 @@ bool Application::loadContent()
         scene.ecsWorld.entity().set(tf).set(meshRef).add<TerrainEntity>();
     }
 
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(d3dDev->CheckFeatureSupport(
-            D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)
-        ))) {
-        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-    }
-
-    // VOLATILE: descriptor contents are stable but offsets into the bindless heap vary per draw.
-    CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
-    ranges[0].Init(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-    );  // t0
-    ranges[1].Init(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-    );  // t1
-    ranges[2].Init(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-    );  // t2
-    ranges[3].Init(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-    );  // t3
-
-    CD3DX12_ROOT_PARAMETER1 rootParams[8];
-    rootParams[app_slots::rootPerFrameCB].InitAsConstantBufferView(
-        0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
-    );
-    rootParams[app_slots::rootPerPassCB].InitAsConstantBufferView(
-        1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
-    );
-    rootParams[app_slots::rootDrawIndex].InitAsConstants(1, 2, 0, D3D12_SHADER_VISIBILITY_ALL);
-    rootParams[app_slots::rootOutlineParams].InitAsConstants(4, 3, 0, D3D12_SHADER_VISIBILITY_ALL);
-    rootParams[app_slots::rootPerObjectSrv].InitAsDescriptorTable(
-        1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL
-    );
-    rootParams[app_slots::rootShadowSrv].InitAsDescriptorTable(
-        1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL
-    );
-    rootParams[app_slots::rootCubemapSrv].InitAsDescriptorTable(
-        1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL
-    );
-    rootParams[app_slots::rootSsaoSrv].InitAsDescriptorTable(
-        1, &ranges[3], D3D12_SHADER_VISIBILITY_PIXEL
-    );
-
-    D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
-    staticSamplers[0].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
-    staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-    staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
-    staticSamplers[0].ShaderRegister = 0;
-    staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-    staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-    staticSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    staticSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    staticSamplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    staticSamplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    staticSamplers[1].ShaderRegister = 1;
-    staticSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-    const D3D12_ROOT_SIGNATURE_FLAGS rootSigFlags =
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
-    rootSigDesc.Init_1_1(8, rootParams, 2, staticSamplers, rootSigFlags);
-
-    ComPtr<ID3DBlob> rootSigBlob, errorBlob;
-    chkDX(D3DX12SerializeVersionedRootSignature(
-        &rootSigDesc, featureData.HighestVersion, &rootSigBlob, &errorBlob
-    ));
-    chkDX(d3dDev->CreateRootSignature(
-        0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
-        IID_PPV_ARGS(&this->rootSignature)
-    ));
-
     createScenePSO();
     createGridPSO();
     createCubemapResources();
 
     shadow.createResources(
-        *gfxDevice, rootSignature.Get(),
-        gfx::ShaderBytecode{ g_vertex_shader, sizeof(g_vertex_shader) }
+        *gfxDevice, gfx::ShaderBytecode{ g_vertex_shader, sizeof(g_vertex_shader) }
     );
     // Create typed R32_FLOAT SRV for the shadow map (R32Typeless resource) in the gfx heap.
     shadowSrvIdx = gfxDevice->createTypedSrv(shadow.shadowMap, gfx::Format::R32Float);
 
     bloom.createResources(*gfxDevice, clientWidth, clientHeight);
     outline.createResources(
-        *gfxDevice, rootSignature.Get(), { g_outline_vs, sizeof(g_outline_vs) },
-        { g_outline_ps, sizeof(g_outline_ps) }
+        *gfxDevice, { g_outline_vs, sizeof(g_outline_vs) }, { g_outline_ps, sizeof(g_outline_ps) }
     );
     gbuffer.createResources(*gfxDevice, clientWidth, clientHeight);
-    picker.createResources(*gfxDevice, clientWidth, clientHeight, rootSignature.Get());
+    picker.createResources(*gfxDevice, clientWidth, clientHeight);
 
     billboards.init(*gfxDevice, L"resources/icons/light.png");
     gizmo.init(scene, *gfxDevice, cmdQueue);
@@ -450,7 +367,7 @@ void Application::createGBufferPSO()
     gd.depthStencil.depthEnable = true;
     gd.depthStencil.depthWrite = true;
     gd.depthStencil.depthCompare = gfx::CompareOp::Less;
-    gd.nativeRootSignatureOverride = this->rootSignature.Get();
+    gd.nativeRootSignatureOverride = gfxDevice->bindlessRootSigNative();
     gd.debugName = "gbuffer_pso";
     gbufferPSO = gfxDevice->createGraphicsPipeline(gd);
 }

@@ -15,19 +15,22 @@
       4. commit and push, resolve merge conflicts if they are simple
  -->
 
-- [ ] Add native file dialogs for choosing scripts and loading scenes in the gui. Also, split the gui
-- [ ] Create a complete abstraction over all D3D12 / DirectX (gfx layer in `include/gfx.h`, `src/gfx/`, see [remaining tasks note](notes/remaining-tasks-plan.md))
-  - [x] P0–P14 (partial): All subsystems, scene, application core migrated. All D3D12 removed from `.ixx` interfaces that are not blocked on bindless. See [remaining-tasks-plan.md](notes/remaining-tasks-plan.md) for full current state.
-  - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, dedicated sprint — see note for approach)
-- [ ] Use flecs
-- [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
+- [x] Add native file dialogs for choosing scripts and loading scenes in the gui. Also, split the gui (Modularized into `ui_menu`, `ui_inspector`, `ui_metrics`, `ui_overlay`, `ui_util`)
+- [x] Create a complete abstraction over all D3D12 / DirectX (gfx layer in `include/gfx.h`, `src/gfx/`, see [remaining tasks note](notes/remaining-tasks-plan.md))
+  - [x] P0–P14: All subsystems, scene, application core migrated. All D3D12 removed from exported `.ixx` interfaces. Legacy `rootSignature` ComPtr removed from Application. All `#ifdef USE_BINDLESS`/`#else` dead branches cleaned from render.cpp and subsystems.
+  - [x] P2: Bindless descriptor heap + bindless root sig + shader rewrite (Completed and verified with integration tests)
+- [x] Use flecs (Update logic moved to native flecs systems: StorePrevTransforms, AnimateOrbitingEntities, etc.)
+- [x] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
   - [x] Frustum Culling (CPU-side bounding sphere)
-  - [ ] Occlusion Culling (Hi-Z or Hardware Queries)
+  - [x] Occlusion Culling (D3D12 binary hardware queries with delayed readback)
 
 ---
 
 ## Completed
 
+- [x] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
+  - [x] Frustum Culling (CPU-side bounding sphere)
+  - [x] Occlusion Culling (D3D12 binary hardware queries with delayed readback)
 - [x] Make grid lines not appear in front of geometry when that geometry is selected (Moved Gizmo pass after Grid/Outline passes)
 - [x] Outlines no longer work (Fixed by moving Gizmo pass, which was clearing stencil)
 - [x] Get the [sponza scene](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) from the internet and load it (Downloaded GLB to resources/external_scenes/Sponza)

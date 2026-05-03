@@ -239,3 +239,46 @@ main render path).
 **Don't**: create a second `D3D12_COMMAND_QUEUE_DESC` queue alongside the
 gfx queue. The swap chain is bound to one specific queue at creation
 time, and Present can only synchronise with that queue.
+
+---
+
+## No-arg launch Flecs invalid-entity assert (2026-04-15)
+
+**Symptom**: `main.exe` without arguments aborted with `fatal: flecs_cpp.c: assert(ecs_is_alive(world, entity))`. Test scene worked fine.
+
+**Root cause**: `runtime.singleTeapotMode` path calls `clearScene()`, which deletes gizmo arrows (`GizmoArrow + MeshRef`). `GizmoState` still held stale entity handles and touched them on next update.
+
+**Fix pattern**: Reinitialize gizmo immediately after any clear/reload path:
+- deferred reset-to-teapot
+- non-append GLTF load
+- scene-file load path after apply
+- single-teapot branch in `applySceneData()`
+
+**Reusable tips**:
+1. When a crash is scene-dependent, compare no-arg startup with `resources/scenes/test.json` first.
+2. Audit every path that calls `clearScene()` and list subsystems that cache entity IDs/handles.
+3. Treat cached ECS handles as invalid across clears unless explicitly rebuilt.
+4. Prefer resetting/reinitializing subsystem state over adding ad hoc `is_alive()` guards everywhere.
+5. Verify with both interactive startup and headless/integration flow.
+
+---
+
+## Default scene launch crash (2026-04-14)
+
+**Symptom**: `main.exe` without arguments crashed immediately. Test scene (WARP + hidden window) worked fine.
+
+**Debugging process**:
+
+1. **Initial triage**: Added SEH exception filter to capture crash. First crash: `STATUS_BREAKPOINT (0x80000003)` in D3D12 runtime.
+
+2. **D3D12 debug layer**: Was unconditionally enabled in Debug builds. Without a debugger, debug layer breakpoints crash the process. **Fix**: Gated `enableDebugging()` on `IsDebuggerPresent()` in `window.cpp`.
+
+3. **Second crash**: Access violation during first `render()` call, triggered by `WM_PAINT` handler running before message loop started.
+
+4. **Premature WM_SIZE / WM_PAINT**: `ShowWindow(SW_SHOW)` sends `WM_SIZE` synchronously, triggering `onResize()` → `ResizeBuffers()` during window initialization. **Fix**: Added `Window::inMessageLoop` flag (default `false`). Set to `true` in `main.cpp` just before `ShowWindow`. Removed `UpdateWindow()`.
+
+5. **Hardcoded fullscreen**: Application constructor called `setFullscreen(true)`, generating synchronous `WM_SIZE` events during construction. **Fix**: Replaced with `ConfigData::startFullscreen` (default `false`), applied via deferred fullscreen mechanism.
+
+6. **Environment-specific residual**: Crash persisted on development machine (Parsec Virtual Display Adapter). Confirmed as environment issue, not a code bug.
+
+**Key takeaway**: Multiple independent issues compounded. The SEH filter was essential for capturing crash codes without a debugger. The `inMessageLoop` pattern prevents a class of init-order bugs.

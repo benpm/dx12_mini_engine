@@ -46,6 +46,10 @@ void Application::render()
         PROFILE_ZONE_NAMED("Picker Readback Poll");
         picker.readPickResult(this->cmdQueue.completedFenceValue());
     }
+    {
+        PROFILE_ZONE_NAMED("Occlusion Readback Poll");
+        this->pollOcclusionResults();
+    }
 
     gfx::TextureHandle backBuffer = this->backBuffers[this->curBackBufIdx];
     auto* backBufferRes = static_cast<ID3D12Resource*>(this->gfxDevice->nativeResource(backBuffer));
@@ -112,14 +116,33 @@ void Application::render()
 
     // Build filtered draw command list (excludes gizmo arrows)
     std::vector<DrawCmd> sceneDrawCmds;
+    std::vector<DrawCmd> visibleSceneDrawCmds;
     std::vector<DrawCmd> gizmoDrawCmds;
     sceneDrawCmds.reserve(scene.drawCmds.size());
+    visibleSceneDrawCmds.reserve(scene.drawCmds.size());
     for (const auto& dc : scene.drawCmds) {
         if (dc.baseDrawIndex < scene.isGizmoDraw.size() && scene.isGizmoDraw[dc.baseDrawIndex]) {
             gizmoDrawCmds.push_back(dc);
         } else {
             sceneDrawCmds.push_back(dc);
         }
+    }
+    this->lastFrameOcclusionCulled = 0;
+    this->ensureOcclusionQueryResources(Scene::maxDrawsPerFrame / 3);
+    for (const auto& dc : sceneDrawCmds) {
+        if (this->isDrawOcclusionVisible(dc)) {
+            visibleSceneDrawCmds.push_back(dc);
+        } else {
+            this->lastFrameOcclusionCulled++;
+        }
+    }
+
+    const bool recordOcclusionQueries =
+        this->occlusionCullingEnabled && this->occlusionQueryHeap && this->occlusionReadback &&
+        this->occlusionPendingFence == 0 && !visibleSceneDrawCmds.empty();
+    if (recordOcclusionQueries) {
+        this->occlusionPendingQueryCount = 0;
+        this->occlusionPendingEntityIds.clear();
     }
 
     PerFrameCB* frameMapped = scene.perFrameMapped[curBackBufIdx];
@@ -152,26 +175,14 @@ void Application::render()
         cmd->IASetIndexBuffer(&ibv);
     };
 
-    // Precompute the per-object buffer GPU handle and shadow/cubemap/ssao SRV handles
-    // for this frame. All resources now live in the gfx bindless heap.
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(gfxDevice->srvHeapNative());
-    D3D12_GPU_DESCRIPTOR_HANDLE perObjHandle;
-    perObjHandle.ptr = gfxDevice->srvGpuDescriptorHandle(
-        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx])
-    );
-    D3D12_GPU_DESCRIPTOR_HANDLE shadowSrvHandle;
-    shadowSrvHandle.ptr = gfxDevice->srvGpuDescriptorHandle(shadowSrvIdx);
-    D3D12_GPU_DESCRIPTOR_HANDLE cubemapSrvHandle;
-    cubemapSrvHandle.ptr =
-        gfxDevice->srvGpuDescriptorHandle(gfxDevice->bindlessSrvIndex(cubemapTexture));
-    D3D12_GPU_DESCRIPTOR_HANDLE ssaoSrvHandle;
-    ssaoSrvHandle.ptr =
-        gfxDevice->srvGpuDescriptorHandle(gfxDevice->bindlessSrvIndex(ssao.blurRT()));
 
     auto bindSceneHeapAndObjects = [&](ID3D12GraphicsCommandList2* cmd) {
         ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
         cmd->SetDescriptorHeaps(1, heaps);
-        cmd->SetGraphicsRootDescriptorTable(app_slots::rootPerObjectSrv, perObjHandle);
+        D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+        heapStart.ptr = gfxDevice->srvGpuDescriptorHandle(0);
+        cmd->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
     };
 
     auto bindPerFrameAndPass = [&](ID3D12GraphicsCommandList2* cmd,
@@ -180,8 +191,8 @@ void Application::render()
             gfxDevice->nativeResource(scene.perFrameBuffer[curBackBufIdx])
         );
         auto perFrameAddr = perFrameRes->GetGPUVirtualAddress();
-        cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerFrameCB, perFrameAddr);
-        cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerPassCB, perPassAddr);
+        cmd->SetGraphicsRootConstantBufferView(app_slots::bindlessPerFrameCB, perFrameAddr);
+        cmd->SetGraphicsRootConstantBufferView(app_slots::bindlessPerPassCB, perPassAddr);
     };
 
     PerObjectData* objectMapped = scene.perObjectMapped[curBackBufIdx];
@@ -255,11 +266,14 @@ void Application::render()
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Shadow Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Shadow");
-                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->SetGraphicsRootSignature(
+                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+                );
                 bindPerFrameAndPass(cmd, shadowPassAddr);
 
                 shadow.render(
-                    cmdRef, scene.megaVBV, scene.megaIBV, perObjHandle.ptr, sceneDrawCmds, 0
+                    cmdRef, scene.megaVBV, scene.megaIBV, scene.perObjectBuffer[curBackBufIdx],
+                    sceneDrawCmds, 0
                 );
             }
         );
@@ -349,7 +363,9 @@ void Application::render()
                 D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
 
                 cmdRef.bindPipeline(this->pipelineState);
-                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->SetGraphicsRootSignature(
+                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+                );
                 bindSharedGeometry(cmd);
                 bindSceneHeapAndObjects(cmd);
 
@@ -358,10 +374,7 @@ void Application::render()
                         gfxDevice->nativeResource(scene.perFrameBuffer[curBackBufIdx])
                     )
                         ->GetGPUVirtualAddress();
-                cmd->SetGraphicsRootConstantBufferView(app_slots::rootPerFrameCB, perFrameAddr);
-
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
+                cmd->SetGraphicsRootConstantBufferView(app_slots::bindlessPerFrameCB, perFrameAddr);
 
                 for (uint32_t face = 0; face < 6; ++face) {
                     D3D12_CPU_DESCRIPTOR_HANDLE faceRtv;
@@ -379,14 +392,20 @@ void Application::render()
                     cmd->OMSetRenderTargets(1, &faceRtv, true, &faceDsv);
 
                     cmd->SetGraphicsRootConstantBufferView(
-                        app_slots::rootPerPassCB, getPassCBAddress(2 + face)
+                        app_slots::bindlessPerPassCB, getPassCBAddress(2 + face)
                     );
 
                     uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
                         uint32_t drawDataIdx = faceObjectOffset + j;
                         uint32_t srcIdx = nonReflectiveIndices[j];
-                        cmd->SetGraphicsRoot32BitConstant(app_slots::rootDrawIndex, drawDataIdx, 0);
+                        BindlessIndices bi{};
+                        bi.drawDataIdx =
+                            gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                        bi.shadowMapIdx = shadowSrvIdx;
+                        bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+                        bi.drawIndex = drawDataIdx;
+                        cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                         cmd->DrawIndexedInstanced(
                             scene.drawCmds[srcIdx].indexCount, 1,
                             scene.drawCmds[srcIdx].indexOffset,
@@ -438,18 +457,50 @@ void Application::render()
             );
 
             cmdRef.bindPipeline(this->gbufferPSO);
-            cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+            cmd->SetGraphicsRootSignature(
+                static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+            );
             bindSharedGeometry(cmd);
             cmd->OMSetRenderTargets(4, rtvs, false, &dsv);
             bindSceneHeapAndObjects(cmd);
             bindPerFrameAndPass(cmd, gbufferPassAddr);
 
-            for (const auto& dc : sceneDrawCmds) {
-                cmd->SetGraphicsRoot32BitConstant(app_slots::rootDrawIndex, dc.baseDrawIndex, 0);
+            uint32_t occlusionQueryIndex = 0;
+            for (const auto& dc : visibleSceneDrawCmds) {
+                const bool queryThisDraw = recordOcclusionQueries &&
+                                           occlusionQueryIndex < this->occlusionQueryCapacity &&
+                                           dc.baseDrawIndex < scene.drawIndexToEntity.size();
+                if (queryThisDraw) {
+                    cmd->BeginQuery(
+                        this->occlusionQueryHeap.Get(), D3D12_QUERY_TYPE_BINARY_OCCLUSION,
+                        occlusionQueryIndex
+                    );
+                }
+                BindlessIndices bi{};
+                bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                bi.drawIndex = dc.baseDrawIndex;
+                cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                 cmd->DrawIndexedInstanced(
                     dc.indexCount, dc.instanceCount, dc.indexOffset,
                     static_cast<INT>(dc.vertexOffset), 0
                 );
+                if (queryThisDraw) {
+                    cmd->EndQuery(
+                        this->occlusionQueryHeap.Get(), D3D12_QUERY_TYPE_BINARY_OCCLUSION,
+                        occlusionQueryIndex
+                    );
+                    this->occlusionPendingEntityIds.push_back(
+                        scene.drawIndexToEntity[dc.baseDrawIndex].id()
+                    );
+                    occlusionQueryIndex++;
+                }
+            }
+            if (recordOcclusionQueries && occlusionQueryIndex > 0) {
+                cmd->ResolveQueryData(
+                    this->occlusionQueryHeap.Get(), D3D12_QUERY_TYPE_BINARY_OCCLUSION, 0,
+                    occlusionQueryIndex, this->occlusionReadback.Get(), 0
+                );
+                this->occlusionPendingQueryCount = occlusionQueryIndex;
             }
         }
     );
@@ -498,26 +549,32 @@ void Application::render()
             );
 
             cmdRef.bindPipeline(this->pipelineState);
-            cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+            cmd->SetGraphicsRootSignature(
+                static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+            );
             bindSharedGeometry(cmd);
             cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
             bindSceneHeapAndObjects(cmd);
             bindPerFrameAndPass(cmd, getPassCBAddress(0));
 
-            cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
-            cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
-            cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
-
             cmd->OMSetStencilRef(1);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(sceneDrawCmds.size()); ++i) {
-                currentVertexCount += sceneDrawCmds[i].indexCount * sceneDrawCmds[i].instanceCount;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(visibleSceneDrawCmds.size()); ++i) {
+                currentVertexCount +=
+                    visibleSceneDrawCmds[i].indexCount * visibleSceneDrawCmds[i].instanceCount;
                 currentDrawCalls++;
-                cmd->SetGraphicsRoot32BitConstant(
-                    app_slots::rootDrawIndex, sceneDrawCmds[i].baseDrawIndex, 0
-                );
+                BindlessIndices bi{};
+                bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                bi.shadowMapIdx = shadowSrvIdx;
+                bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+                bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
+                bi.shadowSamplerIdx = 0;
+                bi.envSamplerIdx = 1;
+                bi.drawIndex = visibleSceneDrawCmds[i].baseDrawIndex;
+                cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                 cmd->DrawIndexedInstanced(
-                    sceneDrawCmds[i].indexCount, sceneDrawCmds[i].instanceCount,
-                    sceneDrawCmds[i].indexOffset, static_cast<INT>(sceneDrawCmds[i].vertexOffset), 0
+                    visibleSceneDrawCmds[i].indexCount, visibleSceneDrawCmds[i].instanceCount,
+                    visibleSceneDrawCmds[i].indexOffset,
+                    static_cast<INT>(visibleSceneDrawCmds[i].vertexOffset), 0
                 );
             }
         }
@@ -545,20 +602,25 @@ void Application::render()
                 hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
 
                 cmdRef.bindPipeline(this->pipelineState);
-                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->SetGraphicsRootSignature(
+                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+                );
                 bindSharedGeometry(cmd);
                 cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
                 bindSceneHeapAndObjects(cmd);
                 bindPerFrameAndPass(cmd, scenePassAddr);
 
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootShadowSrv, shadowSrvHandle);
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootCubemapSrv, cubemapSrvHandle);
-                cmd->SetGraphicsRootDescriptorTable(app_slots::rootSsaoSrv, ssaoSrvHandle);
-
                 for (const auto& dc : gizmoDrawCmds) {
-                    cmd->SetGraphicsRoot32BitConstant(
-                        app_slots::rootDrawIndex, dc.baseDrawIndex, 0
-                    );
+                    BindlessIndices bi{};
+                    bi.drawDataIdx =
+                        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                    bi.shadowMapIdx = shadowSrvIdx;
+                    bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+                    bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
+                    bi.shadowSamplerIdx = 0;
+                    bi.envSamplerIdx = 1;
+                    bi.drawIndex = dc.baseDrawIndex;
+                    cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                     cmd->DrawIndexedInstanced(
                         dc.indexCount, dc.instanceCount, dc.indexOffset,
                         static_cast<INT>(dc.vertexOffset), 0
@@ -646,10 +708,9 @@ void Application::render()
                 auto perPassAddr = getPassCBAddress(0);
 
                 OutlineRenderContext outlineCtx{};
-                outlineCtx.rootSig = this->rootSignature.Get();
                 outlineCtx.vbv = scene.megaVBV;
                 outlineCtx.ibv = scene.megaIBV;
-                outlineCtx.perObjHandle = perObjHandle.ptr;
+                outlineCtx.perObjectBuffer = scene.perObjectBuffer[curBackBufIdx];
                 outlineCtx.perFrameAddr = perFrameAddr;
                 outlineCtx.perPassAddr = perPassAddr;
                 outlineCtx.hdrRtv = hdrRtv.ptr;
@@ -687,16 +748,20 @@ void Application::render()
                 cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
                 cmdRef.bindPipeline(picker.pso);
-                cmd->SetGraphicsRootSignature(this->rootSignature.Get());
+                cmd->SetGraphicsRootSignature(
+                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
+                );
                 bindSharedGeometry(cmd);
                 cmd->OMSetRenderTargets(1, &idRtv, true, &idDsv);
                 bindSceneHeapAndObjects(cmd);
                 bindPerFrameAndPass(cmd, idPassAddr);
 
-                for (const auto& dc : scene.drawCmds) {
-                    cmd->SetGraphicsRoot32BitConstant(
-                        app_slots::rootDrawIndex, dc.baseDrawIndex, 0
-                    );
+                for (const auto& dc : visibleSceneDrawCmds) {
+                    BindlessIndices bi{};
+                    bi.drawDataIdx =
+                        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                    bi.drawIndex = dc.baseDrawIndex;
+                    cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                     cmd->DrawIndexedInstanced(
                         dc.indexCount, dc.instanceCount, dc.indexOffset,
                         static_cast<INT>(dc.vertexOffset), 0
@@ -811,6 +876,9 @@ void Application::render()
     uint64_t submitFenceValue = this->cmdQueue.execCmdList(cmdList);
     this->frameFenceValues[this->curBackBufIdx] = submitFenceValue;
     picker.setPendingReadbackFence(submitFenceValue);
+    if (this->occlusionPendingQueryCount > 0 && this->occlusionPendingFence == 0) {
+        this->occlusionPendingFence = submitFenceValue;
+    }
     // Signal Tracy's GPU fence AFTER submitting the command list so it comes after
     // all GPU zones in the queue, ensuring Collect() reads valid timestamp data.
     PROFILE_GPU_NEW_FRAME(g_tracyD3d12Ctx);
@@ -818,6 +886,7 @@ void Application::render()
     const bool presentVsync = this->vsync && !this->runtimeConfig.skipImGui;
     this->gfxSwapChain->present(presentVsync);
     this->curBackBufIdx = this->gfxSwapChain->currentIndex();
+    this->occlusionFrameIndex++;
     PROFILE_FRAME_MARK;
 
     if (this->runtimeConfig.screenshotFrame > 0) {

@@ -36,11 +36,7 @@ ShadowRenderer::~ShadowRenderer()
     }
 }
 
-void ShadowRenderer::createResources(
-    gfx::IDevice& dev,
-    ID3D12RootSignature* rootSig,
-    gfx::ShaderBytecode vs
-)
+void ShadowRenderer::createResources(gfx::IDevice& dev, gfx::ShaderBytecode vs)
 {
     devForDestroy = &dev;
 
@@ -59,14 +55,10 @@ void ShadowRenderer::createResources(
         shadowMap = dev.createTexture(td);
     }
 
-    reloadPSO(dev, rootSig, vs);
+    reloadPSO(dev, vs);
 }
 
-void ShadowRenderer::reloadPSO(
-    gfx::IDevice& dev,
-    ID3D12RootSignature* rootSig,
-    gfx::ShaderBytecode vs
-)
+void ShadowRenderer::reloadPSO(gfx::IDevice& dev, gfx::ShaderBytecode vs)
 {
     devForDestroy = &dev;
     if (pso.isValid()) {
@@ -108,7 +100,7 @@ void ShadowRenderer::reloadPSO(
     gd.depthStencil.depthEnable = true;
     gd.depthStencil.depthWrite = true;
     gd.depthStencil.depthCompare = gfx::CompareOp::Less;
-    gd.nativeRootSignatureOverride = rootSig;
+    gd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
     gd.debugName = "shadow_pso";
     pso = dev.createGraphicsPipeline(gd);
 }
@@ -145,7 +137,7 @@ void ShadowRenderer::render(
     gfx::ICommandList& cmdRef,
     const gfx::VertexBufferView& vbv,
     const gfx::IndexBufferView& ibv,
-    uint64_t perObjHandle,
+    gfx::BufferHandle perObjectBuffer,
     const std::vector<DrawCmd>& drawCmds,
     uint32_t totalSlots
 )
@@ -172,10 +164,16 @@ void ShadowRenderer::render(
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
-    cmdList->SetGraphicsRootDescriptorTable(4, D3D12_GPU_DESCRIPTOR_HANDLE{ perObjHandle });
+
+    D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+    heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
-        cmdList->SetGraphicsRoot32BitConstant(2, totalSlots + drawCmds[i].baseDrawIndex, 0);
+        BindlessIndices bi{};
+        bi.drawDataIdx = devForDestroy->bindlessSrvIndex(perObjectBuffer);
+        bi.drawIndex = totalSlots + drawCmds[i].baseDrawIndex;
+        cmdList->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
         cmdList->DrawIndexedInstanced(
             drawCmds[i].indexCount, drawCmds[i].instanceCount, drawCmds[i].indexOffset,
             static_cast<INT>(drawCmds[i].vertexOffset), 0

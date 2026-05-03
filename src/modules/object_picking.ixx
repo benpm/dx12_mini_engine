@@ -1,7 +1,5 @@
 module;
 
-#include <d3d12.h>
-#include <Windows.h>
 #include <cstdint>
 
 export module object_picking;
@@ -14,12 +12,7 @@ export class ObjectPicker
    public:
     static constexpr uint32_t readbackRingSize = 3;
 
-    void createResources(
-        gfx::IDevice& dev,
-        uint32_t width,
-        uint32_t height,
-        ID3D12RootSignature* rootSig
-    );
+    void createResources(gfx::IDevice& dev, uint32_t width, uint32_t height);
     void resize(gfx::IDevice& dev, uint32_t width, uint32_t height);
 
     // Read back the result from a previously submitted copy once its fence is complete.

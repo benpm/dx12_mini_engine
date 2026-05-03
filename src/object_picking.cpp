@@ -39,12 +39,7 @@ ObjectPicker::~ObjectPicker()
     }
 }
 
-void ObjectPicker::createResources(
-    gfx::IDevice& dev,
-    uint32_t width,
-    uint32_t height,
-    ID3D12RootSignature* rootSig
-)
+void ObjectPicker::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
     devForDestroy = &dev;
     width_ = width;
@@ -122,7 +117,7 @@ void ObjectPicker::createResources(
         gd.depthStencil.depthEnable = true;
         gd.depthStencil.depthWrite = true;
         gd.depthStencil.depthCompare = gfx::CompareOp::Less;
-        gd.nativeRootSignatureOverride = rootSig;
+        gd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
         gd.debugName = "picker_pso";
         pso = dev.createGraphicsPipeline(gd);
     }

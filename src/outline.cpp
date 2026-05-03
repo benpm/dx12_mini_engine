@@ -10,8 +10,6 @@ module;
 
 module outline;
 
-using Microsoft::WRL::ComPtr;
-
 static D3D12_INPUT_ELEMENT_DESC g_inputLayout[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -38,20 +36,14 @@ OutlineRenderer::~OutlineRenderer()
 
 void OutlineRenderer::createResources(
     gfx::IDevice& dev,
-    ID3D12RootSignature* rootSig,
     gfx::ShaderBytecode vs,
     gfx::ShaderBytecode ps
 )
 {
-    reloadPSO(dev, rootSig, vs, ps);
+    reloadPSO(dev, vs, ps);
 }
 
-void OutlineRenderer::reloadPSO(
-    gfx::IDevice& dev,
-    ID3D12RootSignature* rootSig,
-    gfx::ShaderBytecode vs,
-    gfx::ShaderBytecode ps
-)
+void OutlineRenderer::reloadPSO(gfx::IDevice& dev, gfx::ShaderBytecode vs, gfx::ShaderBytecode ps)
 {
     devForDestroy = &dev;
     if (pso.isValid()) {
@@ -109,7 +101,7 @@ void OutlineRenderer::reloadPSO(
     gd.depthStencil.stencilFail = gfx::StencilOp::Keep;
     gd.depthStencil.stencilDepthFail = gfx::StencilOp::Keep;
     gd.depthStencil.stencilPass = gfx::StencilOp::Keep;
-    gd.nativeRootSignatureOverride = rootSig;
+    gd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
     gd.debugName = "outline_pso";
     pso = dev.createGraphicsPipeline(gd);
 }
@@ -125,37 +117,40 @@ void OutlineRenderer::render(
 {
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     cmdRef.bindPipeline(pso);
-    cmdList->SetGraphicsRootSignature(ctx.rootSig);
-    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdRef.setViewport(*ctx.viewport);
-    cmdRef.setScissor(*ctx.scissorRect);
-    D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv{ ctx.hdrRtv };
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv{ ctx.dsv };
-    cmdList->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-    cmdList->OMSetStencilRef(1);
-
-    D3D12_VERTEX_BUFFER_VIEW d3dVbv{ ctx.vbv.gpuAddress, ctx.vbv.sizeInBytes,
-                                     ctx.vbv.strideInBytes };
-    D3D12_INDEX_BUFFER_VIEW d3dIbv{ ctx.ibv.gpuAddress, ctx.ibv.sizeInBytes, DXGI_FORMAT_R32_UINT };
-    cmdList->IASetVertexBuffers(0, 1, &d3dVbv);
-    cmdList->IASetIndexBuffer(&d3dIbv);
-
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
     cmdList->SetDescriptorHeaps(1, heaps);
 
-    cmdList->SetGraphicsRootConstantBufferView(0, ctx.perFrameAddr);
-    cmdList->SetGraphicsRootConstantBufferView(1, ctx.perPassAddr);
+    cmdList->SetGraphicsRootSignature(
+        static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
+    );
+    D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+    heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
 
-    D3D12_GPU_DESCRIPTOR_HANDLE perObjH{ ctx.perObjHandle };
-    cmdList->SetGraphicsRootDescriptorTable(4, perObjH);
+    cmdList->SetGraphicsRootConstantBufferView(app_slots::bindlessPerFrameCB, ctx.perFrameAddr);
+    cmdList->SetGraphicsRootConstantBufferView(app_slots::bindlessPerPassCB, ctx.perPassAddr);
 
     auto drawOutline = [&](flecs::entity e, float width, float r, float g, float b) {
         for (uint32_t i = 0; i < static_cast<uint32_t>(drawIndexToEntity.size()); ++i) {
             if (drawIndexToEntity[i] == e) {
-                float params[4] = { width, r, g, b };
-                cmdList->SetGraphicsRoot32BitConstants(3, 4, params, 0);
-                cmdList->SetGraphicsRoot32BitConstant(2, i, 0);
+                struct OutlinePayload
+                {
+                    uint32_t drawDataIdx;
+                    uint32_t drawIndex;
+                    float outlineWidth;
+                    float outlineR, outlineG, outlineB;
+                };
+                OutlinePayload pl;
+                pl.drawDataIdx = devForDestroy->bindlessSrvIndex(ctx.perObjectBuffer);
+                pl.drawIndex = i;
+                pl.outlineWidth = width;
+                pl.outlineR = r;
+                pl.outlineG = g;
+                pl.outlineB = b;
+                cmdList->SetGraphicsRoot32BitConstants(
+                    app_slots::bindlessIndices, sizeof(pl) / 4, &pl, 0
+                );
                 cmdList->DrawIndexedInstanced(
                     drawCmds[i].indexCount, 1, drawCmds[i].indexOffset,
                     static_cast<INT>(drawCmds[i].vertexOffset), 0

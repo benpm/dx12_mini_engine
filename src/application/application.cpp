@@ -195,6 +195,8 @@ Application::Application()
     this->loadContent();
     this->flush();
 
+    scene.setupSystems();
+
     // Initialize Lua scripting
 #ifndef SCRIPTS_DIR
     #define SCRIPTS_DIR ""
@@ -269,6 +271,96 @@ Application::~Application()
             gfxDevice->destroy(cubemapDepth);
         }
     }
+}
+
+void Application::ensureOcclusionQueryResources(uint32_t maxQueries)
+{
+    if (this->occlusionQueryCapacity >= maxQueries && this->occlusionQueryHeap &&
+        this->occlusionReadback) {
+        return;
+    }
+
+    if (this->occlusionPendingFence != 0) {
+        this->cmdQueue.waitForFenceVal(this->occlusionPendingFence);
+        this->pollOcclusionResults();
+    }
+
+    auto* device = static_cast<ID3D12Device2*>(this->gfxDevice->nativeHandle());
+
+    D3D12_QUERY_HEAP_DESC heapDesc{};
+    heapDesc.Type = D3D12_QUERY_HEAP_TYPE_OCCLUSION;
+    heapDesc.Count = maxQueries;
+    chkDX(device->CreateQueryHeap(&heapDesc, IID_PPV_ARGS(&this->occlusionQueryHeap)));
+
+    const uint64_t readbackBytes = sizeof(uint64_t) * maxQueries;
+    const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_READBACK);
+    const auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(readbackBytes);
+    chkDX(device->CreateCommittedResource(
+        &heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+        IID_PPV_ARGS(&this->occlusionReadback)
+    ));
+    this->occlusionReadback->SetName(L"occlusion_query_readback");
+
+    this->occlusionQueryCapacity = maxQueries;
+    this->occlusionPendingEntityIds.reserve(maxQueries);
+    this->occlusionVisibleByEntity.reserve(maxQueries);
+}
+
+void Application::pollOcclusionResults()
+{
+    if (this->occlusionPendingFence == 0 || this->occlusionPendingQueryCount == 0 ||
+        !this->occlusionReadback) {
+        return;
+    }
+    if (!this->cmdQueue.isFenceComplete(this->occlusionPendingFence)) {
+        return;
+    }
+
+    const uint64_t bytesToRead = sizeof(uint64_t) * this->occlusionPendingQueryCount;
+    D3D12_RANGE readRange{ 0, static_cast<SIZE_T>(bytesToRead) };
+    void* mapped = nullptr;
+    chkDX(this->occlusionReadback->Map(0, &readRange, &mapped));
+    const auto* results = static_cast<const uint64_t*>(mapped);
+
+    const uint32_t resultCount = std::min(
+        this->occlusionPendingQueryCount,
+        static_cast<uint32_t>(this->occlusionPendingEntityIds.size())
+    );
+    for (uint32_t i = 0; i < resultCount; ++i) {
+        const uint64_t entityId = this->occlusionPendingEntityIds[i];
+        if (entityId != 0) {
+            this->occlusionVisibleByEntity[entityId] = results[i] != 0;
+        }
+    }
+
+    D3D12_RANGE writeRange{ 0, 0 };
+    this->occlusionReadback->Unmap(0, &writeRange);
+    this->occlusionPendingFence = 0;
+    this->occlusionPendingQueryCount = 0;
+    this->occlusionPendingEntityIds.clear();
+}
+
+bool Application::isDrawOcclusionVisible(const DrawCmd& dc) const
+{
+    if (!this->occlusionCullingEnabled ||
+        dc.baseDrawIndex >= this->scene.drawIndexToEntity.size()) {
+        return true;
+    }
+
+    flecs::entity e = this->scene.drawIndexToEntity[dc.baseDrawIndex];
+    if (!e || !e.is_alive() || this->gizmo.isGizmoEntity(e)) {
+        return true;
+    }
+    if ((this->selectedEntity && e == this->selectedEntity) ||
+        (this->hoveredEntity && e == this->hoveredEntity)) {
+        return true;
+    }
+    if ((this->occlusionFrameIndex % occlusionRefreshInterval) == 0) {
+        return true;
+    }
+
+    auto it = this->occlusionVisibleByEntity.find(e.id());
+    return it == this->occlusionVisibleByEntity.end() || it->second;
 }
 
 // ---------------------------------------------------------------------------
@@ -425,27 +517,15 @@ void Application::update()
 {
     PROFILE_ZONE();
 
-    // Store previous transforms for motion vectors
-    scene.ecsWorld.query<const Transform, PrevTransform>().each(
-        [](const Transform& tf, PrevTransform& ptf) { ptf.world = tf.world; }
-    );
-    scene.ecsWorld.query<const InstanceGroup, PrevInstanceGroup>().each(
-        [](const InstanceGroup& ig, PrevInstanceGroup& pig) { pig.transforms = ig.transforms; }
-    );
+    static std::chrono::high_resolution_clock clock;
+    static auto t0 = clock.now();
+    auto t1 = clock.now();
+    auto deltaTime = t1 - t0;
+    t0 = t1;
+    const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
 
-    scene.ecsWorld.defer_begin();
-    // Ensure new entities have previous transforms
-    scene.ecsWorld.query<const Transform>().each([](flecs::entity e, const Transform& tf) {
-        if (!e.has<PrevTransform>()) {
-            e.set<PrevTransform>({ tf.world });
-        }
-    });
-    scene.ecsWorld.query<const InstanceGroup>().each([](flecs::entity e, const InstanceGroup& ig) {
-        if (!e.has<PrevInstanceGroup>()) {
-            e.set<PrevInstanceGroup>({ ig.transforms });
-        }
-    });
-    scene.ecsWorld.defer_end();
+    // ECS progress (runs systems: store prev transforms, animations)
+    scene.progress(dt);
 
     if (pendingFullscreenChange) {
         const bool targetFullscreen = pendingFullscreenValue;
@@ -545,14 +625,9 @@ void Application::update()
     }
     pendingDeleteSelected = false;
 
-    static std::chrono::high_resolution_clock clock;
-    static auto t0 = clock.now();
-    auto t1 = clock.now();
-    auto deltaTime = t1 - t0;
-    t0 = t1;
-    const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
-
     lightTime += dt * std::max(0.0f, lightAnimationSpeed);
+    scene.ecsWorld.set<GlobalTime>({ lightTime });
+
     lastFrameMs = dt * 1000.0f;
     fpsHistory[fpsHistoryHead % fpsHistorySize] = 1.0f / std::max(dt, 1e-6f);
     ++fpsHistoryHead;
@@ -602,7 +677,7 @@ void Application::update()
                 gfx::ShaderBytecode vs =
                     vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(sceneVSIdx) }
                            : gfx::ShaderBytecode{};
-                shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
+                shadow.reloadPSO(*gfxDevice, vs);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (scene): {}", e.what());
             }
@@ -617,7 +692,7 @@ void Application::update()
                 gfx::ShaderBytecode ps =
                     psData ? gfx::ShaderBytecode{ psData, shaderCompiler.size(outlinePSIdx) }
                            : gfx::ShaderBytecode{};
-                outline.reloadPSO(*gfxDevice, rootSignature.Get(), vs, ps);
+                outline.reloadPSO(*gfxDevice, vs, ps);
             } catch (const std::exception& e) {
                 spdlog::error("Hot reload PSO failed (outline): {}", e.what());
             }
@@ -892,32 +967,6 @@ void Application::update()
         }
     }
     hotkeys.updateKeyStates(prevKeyStates);
-
-    // Animate orbiting entities
-    if (animateEntities) {
-        scene.animQuery.each([&](Transform& tf, Animated& anim) {
-            anim.orbitAngle += anim.speed * dt;
-            float pulse = 1.0f + 0.15f * std::sin(lightTime * 2.0f + anim.pulsePhase);
-            float s = anim.initialScale * pulse;
-            vec3 pos(
-                anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
-                anim.orbitRadius * std::sin(anim.orbitAngle)
-            );
-            tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
-                       translate(pos.x, pos.y, pos.z);
-        });
-
-        // Animate instanced groups: spin each instance around its own Y axis
-        scene.instanceAnimQuery.each([&](InstanceGroup& group, InstanceAnimation& ia) {
-            ia.currentAngle += ia.rotationSpeed * dt;
-            mat4 rot = rotateAxis(vec3(0.f, 1.f, 0.f), ia.currentAngle);
-            for (size_t i = 0; i < group.transforms.size(); ++i) {
-                float s = ia.scales[i];
-                vec3 p = ia.positions[i];
-                group.transforms[i] = scale(s, s, s) * rot * translate(p.x, p.y, p.z);
-            }
-        });
-    }
 
     scene.updateLightBuffer(*gfxDevice, cmdQueue);
 }

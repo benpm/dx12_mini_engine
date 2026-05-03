@@ -1,6 +1,6 @@
 # Remaining Migration Tasks — `gfx::` Abstraction Layer
 
-_Last updated: 2026-05-02_
+_Last updated: 2026-05-03_
 
 This document captures where the `gfx::` migration stands after the P14 cleanup sprint,
 and what must happen next. Ordered by dependency.
@@ -13,18 +13,15 @@ and what must happen next. Ordered by dependency.
 |---|---|---|
 | P0–P12 | ✅ Done | gfx skeleton, swap chain, render graph, all subsystems, scene mega-buffers |
 | P13 | ✅ Done | PSOs → `gfx::PipelineHandle`; VS/PS → `gfx::ShaderHandle`; `depthBuffer`, cubemap, back buffers → `gfx::TextureHandle`; RTV/DSV heaps fully removed from Application (backend auto-allocates); Application's `device`/`swapChain` ComPtr aliases removed |
-| P14 | ✅ Done (ceiling) | All D3D12 types removed from `.ixx` module interfaces that are not blocked on bindless. `bloom.ixx` PSO/rootsig ComPtrs moved to private. `scene.ixx` BLAS/TLAS + RT methods moved to private. `ssao.ixx` `transitionResource`/`nativeDev`/`nativeCmd` helpers removed (now file-static in `ssao.cpp`). `scene.ixx` `nativeDev()` removed. `restir.ixx` private method params use `gfx::IDevice&`. |
-| P2 | ⏳ Pending | Bindless descriptor heap + root sig rewrite + shader rewrite — **high-risk, next major sprint** |
+| P14 | ✅ Done (final) | All D3D12 types removed from `.ixx` module interfaces that are not blocked on bindless. `ID3D12RootSignature*` params purged from `shadow.ixx`, `outline.ixx`, `object_picking.ixx` — subsystems now call `dev.bindlessRootSigNative()` internally. Application's legacy `rootSignature` ComPtr removed; all render passes use bindless root sig. `bloom.ixx` PSO/rootsig ComPtrs moved to private. `scene.ixx` BLAS/TLAS + RT methods moved to private. All `#ifdef USE_BINDLESS`/`#else` branches removed from `render.cpp`, `shadow.cpp`, `outline.cpp`, `object_picking.cpp`. |
+| P2 | ✅ Done | Bindless descriptor heap + root sig rewrite + shader rewrite. `USE_BINDLESS` defaults ON and is verified by `test.json` + gfx/unit tests. Root signature uses 32 DWORD root constants plus CBVs and descriptor tables to stay within the D3D12 root-signature DWORD budget. |
 
-### What still leaks D3D12 in `.ixx` interfaces (all blocked on P2)
+### What still leaks D3D12 in `.ixx` interfaces
 
 | Location | Leak | Blocked on |
 |---|---|---|
-| `shadow.ixx` | `ID3D12RootSignature*` params in `createResources`/`reloadPSO` | bindless root sig replaces it |
-| `outline.ixx` | `ID3D12RootSignature*` field + params in `createResources`/`reloadPSO`/`OutlineRenderContext` | bindless root sig |
-| `object_picking.ixx` | `ID3D12RootSignature*` param in `createResources` | bindless root sig |
-| `application.ixx` | `ComPtr<ID3D12RootSignature> rootSignature` + `gridRootSig` | bindless root sig |
-| All subsystems | `ComPtr<ID3D12RootSignature>`/`ComPtr<ID3D12PipelineState>` private fields | bindless root sig |
+| `application.ixx` | `ComPtr<ID3D12RootSignature> gridRootSig` | grid-specific root sig (incompatible layout) |
+| All subsystems | `ComPtr<ID3D12RootSignature>`/`ComPtr<ID3D12PipelineState>` private fields | remaining gfx PSO/root-signature ownership migration |
 | `ssao.ixx` | `D3D12_PLACED_SUBRESOURCE_FOOTPRINT noiseFp`, `ComPtr<ID3D12Resource> noiseUploadBuf` | gfx texture upload API |
 | `scene.ixx` | BLAS/TLAS `ComPtr<ID3D12Resource>` (private, capability-gated) | RT backend API |
 | `command_queue.ixx` | `D3D12_COMMAND_LIST_TYPE`, all ComPtrs | CommandQueue is a D3D12-specific class |
@@ -34,24 +31,22 @@ and what must happen next. Ordered by dependency.
 
 ## P2 — Bindless Descriptor Heap + Root Signature Rewrite
 
-This is the highest-risk single change in the entire migration. Do not attempt during
-active feature work — it invalidates the visual baseline across all passes simultaneously.
+Status: completed and verified on 2026-05-03. Keep this section as a maintenance note
+for the current layout and common failure modes.
 
 ### What changes
 
 **Backend side (`src/gfx/`):**
 - `BindlessHeap` in `d3d12_command.cpp` already exists (global SRV/UAV heap, 65k slots).
 - `IDevice::bindlessSrvIndex(TextureHandle)` already declared in `gfx.h`.
-- Build the **bindless root signature** once at device init:
+- The **bindless root signature** is built once at device init:
   ```
-  [0] 16 root constants  b0  — per-draw indices (albedoIdx, normalIdx, etc.)
+  [0] 32 root constants  b0  — per-draw indices / small bindless payloads
   [1] CBV                b1  — PerFrameCB
   [2] CBV                b2  — PerPassCB
-  [3] SRV unbounded[]   t0, space0  — bindless texture array
-  [4] Sampler unbounded[] s0, space0 — bindless sampler array
+  [3] SRV table          t0, space0/1/2 + UAV u0, space0 — bindless resource arrays
+  [4] Sampler table      s0, space0/1 — bindless sampler arrays
   ```
-  Current engine root sig: 8 params, descriptor tables per resource type.
-  Bindless sig: 5 params, single unbounded SRV array.
 
 **Shader side (`src/shaders/`):**
 - Replace named resource bindings (`Texture2D shadowMap : register(t1)`) with
@@ -68,13 +63,11 @@ active feature work — it invalidates the visual baseline across all passes sim
 - `sceneSrvHeap` in `Scene` replaced by bindless indices.
 - `SetDescriptorHeaps` called once per frame for the bindless heap; disappears from passes.
 
-### Recommended approach
+### Maintenance notes
 
-1. **Feature flag** — `USE_BINDLESS` CMake option (default OFF). Keep old path compilable
-   until bindless is visually verified on `test.json`. Flip default to ON then remove flag.
-2. **Shader-first** — write and test bindless HLSL before touching C++ binding code.
-3. **One shader at a time** — `pixel_shader.hlsl` first, verify with test scene, then port rest.
-4. **GPU-based validation (GBV)** — enable during the shader port; catches out-of-bounds
+1. `USE_BINDLESS` defaults ON. Keep old path compilable until the remaining legacy root signatures are removed.
+2. Keep root constant payloads at or below 32 DWORDs unless the root signature budget is recalculated.
+3. GPU-based validation (GBV) catches out-of-bounds
    bindless index accesses that normal validation misses.
 
 ```cpp
@@ -98,9 +91,9 @@ GBV is ~10× slower and inflates VRAM — use only when debugging visual corrupt
 
 ---
 
-## P14 Final Cleanup (after P2)
+## P14 Final Cleanup
 
-Once P2 is done, run the verification sweep:
+Run the verification sweep:
 
 ```bash
 # Should return hits ONLY under src/gfx/
@@ -172,9 +165,6 @@ Add `GetDeviceRemovedReason()` check with a timeout poll.
 ## Recommended Order of Attack
 
 ```
-1. P2 — Bindless (dedicated sprint: backend heap + root sig → shader port → visual verify)
-2. P14 final — grep sweep + MockDevice test
+1. P14 final — remove remaining public D3D12 root-sig params where possible.
+2. API cleanup — add gfx-owned replacements for ImGui bridge, WIC texture adoption, RT acceleration resources, and SSAO upload helpers.
 ```
-
-Do not start P2 during active feature work (file dialogs, culling, etc.).
-Schedule it as an isolated migration sprint with `test.json` as the sole acceptance test.

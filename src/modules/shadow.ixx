@@ -1,10 +1,7 @@
 module;
 
-#include <d3d12.h>
-#include <wrl.h>
 #include <cstdint>
 #include <vector>
-#include "d3dx12_clean.h"
 
 export module shadow;
 
@@ -34,20 +31,19 @@ export class ShadowRenderer
     gfx::IDevice* devForDestroy = nullptr;
     ~ShadowRenderer();
 
-    void
-    createResources(gfx::IDevice& dev, ID3D12RootSignature* rootSig, gfx::ShaderBytecode vs = {});
+    void createResources(gfx::IDevice& dev, gfx::ShaderBytecode vs = {});
 
-    void reloadPSO(gfx::IDevice& dev, ID3D12RootSignature* rootSig, gfx::ShaderBytecode vs = {});
+    void reloadPSO(gfx::IDevice& dev, gfx::ShaderBytecode vs = {});
 
     // Compute the light view-proj matrix from the current config.
     // dirLightDir is the direction FROM the light (as stored in Application::dirLightDir).
     mat4 computeLightViewProj(vec3 dirLightDir) const;
 
     void render(
-        gfx::ICommandList& cmdRef,
+        gfx::ICommandList& cmd,
         const gfx::VertexBufferView& vbv,
         const gfx::IndexBufferView& ibv,
-        uint64_t perObjHandle,
+        gfx::BufferHandle perObjectBuffer,
         const std::vector<DrawCmd>& drawCmds,
         uint32_t totalSlots
     );

@@ -263,7 +263,7 @@ void Application::applySceneData(const SceneFileData& d)
             gfx::ShaderBytecode vs =
                 vsData ? gfx::ShaderBytecode{ vsData, shaderCompiler.size(sceneVSIdx) }
                        : gfx::ShaderBytecode{};
-            shadow.reloadPSO(*gfxDevice, rootSignature.Get(), vs);
+            shadow.reloadPSO(*gfxDevice, vs);
             spdlog::info("Shadow PSO reloaded.");
         }
         if (cubemapResChanged) {
