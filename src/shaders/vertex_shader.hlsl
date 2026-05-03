@@ -5,6 +5,44 @@ struct VertexIn
     float2 UV : TEXCOORD0;
 };
 
+#ifdef USE_BINDLESS
+struct BindlessIndices
+{
+    uint drawDataIdx;
+    uint shadowMapIdx;
+    uint envMapIdx;
+    uint ssaoIdx;
+    uint shadowSamplerIdx;
+    uint envSamplerIdx;
+    uint drawIndex;
+};
+ConstantBuffer<BindlessIndices> indices : register(b0);
+
+cbuffer PerFrame : register(b1)
+{
+    float4 AmbientColor;
+    float4 LightPos[8];
+    float4 LightColor[8];
+    float4 DirLightDir;
+    float4 DirLightColor;
+    matrix LightViewProj;
+    float ShadowBias;
+    float ShadowMapTexelSize;
+    float FogStartY;
+    float FogDensity;
+    float4 FogColor;
+};
+
+cbuffer PerPass : register(b2)
+{
+    matrix ViewProj;
+    matrix PrevViewProj;
+    float4 CameraPos;
+};
+
+    #define drawIndex indices.drawIndex
+
+#else
 cbuffer PerFrame : register(b0)
 {
     float4 AmbientColor;
@@ -31,6 +69,7 @@ cbuffer DrawIndex : register(b2)
 {
     uint drawIndex;
 };
+#endif
 
 struct PerObjectData
 {
@@ -44,7 +83,12 @@ struct PerObjectData
     float4 Emissive;
 };
 
+#ifdef USE_BINDLESS
+StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);
+    #define drawData drawDataTables[indices.drawDataIdx]
+#else
 StructuredBuffer<PerObjectData> drawData : register(t0);
+#endif
 
 struct VertexOut
 {

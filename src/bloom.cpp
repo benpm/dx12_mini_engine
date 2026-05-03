@@ -93,9 +93,6 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
         mipW = std::max(1u, mipW / 2);
         mipH = std::max(1u, mipH / 2);
     }
-
-    // SRVs for hdrRT and bloomMips[] are created automatically by the gfx backend
-    // (TextureUsage::ShaderResource). Access via dev.bindlessSrvIndex() in render().
 }
 
 // ---------------------------------------------------------------------------
@@ -156,9 +153,18 @@ void BloomRenderer::createPipelines(gfx::IDevice& dev)
         ));
     }
 
+#ifdef USE_BINDLESS
+    // PSOs must use the bindless root sig because bloom.render() binds that
+    // root sig at draw time and the shaders are compiled with USE_BINDLESS
+    // (b0 = root constants, t0/s0 = bindless tables).
+    auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
+#else
+    auto* psoRootSig = bloomRootSignature.Get();
+#endif
+
     reloadBloomPipelinesNative(
-        device, bloomRootSignature.Get(), {}, {}, {}, {}, {}, prefilterPSO, downsamplePSO,
-        upsamplePSO, compositePSO
+        device, psoRootSig, {}, {}, {}, {}, {}, prefilterPSO, downsamplePSO, upsamplePSO,
+        compositePSO
     );
 }
 
@@ -261,8 +267,13 @@ void BloomRenderer::reloadPipelines(
     gfx::ShaderBytecode compositePS
 )
 {
+#ifdef USE_BINDLESS
+    auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
+#else
+    auto* psoRootSig = bloomRootSignature.Get();
+#endif
     reloadBloomPipelinesNative(
-        static_cast<ID3D12Device2*>(dev.nativeHandle()), bloomRootSignature.Get(),
+        static_cast<ID3D12Device2*>(dev.nativeHandle()), psoRootSig,
         { fullscreenVS.data, fullscreenVS.size }, { prefilterPS.data, prefilterPS.size },
         { downsamplePS.data, downsamplePS.size }, { upsamplePS.data, upsamplePS.size },
         { compositePS.data, compositePS.size }, prefilterPSO, downsamplePSO, upsamplePSO,
@@ -288,9 +299,23 @@ void BloomRenderer::render(
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     D3D12_CPU_DESCRIPTOR_HANDLE backBufRtv{ backBufRtvVal };
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
-    cmdList->SetDescriptorHeaps(1, heaps);
+    auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, samplerHeap };
+    cmdList->SetDescriptorHeaps(2, heaps);
+
+#ifdef USE_BINDLESS
+    cmdList->SetGraphicsRootSignature(
+        static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
+    );
+    D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+    heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
+    D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+    samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(4, samplerHeapStart);  // Slot 4: sampler table
+#else
     cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
+#endif
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     auto getRtv = [&](gfx::TextureHandle h) -> D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -304,7 +329,6 @@ void BloomRenderer::render(
         return hd;
     };
 
-    auto* hdrRes = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(hdrRT));
     auto mipRes = [&](uint32_t i) -> ID3D12Resource* {
         return static_cast<ID3D12Resource*>(devForDestroy->nativeResource(bloomMips[i]));
     };
@@ -317,27 +341,41 @@ void BloomRenderer::render(
         mipH[i] = std::max(1u, mipH[i - 1] / 2);
     }
 
+    // Prefilter — hdr_rt is already in PixelShaderResource state because the
+    // bloom render-graph pass declared `readTexture(hHdrRT)`.
+    cmdList->SetPipelineState(prefilterPSO.Get());
+#ifdef USE_BINDLESS
+    struct BindlessPrefilterPayload
+    {
+        uint32_t srcIdx;
+        uint32_t samplerIdx;
+        uint32_t _pad[2];
+        float texelSizeX, texelSizeY, threshold, softKnee;
+    };
+    BindlessPrefilterPayload pp;
+    pp.srcIdx = devForDestroy->bindlessSrvIndex(hdrRT);
+    pp.samplerIdx = 0;
+    pp.texelSizeX = 1.0f / static_cast<float>(width);
+    pp.texelSizeY = 1.0f / static_cast<float>(height);
+    pp.threshold = threshold;
+    pp.softKnee = 0.5f;
+    cmdList->SetGraphicsRoot32BitConstants(0, sizeof(pp) / 4, &pp, 0);
+#else
+    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
     struct BloomCB
     {
         float texelSizeX, texelSizeY, param0, param1;
     };
-
-    // Prefilter
-    transitionResource(
-        cmdList, hdrRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    );
-    cmdList->SetPipelineState(prefilterPSO.Get());
-    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
+    BloomCB cb = { 1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height), threshold,
+                   0.5f };
+    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+#endif
     auto mip0Rtv = getRtv(bloomMips[0]);
     cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
     CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
     D3D12_RECT sr = { 0, 0, (LONG)mipW[0], (LONG)mipH[0] };
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &sr);
-    BloomCB cb = { 1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height), threshold,
-                   0.5f };
-    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
     cmdList->DrawInstanced(3, 1, 0, 0);
 
     // Downsample
@@ -347,15 +385,36 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
+#ifdef USE_BINDLESS
+        struct BindlessDownsamplePayload
+        {
+            uint32_t srcIdx;
+            uint32_t samplerIdx;
+            uint32_t _pad[2];
+            float texelSizeX, texelSizeY;
+        };
+        BindlessDownsamplePayload dp;
+        dp.srcIdx = devForDestroy->bindlessSrvIndex(bloomMips[i]);
+        dp.samplerIdx = 0;
+        dp.texelSizeX = 1.0f / static_cast<float>(mipW[i]);
+        dp.texelSizeY = 1.0f / static_cast<float>(mipH[i]);
+        cmdList->SetGraphicsRoot32BitConstants(0, sizeof(dp) / 4, &dp, 0);
+#else
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i]));
+        struct BloomCB
+        {
+            float texelSizeX, texelSizeY, param0, param1;
+        };
+        BloomCB cb = { 1.0f / static_cast<float>(mipW[i]), 1.0f / static_cast<float>(mipH[i]), 0,
+                       0 };
+        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+#endif
         auto rtv = getRtv(bloomMips[i + 1]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
         sr = { 0, 0, (LONG)mipW[i + 1], (LONG)mipH[i + 1] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = { 1.0f / static_cast<float>(mipW[i]), 1.0f / static_cast<float>(mipH[i]), 0, 0 };
-        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }
 
@@ -370,16 +429,37 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
+#ifdef USE_BINDLESS
+        struct BindlessUpsamplePayload
+        {
+            uint32_t srcIdx;
+            uint32_t samplerIdx;
+            uint32_t _pad[2];
+            float texelSizeX, texelSizeY, intensity, _pad0;
+        };
+        BindlessUpsamplePayload up;
+        up.srcIdx = devForDestroy->bindlessSrvIndex(bloomMips[i + 1]);
+        up.samplerIdx = 0;
+        up.texelSizeX = 1.0f / static_cast<float>(mipW[i + 1]);
+        up.texelSizeY = 1.0f / static_cast<float>(mipH[i + 1]);
+        up.intensity = 1.0f;
+        cmdList->SetGraphicsRoot32BitConstants(0, sizeof(up) / 4, &up, 0);
+#else
         cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i + 1]));
+        struct BloomCB
+        {
+            float texelSizeX, texelSizeY, param0, param1;
+        };
+        BloomCB cb = { 1.0f / static_cast<float>(mipW[i + 1]),
+                       1.0f / static_cast<float>(mipH[i + 1]), 1.0f, 0 };
+        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
+#endif
         auto rtv = getRtv(bloomMips[i]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
         sr = { 0, 0, (LONG)mipW[i], (LONG)mipH[i] };
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
-        cb = { 1.0f / static_cast<float>(mipW[i + 1]), 1.0f / static_cast<float>(mipH[i + 1]), 1.0f,
-               0 };
-        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
         cmdList->DrawInstanced(3, 1, 0, 0);
     }
 
@@ -389,13 +469,48 @@ void BloomRenderer::render(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(compositePSO.Get());
+#ifdef USE_BINDLESS
+    struct BindlessCompositePayload
+    {
+        uint32_t sceneIdx;
+        uint32_t bloomIdx;
+        uint32_t samplerIdx;
+        uint32_t _pad;
+        float texelSizeX, texelSizeY;
+        float bloomIntensity;
+        uint32_t tonemapMode;
+        float camForwardX, camForwardY, camForwardZ, _pad1;
+        float camRightX, camRightY, camRightZ, _pad2;
+        float camUpX, camUpY, camUpZ, _pad3;
+        float sunDirX, sunDirY, sunDirZ, aspectRatio, tanHalfFov, frameTime;
+    };
+    BindlessCompositePayload cp;
+    cp.sceneIdx = devForDestroy->bindlessSrvIndex(hdrRT);
+    cp.bloomIdx = devForDestroy->bindlessSrvIndex(bloomMips[0]);
+    cp.samplerIdx = 0;
+    cp.texelSizeX = 1.0f / static_cast<float>(width);
+    cp.texelSizeY = 1.0f / static_cast<float>(height);
+    cp.bloomIntensity = intensity;
+    cp.tonemapMode = (uint32_t)tonemapMode;
+    cp.camForwardX = sky.camForward.x;
+    cp.camForwardY = sky.camForward.y;
+    cp.camForwardZ = sky.camForward.z;
+    cp.camRightX = sky.camRight.x;
+    cp.camRightY = sky.camRight.y;
+    cp.camRightZ = sky.camRight.z;
+    cp.camUpX = sky.camUp.x;
+    cp.camUpY = sky.camUp.y;
+    cp.camUpZ = sky.camUp.z;
+    cp.sunDirX = sky.sunDir.x;
+    cp.sunDirY = sky.sunDir.y;
+    cp.sunDirZ = sky.sunDir.z;
+    cp.aspectRatio = sky.aspectRatio;
+    cp.tanHalfFov = sky.tanHalfFov;
+    cp.frameTime = sky.time;
+    cmdList->SetGraphicsRoot32BitConstants(0, sizeof(cp) / 4, &cp, 0);
+#else
     cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
     cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(bloomMips[0]));
-    cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
-    vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)width, (float)height);
-    sr = { 0, 0, (LONG)width, (LONG)height };
-    cmdList->RSSetViewports(1, &vp);
-    cmdList->RSSetScissorRects(1, &sr);
     float compositeCB[24] = {};
     compositeCB[2] = intensity;
     *reinterpret_cast<uint32_t*>(&compositeCB[3]) = (uint32_t)tonemapMode;
@@ -415,13 +530,17 @@ void BloomRenderer::render(
     compositeCB[20] = sky.tanHalfFov;
     compositeCB[21] = sky.time;
     cmdList->SetGraphicsRoot32BitConstants(2, 24, compositeCB, 0);
+#endif
+    cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
+    vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)width, (float)height);
+    sr = { 0, 0, (LONG)width, (LONG)height };
+    cmdList->RSSetViewports(1, &vp);
+    cmdList->RSSetScissorRects(1, &sr);
     cmdList->DrawInstanced(3, 1, 0, 0);
 
-    // Reset bloom resources to RENDER_TARGET for next frame
-    transitionResource(
-        cmdList, hdrRes, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        D3D12_RESOURCE_STATE_RENDER_TARGET
-    );
+    // hdr_rt: leave in PixelShaderResource state — render graph will lift it
+    // back to RenderTarget before the next frame's scene pass.
+    // Reset bloom mip chain to RENDER_TARGET for next frame's prefilter/downsample/upsample.
     for (uint32_t i = 0; i < bloomMipCount; ++i) {
         transitionResource(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,

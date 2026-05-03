@@ -162,12 +162,16 @@ void ShadowRenderer::render(
     cmdList->IASetIndexBuffer(&d3dIbv);
 
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
-    cmdList->SetDescriptorHeaps(1, heaps);
+    auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, samplerHeap };
+    cmdList->SetDescriptorHeaps(2, heaps);
 
     D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
     heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
     cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
+    D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+    samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSamplerTable, samplerHeapStart);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(drawCmds.size()); ++i) {
         BindlessIndices bi{};

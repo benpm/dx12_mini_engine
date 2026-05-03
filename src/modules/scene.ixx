@@ -46,6 +46,11 @@ export struct VertexPBR
     vec2 uv;
 };
 
+export struct GlobalTime
+{
+    float time;
+};
+
 // ---------------------------------------------------------------------------
 // Light data for Raytracing / ReSTIR
 // ---------------------------------------------------------------------------
@@ -182,6 +187,10 @@ export class Scene
         bool append = false
     );
     void loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCompanion = true);
+
+    // ECS systems
+    void setupSystems();
+    void progress(float dt);
 
    private:
     // Raytracing Acceleration Structures (capability-gated, only used in scene.cpp)

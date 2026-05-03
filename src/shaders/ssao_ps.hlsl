@@ -5,6 +5,38 @@ struct VSOut
     float4 Position : SV_Position;
 };
 
+#ifdef USE_BINDLESS
+struct BindlessIndices
+{
+    uint normalIdx;
+    uint depthIdx;
+    uint noiseIdx;
+    uint _pad;
+};
+ConstantBuffer<BindlessIndices> indices : register(b0);
+
+cbuffer SsaoCB : register(b2)
+{
+    matrix View;
+    matrix Proj;
+    matrix InvProj;
+    float4 Samples[32];
+    float Radius;
+    float Bias;
+    float ScreenWidth;
+    float ScreenHeight;
+    int KernelSize;
+    float3 _PadCB;
+};
+
+Texture2D textures[] : register(t0, space0);
+SamplerState samplers[] : register(s0, space0);
+
+    #define normalTex textures[indices.normalIdx]
+    #define depthTex textures[indices.depthIdx]
+    #define noiseTex textures[indices.noiseIdx]
+    #define wrapSampler samplers[0]  // SSAO uses static sampler or first bindless sampler
+#else
 Texture2D<float4> normalTex : register(t0);
 Texture2D<float> depthTex : register(t1);
 Texture2D<float2> noiseTex : register(t2);
@@ -24,6 +56,7 @@ cbuffer SsaoCB : register(b0)
 };
 
 SamplerState wrapSampler : register(s0);
+#endif
 
 // Reconstruct view-space position from UV and NDC depth
 float3 ReconstructViewPos(float2 uv, float depth)
@@ -40,8 +73,9 @@ float main(VSOut IN) : SV_Target
     uint2 px = (uint2)IN.Position.xy;
 
     float depth = depthTex.Load(int3(px, 0));
-    if (depth >= 0.9999)
+    if (depth >= 0.9999) {
         return 1.0;  // background pixel — no occlusion
+    }
 
     float3 fragViewPos = ReconstructViewPos(IN.UV, depth);
 
@@ -69,8 +103,9 @@ float main(VSOut IN) : SV_Target
         float2 sampleNDC = sampleClip.xy / sampleClip.w;
         float2 sampleUV = float2(sampleNDC.x * 0.5 + 0.5, 0.5 - sampleNDC.y * 0.5);
 
-        if (any(sampleUV < 0.0) || any(sampleUV > 1.0))
+        if (any(sampleUV < 0.0) || any(sampleUV > 1.0)) {
             continue;
+        }
 
         uint2 samplePx = (uint2)(sampleUV * float2(ScreenWidth, ScreenHeight));
         float sampleDepth = depthTex.Load(int3(samplePx, 0));

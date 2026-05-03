@@ -7,6 +7,26 @@ struct VertexIn
     float2 UV : TEXCOORD0;
 };
 
+#ifdef USE_BINDLESS
+struct BindlessPayload
+{
+    uint drawDataIdx;
+    uint drawIndex;
+    float outlineWidth;
+    float3 outlineColor;
+};
+ConstantBuffer<BindlessPayload> payload : register(b0);
+
+cbuffer PerPass : register(b2)
+{
+    matrix ViewProj;
+    float4 CameraPos;
+};
+
+    #define drawIndex payload.drawIndex
+    #define outlineWidth payload.outlineWidth
+
+#else
 cbuffer PerPass : register(b1)
 {
     matrix ViewProj;
@@ -25,10 +45,12 @@ cbuffer OutlineParams : register(b3)
     float outlineG;
     float outlineB;
 };
+#endif
 
 struct PerObjectData
 {
     matrix Model;
+    matrix PrevModel;
     float4 Albedo;
     float Roughness;
     float Metallic;
@@ -37,7 +59,12 @@ struct PerObjectData
     float4 Emissive;
 };
 
+#ifdef USE_BINDLESS
+StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);
+    #define drawData drawDataTables[payload.drawDataIdx]
+#else
 StructuredBuffer<PerObjectData> drawData : register(t0);
+#endif
 
 float4 main(VertexIn IN, uint instanceID : SV_InstanceID) : SV_Position
 {

@@ -2,6 +2,118 @@
 
 ---
 
+## WARP test scene crashed with TDR; uncovered a cluster of latent bugs (2026-05-03)
+
+**Symptom**: `./main.exe resources/scenes/test.json` (WARP, headless) failed
+with `DXGI_ERROR_DEVICE_REMOVED (0x887a0005)` thrown from
+`pollOcclusionResults`'s `Map()`. The same scene on hardware GPU rendered an
+almost-empty sky (visually broken but didn't crash). The Map call only
+*reports* the TDR — the actual GPU fault was earlier in the frame.
+
+### Diagnosis path
+The debug layer was gated on `IsDebuggerPresent()`, so unattached WARP runs
+gave no info on the cause. Two changes turned diagnosis tractable:
+
+1. Enable the D3D12 debug layer for WARP runs as well (WARP doesn't have the
+   "debug layer breakpoint kills unattached process" failure mode that the
+   hardware path has).
+2. Register an `ID3D12InfoQueue1::RegisterMessageCallback` that routes
+   debug-layer messages to spdlog, with `SetBreakOnSeverity(FALSE)` for
+   ERROR/WARNING/CORRUPTION so messages don't crash the process.
+
+Once enabled, ~2500 D3D12 validation errors per frame surfaced — across
+state-tracking, root-sig/PSO matching, and DSV format compatibility. WARP
+escalates these to TDR; hardware drivers silently tolerate them (which is
+why the scene "ran" but rendered garbage).
+
+### Root cause cluster (six independent bugs)
+
+1. **Render-graph state did not persist across frames.** `reset()` cleared
+   `currentState`, so each frame's `importTexture(name, handle, initial)`
+   re-asserted `initial` even though the actual D3D12 resource state was
+   wherever the previous frame's last pass had left it. Symptom: ~50%
+   of barriers had wrong `before`-state (hdr_rt, gbuffer_*, depth_buffer).
+   *Fix*: `RenderGraph` now keeps a `persistentExternalStates` map keyed by
+   `(name, handle.id)`. The handle key prevents stale state being reused
+   when a resource is recreated (resize). `clearPersistentState()` is
+   called from `Application::onResize`.
+
+2. **Bloom did its own `transitionResource` on `hdr_rt` AND the render
+   graph did the same.** Result: render graph emits `RT→PSR`, bloom then
+   emits `RT→PSR` against an already-PSR resource. *Fix*: drop the bloom
+   internal hdr_rt transitions; let the render graph (which already
+   declares `readTexture(hHdrRT)` in the bloom pass setup) own them. Mip
+   chain transitions stay internal — the mips aren't render-graph
+   resources.
+
+3. **Bloom PSOs were created with `bloomRootSignature` (3-param layout)
+   but `bloom.render()` binds `bindlessRootSigNative()` at draw time**
+   under `USE_BINDLESS` (which is the default). PSO/RS pointer
+   mismatch → validation id=201 spam → eventual TDR on WARP. *Fix*:
+   under `USE_BINDLESS`, pass the device's bindless root sig to the PSO
+   builder. The bloom shaders are compiled with `USE_BINDLESS` so their
+   register layout already matches the bindless root sig.
+
+4. **`PipelineRecord::rootSig` always stored the device's bindless root
+   sig**, ignoring the `nativeRootSignatureOverride` passed in the desc.
+   Field was unused at the time so it didn't matter — until I wanted
+   `bindPipeline()` to auto-bind the matching root sig (see #5). *Fix*:
+   capture `pd.pRootSignature` (the value actually fed to
+   `CreateGraphicsPipelineState`) into the record.
+
+5. **`bindPipeline()` only set the PSO, not the root sig.** Caller had
+   to remember to call `SetGraphicsRootSignature` separately. *Fix*:
+   `bindPipeline` now also sets the matching root sig (taken from the
+   PSO record). Setting the same RS that's already bound is a D3D12
+   no-op for bindings; switching to a different RS unbinds prior
+   parameters, which is the correct behavior — the caller will rebind
+   for the new layout.
+
+6. **Format mismatches between PSO `DSVFormat` and the actual depth
+   resource**:
+   - `cubemap_depth` was `D32_FLOAT` but the cubemap pass reuses the
+     scene PSO (`D32_FLOAT_S8X24_UINT`). Switched cubemap_depth to
+     `R32G8X24_TYPELESS` resource + `D32_FLOAT_S8X24_UINT` view.
+   - billboard PSO had `DSVFormat = D32_FLOAT` but the billboard pass
+     binds the application's main depth buffer
+     (`D32_FLOAT_S8X24_UINT`).
+   - Outline PSO had `stencilWriteMask = 0xFF` (default) with all
+     stencil ops set to `KEEP`. D3D12 still considers any non-zero
+     write mask + `StencilEnable = TRUE` as a potential write and
+     refuses to draw against a `DEPTH_READ` depth-stencil. *Fix*: set
+     `stencilWriteMask = 0` for read-only stencil draws.
+
+### Lessons / heuristics
+
+- **WARP is the canonical validation target.** Hardware drivers silently
+  paper over real validation errors that WARP rejects with TDR. If
+  hardware rendering looks "wrong" but doesn't crash, run the same
+  scene on WARP with the debug layer on — that's where the actual bug
+  list comes from.
+- **Per-frame `importTexture(initial)` only works if the engine
+  guarantees the resource is in `initial` at start of every frame.**
+  For resources whose state actually changes across frames (almost
+  everything), the render graph or some other layer must remember the
+  end-of-frame state.
+- **Don't transition the same resource from two layers.** If render
+  graph imports it, render graph owns its transitions. If a subsystem
+  owns it, don't import it.
+- **For typeless depth-stencil + stencil read-only**, `stencilWriteMask
+  = 0` is required even if all stencil ops are `KEEP`. D3D12 looks at
+  the mask, not the ops, when deciding whether `DEPTH_READ` is legal.
+- **PSO `DSVFormat` must match the resource's typed DSV format
+  exactly**, not just be "compatible". `D32_FLOAT` ≠
+  `D32_FLOAT_S8X24_UINT`.
+- **`ID3D12InfoQueue1::RegisterMessageCallback` + `SetBreakOnSeverity
+  FALSE`** is the right pattern for headless / unattached debug-layer
+  diagnosis. The default break-on-error behavior makes the debug layer
+  unusable without a debugger.
+- **Auto-bind the root sig in `bindPipeline`.** Decoupling PSO and RS
+  binding is a recipe for id=201 errors. Pair them at the wrapper
+  level.
+
+---
+
 ## SSAO PSO created with depth enabled — undefined behaviour, visual corruption on WARP
 
 **Symptom**: After migrating `SsaoRenderer` PSOs from raw

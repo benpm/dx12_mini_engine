@@ -682,6 +682,76 @@ void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef&
     spdlog::debug("Built BLAS for mesh at vertexOffset {}", mesh.vertexOffset);
 }
 
+// ---------------------------------------------------------------------------
+// Scene::setupSystems / progress
+// ---------------------------------------------------------------------------
+
+void Scene::setupSystems()
+{
+    // Store previous transforms for motion vectors (runs before everything)
+    ecsWorld.system<const Transform, PrevTransform>("StorePrevTransforms")
+        .kind(flecs::OnUpdate)
+        .each([](const Transform& tf, PrevTransform& ptf) { ptf.world = tf.world; });
+
+    ecsWorld.system<const InstanceGroup, PrevInstanceGroup>("StorePrevInstanceTransforms")
+        .kind(flecs::OnUpdate)
+        .each([](const InstanceGroup& ig, PrevInstanceGroup& pig) {
+            pig.transforms = ig.transforms;
+        });
+
+    // Ensure new entities have previous transforms
+    ecsWorld.system<const Transform>("EnsurePrevTransform")
+        .kind(flecs::PostLoad)
+        .each([](flecs::entity e, const Transform& tf) {
+            if (!e.has<PrevTransform>()) {
+                e.set<PrevTransform>({ tf.world });
+            }
+        });
+
+    ecsWorld.system<const InstanceGroup>("EnsurePrevInstanceTransform")
+        .kind(flecs::PostLoad)
+        .each([](flecs::entity e, const InstanceGroup& ig) {
+            if (!e.has<PrevInstanceGroup>()) {
+                e.set<PrevInstanceGroup>({ ig.transforms });
+            }
+        });
+
+    // Animation systems
+    ecsWorld.system<Transform, Animated>("AnimateOrbitingEntities")
+        .kind(flecs::OnUpdate)
+        .each([](flecs::iter& it, size_t, Transform& tf, Animated& anim) {
+            float dt = it.delta_time();
+            anim.orbitAngle += anim.speed * dt;
+            float curTime = it.world().get<GlobalTime>().time;
+            float pulse = 1.0f + 0.15f * std::sin(curTime * 2.0f + anim.pulsePhase);
+            float s = anim.initialScale * pulse;
+            vec3 pos(
+                anim.orbitRadius * std::cos(anim.orbitAngle), anim.orbitY,
+                anim.orbitRadius * std::sin(anim.orbitAngle)
+            );
+            tf.world = scale(s, s, s) * rotateAxis(anim.rotAxis, anim.rotAngle) *
+                       translate(pos.x, pos.y, pos.z);
+        });
+
+    ecsWorld.system<InstanceGroup, InstanceAnimation>("AnimateInstancedGroups")
+        .kind(flecs::OnUpdate)
+        .each([](flecs::iter& it, size_t, InstanceGroup& group, InstanceAnimation& ia) {
+            float dt = it.delta_time();
+            ia.currentAngle += ia.rotationSpeed * dt;
+            mat4 rot = rotateAxis(vec3(0.f, 1.f, 0.f), ia.currentAngle);
+            for (size_t i = 0; i < group.transforms.size(); ++i) {
+                float s = ia.scales[i];
+                vec3 p = ia.positions[i];
+                group.transforms[i] = scale(s, s, s) * rot * translate(p.x, p.y, p.z);
+            }
+        });
+}
+
+void Scene::progress(float dt)
+{
+    ecsWorld.progress(dt);
+}
+
 void Scene::updateLightBuffer(gfx::IDevice& dev, CommandQueue& cmdQueue)
 {
     std::vector<LightData> lights;

@@ -234,10 +234,17 @@ namespace gfxd3d12
 
     void CommandList::begin()
     {
-        auto* heap = device->srvHeap().native();
-        cmd->SetDescriptorHeaps(1, &heap);
+        ID3D12DescriptorHeap* heaps[] = {
+            device->srvHeap().native(),
+            device->samplerHeapRef().native(),
+        };
+        cmd->SetDescriptorHeaps(2, heaps);
         cmd->SetGraphicsRootSignature(device->bindlessRootSig());
         cmd->SetComputeRootSignature(device->bindlessRootSig());
+        cmd->SetGraphicsRootDescriptorTable(3, device->srvHeap().gpuHandle(0));
+        cmd->SetGraphicsRootDescriptorTable(4, device->samplerHeapRef().gpuHandle(0));
+        cmd->SetComputeRootDescriptorTable(3, device->srvHeap().gpuHandle(0));
+        cmd->SetComputeRootDescriptorTable(4, device->samplerHeapRef().gpuHandle(0));
     }
 
     void CommandList::end()
@@ -312,6 +319,18 @@ namespace gfxd3d12
         auto* p = device->getPipeline(h);
         if (!p) {
             return;
+        }
+        // Set the matching root signature first so D3D12 validation sees a
+        // PSO/RS pair that agrees. Setting the same RS that's already bound
+        // is a no-op (D3D12 spec preserves bindings); switching to a new RS
+        // unbinds prior bindings, but that's the correct behavior — the
+        // caller will re-bind for the new layout.
+        if (p->rootSig) {
+            if (p->isCompute) {
+                cmd->SetComputeRootSignature(p->rootSig.Get());
+            } else {
+                cmd->SetGraphicsRootSignature(p->rootSig.Get());
+            }
         }
         cmd->SetPipelineState(p->pso.Get());
         if (!p->isCompute) {

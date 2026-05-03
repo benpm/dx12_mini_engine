@@ -176,13 +176,17 @@ void Application::render()
     };
 
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(gfxDevice->srvHeapNative());
+    auto* gfxSamplerHeap = static_cast<ID3D12DescriptorHeap*>(gfxDevice->samplerHeapNative());
 
     auto bindSceneHeapAndObjects = [&](ID3D12GraphicsCommandList2* cmd) {
-        ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
-        cmd->SetDescriptorHeaps(1, heaps);
+        ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, gfxSamplerHeap };
+        cmd->SetDescriptorHeaps(2, heaps);
         D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
         heapStart.ptr = gfxDevice->srvGpuDescriptorHandle(0);
         cmd->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
+        D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+        samplerHeapStart.ptr = gfxDevice->samplerGpuDescriptorHandle(0);
+        cmd->SetGraphicsRootDescriptorTable(app_slots::bindlessSamplerTable, samplerHeapStart);
     };
 
     auto bindPerFrameAndPass = [&](ID3D12GraphicsCommandList2* cmd,

@@ -102,7 +102,11 @@ Application::Application()
           gfx::DeviceDesc dd{};
           dd.useWarp = w->useWarp;
 #if defined(_DEBUG)
-          dd.enableDebugLayer = ::IsDebuggerPresent() != 0;
+          // Enable debug layer when a debugger is attached, OR when running
+          // on WARP (software). WARP is the test/automation path and won't
+          // trigger the debug-layer-induced crashes the way the hardware
+          // path can.
+          dd.enableDebugLayer = (::IsDebuggerPresent() != 0) || w->useWarp;
 #endif
           return gfx::createDevice(gfx::BackendKind::D3D12, dd);
       })()),

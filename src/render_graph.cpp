@@ -36,10 +36,16 @@ namespace rg
             return externalResources[name];
         }
 
+        gfx::ResourceState stateToUse = initialState;
+        auto it = persistentExternalStates.find(name);
+        if (it != persistentExternalStates.end() && it->second.handle.id == handle.id) {
+            stateToUse = it->second.state;
+        }
+
         ResourceRecord record;
         record.name = name;
         record.gfxHandle = handle;
-        record.currentState = initialState;
+        record.currentState = stateToUse;
         record.isExternal = true;
 
         ResourceHandle rh = getNextHandle();
@@ -47,6 +53,8 @@ namespace rg
         externalResources[name] = rh;
         return rh;
     }
+
+    void RenderGraph::clearPersistentState() { persistentExternalStates.clear(); }
 
     void RenderGraph::addPass(
         const std::string& name,
@@ -99,6 +107,14 @@ namespace rg
 
             BuilderImpl builder(*this, pass);
             pass.execute(cmd, builder);
+        }
+
+        // Persist final state of each external resource so the next frame's
+        // importTexture matches the actual D3D12 state.
+        for (auto& res : resources) {
+            if (res.isExternal) {
+                persistentExternalStates[res.name] = { res.gfxHandle, res.currentState };
+            }
         }
     }
 

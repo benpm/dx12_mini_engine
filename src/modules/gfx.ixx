@@ -73,3 +73,36 @@ export namespace gfx
     using ::gfx::wrapNativeCommandList;
 
 }  // export namespace gfx
+
+export struct BindlessIndices
+{
+    uint32_t drawDataIdx;
+    uint32_t shadowMapIdx;
+    uint32_t envMapIdx;
+    uint32_t ssaoIdx;
+    uint32_t shadowSamplerIdx;
+    uint32_t envSamplerIdx;
+    uint32_t drawIndex;
+    uint32_t miscIdx;  // Can be used for source texture in post-fx
+    uint32_t _pad[8];  // Reserved for 64-uint root constant block (256 bytes)
+};
+
+export namespace app_slots
+{
+    // Legacy root signature slot assignments (8-param layout, VOLATILE descriptor tables)
+    inline constexpr uint32_t rootPerFrameCB = 0;
+    inline constexpr uint32_t rootPerPassCB = 1;
+    inline constexpr uint32_t rootDrawIndex = 2;
+    inline constexpr uint32_t rootOutlineParams = 3;
+    inline constexpr uint32_t rootPerObjectSrv = 4;  // SRV for per-object StructuredBuffer
+    inline constexpr uint32_t rootShadowSrv = 5;
+    inline constexpr uint32_t rootCubemapSrv = 6;
+    inline constexpr uint32_t rootSsaoSrv = 7;
+
+    // Bindless root signature slot assignments (5-param layout)
+    inline constexpr uint32_t bindlessIndices = 0;       // 64 root constants (b0)
+    inline constexpr uint32_t bindlessPerFrameCB = 1;    // CBV (b1)
+    inline constexpr uint32_t bindlessPerPassCB = 2;     // CBV (b2)
+    inline constexpr uint32_t bindlessSrvTable = 3;      // SRV table (t0+, space0,1,2,3)
+    inline constexpr uint32_t bindlessSamplerTable = 4;  // Sampler table (s0+, space0,1)
+}  // namespace app_slots

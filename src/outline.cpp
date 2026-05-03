@@ -101,6 +101,9 @@ void OutlineRenderer::reloadPSO(gfx::IDevice& dev, gfx::ShaderBytecode vs, gfx::
     gd.depthStencil.stencilFail = gfx::StencilOp::Keep;
     gd.depthStencil.stencilDepthFail = gfx::StencilOp::Keep;
     gd.depthStencil.stencilPass = gfx::StencilOp::Keep;
+    // Outline only reads stencil (NotEqual compare, all KEEP ops) — set
+    // stencilWriteMask=0 so D3D12 lets us bind depth_buffer in DEPTH_READ.
+    gd.depthStencil.stencilWriteMask = 0;
     gd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
     gd.debugName = "outline_pso";
     pso = dev.createGraphicsPipeline(gd);
@@ -118,8 +121,9 @@ void OutlineRenderer::render(
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
     cmdRef.bindPipeline(pso);
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap };
-    cmdList->SetDescriptorHeaps(1, heaps);
+    auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, samplerHeap };
+    cmdList->SetDescriptorHeaps(2, heaps);
 
     cmdList->SetGraphicsRootSignature(
         static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
@@ -127,6 +131,9 @@ void OutlineRenderer::render(
     D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
     heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
     cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);
+    D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+    samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSamplerTable, samplerHeapStart);
 
     cmdList->SetGraphicsRootConstantBufferView(app_slots::bindlessPerFrameCB, ctx.perFrameAddr);
     cmdList->SetGraphicsRootConstantBufferView(app_slots::bindlessPerPassCB, ctx.perPassAddr);

@@ -1,3 +1,25 @@
+#ifdef USE_BINDLESS
+struct BindlessPayload
+{
+    uint srcIdx;
+    uint samplerIdx;
+    uint _pad[2];
+    float2 texelSize;
+    float threshold;
+    float softKnee;
+};
+ConstantBuffer<BindlessPayload> payload : register(b0);
+
+Texture2D textures[] : register(t0, space0);
+SamplerState samplers[] : register(s0, space0);
+
+    #define srcTexture textures[payload.srcIdx]
+    #define linearClamp samplers[payload.samplerIdx]
+    #define texelSize payload.texelSize
+    #define threshold payload.threshold
+    #define softKnee payload.softKnee
+
+#else
 Texture2D<float4> srcTexture : register(t0);
 SamplerState linearClamp : register(s0);
 
@@ -7,6 +29,7 @@ cbuffer BloomConstants : register(b0)
     float threshold;
     float softKnee;
 };
+#endif
 
 float luma(float3 c)
 {
@@ -40,19 +63,25 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
     // 13-tap downsample (Jimenez 2014) with Karis average for anti-firefly
     // Sample pattern covers a 4x4 texel area using bilinear filtering
     float3 a = srcTexture.Sample(linearClamp, uv + float2(-1, -1) * texelSize).rgb;
-    float3 b = srcTexture.Sample(linearClamp, uv + float2( 0, -1) * texelSize).rgb;
-    float3 c = srcTexture.Sample(linearClamp, uv + float2( 1, -1) * texelSize).rgb;
-    float3 d = srcTexture.Sample(linearClamp, uv + float2(-1,  0) * texelSize).rgb;
+    float3 b = srcTexture.Sample(linearClamp, uv + float2(0, -1) * texelSize).rgb;
+    float3 c = srcTexture.Sample(linearClamp, uv + float2(1, -1) * texelSize).rgb;
+    float3 d = srcTexture.Sample(linearClamp, uv + float2(-1, 0) * texelSize).rgb;
     float3 e = srcTexture.Sample(linearClamp, uv).rgb;
-    float3 f = srcTexture.Sample(linearClamp, uv + float2( 1,  0) * texelSize).rgb;
-    float3 g = srcTexture.Sample(linearClamp, uv + float2(-1,  1) * texelSize).rgb;
-    float3 h = srcTexture.Sample(linearClamp, uv + float2( 0,  1) * texelSize).rgb;
-    float3 i = srcTexture.Sample(linearClamp, uv + float2( 1,  1) * texelSize).rgb;
+    float3 f = srcTexture.Sample(linearClamp, uv + float2(1, 0) * texelSize).rgb;
+    float3 g = srcTexture.Sample(linearClamp, uv + float2(-1, 1) * texelSize).rgb;
+    float3 h = srcTexture.Sample(linearClamp, uv + float2(0, 1) * texelSize).rgb;
+    float3 i = srcTexture.Sample(linearClamp, uv + float2(1, 1) * texelSize).rgb;
 
     // Apply threshold before averaging
-    a = applyThreshold(a); b = applyThreshold(b); c = applyThreshold(c);
-    d = applyThreshold(d); e = applyThreshold(e); f = applyThreshold(f);
-    g = applyThreshold(g); h = applyThreshold(h); i = applyThreshold(i);
+    a = applyThreshold(a);
+    b = applyThreshold(b);
+    c = applyThreshold(c);
+    d = applyThreshold(d);
+    e = applyThreshold(e);
+    f = applyThreshold(f);
+    g = applyThreshold(g);
+    h = applyThreshold(h);
+    i = applyThreshold(i);
 
     // 4 groups of 4 samples each, using Karis average
     float3 g0 = karisAverage(a, b, d, e);

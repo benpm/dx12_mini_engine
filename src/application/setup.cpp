@@ -94,7 +94,7 @@ void Application::createScenePSO()
     gd.topology = gfx::PrimitiveTopology::TriangleList;
     gd.numRenderTargets = 1;
     gd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
-    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencilFormat = gfx::Format::D32FloatS8X24Uint;
     gd.depthStencil.depthEnable = true;
     gd.depthStencil.depthWrite = true;
     gd.depthStencil.depthCompare = gfx::CompareOp::Less;
@@ -162,7 +162,7 @@ void Application::createGridPSO()
     gd.rasterizer.cull = gfx::CullMode::None;
     gd.numRenderTargets = 1;
     gd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
-    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencilFormat = gfx::Format::D32FloatS8X24Uint;
     gd.depthStencil.depthEnable = true;
     gd.depthStencil.depthWrite = false;
     gd.depthStencil.depthCompare = gfx::CompareOp::Less;
@@ -308,7 +308,10 @@ void Application::createCubemapResources()
         td.width = cubemapResolution;
         td.height = cubemapResolution;
         td.depthOrArraySize = 6;
-        td.format = gfx::Format::D32Float;
+        // Match the scene PSO's depthStencilFormat (D32_FLOAT_S8X24_UINT) so
+        // the cubemap pass — which reuses scene PSO — sees a matching DSV.
+        td.format = gfx::Format::R32G8X24Typeless;
+        td.viewFormat = gfx::Format::D32FloatS8X24Uint;
         td.usage = gfx::TextureUsage::DepthStencil;
         td.initialState = gfx::ResourceState::DepthWrite;
         td.useClearValue = true;
@@ -363,7 +366,7 @@ void Application::createGBufferPSO()
     gd.renderTargetFormats[1] = gfx::Format::RGBA8Unorm;
     gd.renderTargetFormats[2] = gfx::Format::RG8Unorm;
     gd.renderTargetFormats[3] = gfx::Format::RG16Float;
-    gd.depthStencilFormat = gfx::Format::D24UnormS8Uint;
+    gd.depthStencilFormat = gfx::Format::D32FloatS8X24Uint;
     gd.depthStencil.depthEnable = true;
     gd.depthStencil.depthWrite = true;
     gd.depthStencil.depthCompare = gfx::CompareOp::Less;
@@ -383,6 +386,9 @@ void Application::onResize(uint32_t width, uint32_t height)
     if (this->isInitialized) {
         this->cmdQueue.flush();
         this->renderGraph.reset();
+        // Resources we re-import each frame (gbuffer, hdr_rt, depth, etc.) get
+        // recreated below; their old persistent states no longer apply.
+        this->renderGraph.clearPersistentState();
         // gfxSwapChain->resize() releases old back-buffer textures internally.
         // Clear our cached handles; new ones come from gfxSwapChain->backBufferAt below.
         for (int i = 0; i < this->nBuffers; ++i) {

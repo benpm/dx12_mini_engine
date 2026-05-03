@@ -5,8 +5,14 @@
 // d3d12_swapchain.cpp; format / state conversion helpers and shared internal
 // class declarations live in d3d12_internal.h.
 
+#if defined(__clang__)
+    #define FMT_CONSTEVAL
+#endif
+
 #include <cstring>
 #include <string>
+
+#include <spdlog/spdlog.h>
 
 #include "d3d12_internal.h"
 
@@ -16,6 +22,48 @@ using Microsoft::WRL::ComPtr;
 
 namespace gfxd3d12
 {
+
+    namespace
+    {
+        // ID3D12InfoQueue1 callback — routes debug-layer messages to spdlog.
+        // Runs on whichever thread D3D12 calls it from (typically the submitting
+        // thread). The callback signature uses __stdcall on x86; use the alias
+        // D3D12MessageFunc for portability.
+        void __stdcall debugLayerCallback(
+            D3D12_MESSAGE_CATEGORY,
+            D3D12_MESSAGE_SEVERITY severity,
+            D3D12_MESSAGE_ID id,
+            LPCSTR description,
+            void*
+        )
+        {
+            const char* sevStr = "INFO";
+            switch (severity) {
+                case D3D12_MESSAGE_SEVERITY_CORRUPTION:
+                    sevStr = "CORRUPTION";
+                    break;
+                case D3D12_MESSAGE_SEVERITY_ERROR:
+                    sevStr = "ERROR";
+                    break;
+                case D3D12_MESSAGE_SEVERITY_WARNING:
+                    sevStr = "WARNING";
+                    break;
+                case D3D12_MESSAGE_SEVERITY_INFO:
+                    sevStr = "INFO";
+                    break;
+                case D3D12_MESSAGE_SEVERITY_MESSAGE:
+                    sevStr = "MSG";
+                    break;
+            }
+            if (severity <= D3D12_MESSAGE_SEVERITY_ERROR) {
+                spdlog::error("[D3D12 {} id={}] {}", sevStr, static_cast<int>(id), description);
+            } else if (severity == D3D12_MESSAGE_SEVERITY_WARNING) {
+                spdlog::warn("[D3D12 {} id={}] {}", sevStr, static_cast<int>(id), description);
+            } else {
+                spdlog::info("[D3D12 {} id={}] {}", sevStr, static_cast<int>(id), description);
+            }
+        }
+    }  // namespace
 
     Device::Device(const gfx::DeviceDesc& d) : desc(d)
     {
@@ -33,6 +81,26 @@ namespace gfxd3d12
         }
 
         createDeviceAndFactory();
+
+        if (d.enableDebugLayer) {
+            // Disable break-on-severity so debug-layer errors don't crash
+            // unattached processes (e.g. headless WARP test runs), and
+            // register an InfoQueue1 callback so messages still reach the
+            // log. Falls back gracefully on systems without InfoQueue1.
+            ComPtr<ID3D12InfoQueue> infoQueue;
+            if (SUCCEEDED(d3dDevice.As(&infoQueue))) {
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, FALSE);
+                ComPtr<ID3D12InfoQueue1> infoQueue1;
+                if (SUCCEEDED(d3dDevice.As(&infoQueue1))) {
+                    DWORD cookie = 0;
+                    infoQueue1->RegisterMessageCallback(
+                        &debugLayerCallback, D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr, &cookie
+                    );
+                }
+            }
+        }
 
         queue = std::make_unique<Queue>(this, d3dDevice.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
 
@@ -119,33 +187,57 @@ namespace gfxd3d12
         //   Slot 0: 16 root constants (b0)  — per-draw indices block
         //   Slot 1: CBV (b1)                — per-frame
         //   Slot 2: CBV (b2)                — per-pass
-        //   Slot 3: SRV/UAV unbounded table (t0+, u0+ at space0)
+        //   Slot 3: SRV/UAV unbounded table (multiple spaces mapping to the same heap)
         //   Slot 4: Sampler unbounded table
         CD3DX12_ROOT_PARAMETER1 params[5] = {};
-        params[0].InitAsConstants(16, 0);
+        params[0].InitAsConstants(32, 0);  // Slot 0: b0 (32 constants = 128 bytes)
         params[1].InitAsConstantBufferView(1);
         params[2].InitAsConstantBufferView(2);
 
-        CD3DX12_DESCRIPTOR_RANGE1 srvRange{};
-        srvRange.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        // SRV ranges for different HLSL types (all mapping to the same heap offset 0)
+        // space0: Texture2D, etc.
+        // space1: StructuredBuffer
+        // space2: TextureCube
+        // space3: ByteAddressBuffer
+        const uint32_t resourceDescriptorCount = desc.maxBindlessDescriptors;
+        const uint32_t samplerDescriptorCount = 256;
+        CD3DX12_DESCRIPTOR_RANGE1 srvRanges[4] = {};
+        srvRanges[0].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, resourceDescriptorCount, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
         );
-        params[3].InitAsDescriptorTable(1, &srvRange);
+        srvRanges[1].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, resourceDescriptorCount, 0, 1,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
+        );
+        srvRanges[2].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, resourceDescriptorCount, 0, 2,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
+        );
+        srvRanges[3].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_UAV, resourceDescriptorCount, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
+        );
+        params[3].InitAsDescriptorTable(4, srvRanges);
 
-        CD3DX12_DESCRIPTOR_RANGE1 sampRange{};
-        sampRange.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, UINT_MAX, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
+        // Sampler ranges (all mapping to the same heap offset 0)
+        // space0: SamplerState
+        // space1: SamplerComparisonState
+        CD3DX12_DESCRIPTOR_RANGE1 sampRanges[2] = {};
+        sampRanges[0].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, samplerDescriptorCount, 0, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
         );
-        params[4].InitAsDescriptorTable(1, &sampRange);
+        sampRanges[1].Init(
+            D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, samplerDescriptorCount, 0, 1,
+            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0
+        );
+        params[4].InitAsDescriptorTable(2, sampRanges);
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
         rsd.Init_1_1(
             _countof(params), params, 0, nullptr,
-            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED |
-                D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
         );
 
         ComPtr<ID3DBlob> blob, err;
@@ -520,9 +612,12 @@ namespace gfxd3d12
         pd.SampleDesc = { d.sampleCount, 0 };
 
         ComPtr<ID3D12PipelineState> pso;
+        const std::string context =
+            d.debugName.empty() ? "CreateGraphicsPipelineState"
+                                : "CreateGraphicsPipelineState(" + std::string(d.debugName) + ")";
         chkDX(
             d3dDevice->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso)),
-            "CreateGraphicsPipelineState"
+            context
         );
 
         std::lock_guard<std::mutex> lk(poolMu);
@@ -537,7 +632,11 @@ namespace gfxd3d12
         }
         auto& rec = pipelines[slot];
         rec.pso = std::move(pso);
-        rec.rootSig = rootSignature;
+        // Track the *actual* root signature compiled into this PSO, not the
+        // device's default bindless one — so callers passing
+        // nativeRootSignatureOverride (e.g. gridRootSig) get the right one
+        // back when bindPipeline() auto-sets the root signature.
+        rec.rootSig = pd.pRootSignature;
         rec.isCompute = false;
         rec.topology = toTopology(d.topology);
         return { slot };
@@ -573,7 +672,7 @@ namespace gfxd3d12
         }
         auto& rec = pipelines[slot];
         rec.pso = std::move(pso);
-        rec.rootSig = rootSignature;
+        rec.rootSig = pd.pRootSignature;
         rec.isCompute = true;
         return { slot };
     }
@@ -812,6 +911,11 @@ namespace gfxd3d12
         return resourceHeap.gpuHandle(bindlessIndex).ptr;
     }
 
+    uint64_t Device::samplerGpuDescriptorHandle(uint32_t bindlessIndex) const
+    {
+        return samplerHeap_.gpuHandle(bindlessIndex).ptr;
+    }
+
     uint32_t Device::createTypedSrv(gfx::TextureHandle h, gfx::Format viewFormat)
     {
         auto* tex = getTexture(h);
@@ -859,6 +963,11 @@ namespace gfxd3d12
     std::unique_ptr<gfx::ISwapChain> Device::createSwapChain(const gfx::SwapChainDesc& d)
     {
         return std::make_unique<SwapChain>(this, d);
+    }
+
+    void* Device::bindlessRootSigNative() const
+    {
+        return rootSignature.Get();
     }
 
     void Device::retireCompletedResources()

@@ -105,7 +105,11 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+#ifdef USE_BINDLESS
+    psoDesc.pRootSignature = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
+#else
     psoDesc.pRootSignature = rootSignature.Get();
+#endif
     psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
     psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_billboard_vs, sizeof(g_billboard_vs));
     psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_billboard_ps, sizeof(g_billboard_ps));
@@ -126,7 +130,9 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets = 1;
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    // Match the application's main depth buffer (D32_FLOAT_S8X24_UINT) — the
+    // billboard pass binds depth_buffer's DSV for depth-test (no depth write).
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     psoDesc.SampleDesc = { 1, 0 };
 
     chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
@@ -220,15 +226,14 @@ void BillboardRenderer::render(
     vec3 right = normalize(cross(worldUp, forward));
     vec3 up = normalize(cross(forward, right));
 
-    float constants[24] = {
-        viewProj._11, viewProj._12, viewProj._13, viewProj._14, viewProj._21, viewProj._22,
-        viewProj._23, viewProj._24, viewProj._31, viewProj._32, viewProj._33, viewProj._34,
-        viewProj._41, viewProj._42, viewProj._43, viewProj._44, right.x,      right.y,
-        right.z,      0.0f,         up.x,         up.y,         up.z,         0.0f,
-    };
-
     cmdList->SetPipelineState(pipelineState.Get());
+#ifdef USE_BINDLESS
+    cmdList->SetGraphicsRootSignature(
+        static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
+    );
+#else
     cmdList->SetGraphicsRootSignature(rootSignature.Get());
+#endif
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     D3D12_VERTEX_BUFFER_VIEW views[] = {
@@ -238,12 +243,42 @@ void BillboardRenderer::render(
     cmdList->IASetVertexBuffers(0, 2, views);
 
     auto* gfxHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-    ID3D12DescriptorHeap* heaps[] = { gfxHeap };
-    cmdList->SetDescriptorHeaps(1, heaps);
+    auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+    ID3D12DescriptorHeap* heaps[] = { gfxHeap, samplerHeap };
+    cmdList->SetDescriptorHeaps(2, heaps);
+
+#ifdef USE_BINDLESS
+    D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+    heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
+    D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+    samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+    cmdList->SetGraphicsRootDescriptorTable(4, samplerHeapStart);  // Slot 4: sampler table
+
+    struct BindlessBillboardPayload
+    {
+        uint32_t spriteIdx;
+        uint32_t samplerIdx;
+        uint32_t _pad[2];
+        float viewProj[16];
+        float camRight[4];
+        float camUp[4];
+    };
+    BindlessBillboardPayload pl;
+    pl.spriteIdx = spriteSrvIdx;
+    pl.samplerIdx = 0;
+    std::memcpy(pl.viewProj, &viewProj, 64);
+    std::memcpy(pl.camRight, &right, 12);
+    pl.camRight[3] = 0;
+    std::memcpy(pl.camUp, &up, 12);
+    pl.camUp[3] = 0;
+    cmdList->SetGraphicsRoot32BitConstants(0, sizeof(pl) / 4, &pl, 0);
+#else
     cmdList->SetGraphicsRoot32BitConstants(0, 24, constants, 0);
     D3D12_GPU_DESCRIPTOR_HANDLE spriteSrv;
     spriteSrv.ptr = devForDestroy->srvGpuDescriptorHandle(spriteSrvIdx);
     cmdList->SetGraphicsRootDescriptorTable(1, spriteSrv);
+#endif
 
     cmdList->DrawInstanced(6, instanceCount, 0, 0);
 }

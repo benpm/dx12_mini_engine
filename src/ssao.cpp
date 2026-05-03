@@ -233,7 +233,13 @@ void SsaoRenderer::createResources(
         pd.numRenderTargets = 1;
         pd.depthStencil.depthEnable = false;
         pd.depthStencil.depthWrite = false;
-        pd.nativeRootSignatureOverride = ssaoRootSig.Get();
+        pd.nativeRootSignatureOverride =
+#ifdef USE_BINDLESS
+            dev.bindlessRootSigNative();
+#else
+            ssaoRootSig.Get();
+#endif
+        pd.debugName = "ssao_pso";
         ssaoPSO = dev.createGraphicsPipeline(pd);
     }
     {
@@ -250,7 +256,13 @@ void SsaoRenderer::createResources(
         pd.numRenderTargets = 1;
         pd.depthStencil.depthEnable = false;
         pd.depthStencil.depthWrite = false;
-        pd.nativeRootSignatureOverride = blurRootSig.Get();
+        pd.nativeRootSignatureOverride =
+#ifdef USE_BINDLESS
+            dev.bindlessRootSigNative();
+#else
+            blurRootSig.Get();
+#endif
+        pd.debugName = "ssao_blur_pso";
         blurPSO = dev.createGraphicsPipeline(pd);
     }
 
@@ -391,14 +403,46 @@ void SsaoRenderer::render(
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
         cmdRef.bindPipeline(ssaoPSO);
+#ifdef USE_BINDLESS
+        cmdList->SetGraphicsRootSignature(
+            static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
+        );
+#else
         cmdList->SetGraphicsRootSignature(ssaoRootSig.Get());
+#endif
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         auto* gfxHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-        ID3D12DescriptorHeap* heaps[] = { gfxHeap };
-        cmdList->SetDescriptorHeaps(1, heaps);
+        auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+        ID3D12DescriptorHeap* heaps[] = { gfxHeap, samplerHeap };
+        cmdList->SetDescriptorHeaps(2, heaps);
+
+#ifdef USE_BINDLESS
+        D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+        heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+        cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
+        D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+        samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+        cmdList->SetGraphicsRootDescriptorTable(4, samplerHeapStart);  // Slot 4: sampler table
+
+        struct BindlessSsaoIndices
+        {
+            uint32_t normalIdx;
+            uint32_t depthIdx;
+            uint32_t noiseIdx;
+            uint32_t _pad;
+        };
+        BindlessSsaoIndices bi{};
+        bi.normalIdx = normalSrvIdx;
+        bi.depthIdx = depthSrvIdx;
+        bi.noiseIdx = noiseSrvIdx;
+        cmdList->SetGraphicsRoot32BitConstants(0, 4, &bi, 0);  // Slot 0: b0
+        cmdList->SetGraphicsRootConstantBufferView(
+            2, cbvRes->GetGPUVirtualAddress()
+        );  // Slot 2: b2 (per-pass)
+#else
         auto getSrvGpu = [&](uint32_t idx) {
             D3D12_GPU_DESCRIPTOR_HANDLE h;
             h.ptr = devForDestroy->srvGpuDescriptorHandle(idx);
@@ -408,6 +452,7 @@ void SsaoRenderer::render(
         cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(depthSrvIdx));
         cmdList->SetGraphicsRootDescriptorTable(2, getSrvGpu(noiseSrvIdx));
         cmdList->SetGraphicsRootConstantBufferView(3, cbvRes->GetGPUVirtualAddress());
+#endif
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionSsaoResource(
             cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -423,16 +468,43 @@ void SsaoRenderer::render(
         D3D12_CPU_DESCRIPTOR_HANDLE rtv;
         rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoBlurRT));
         cmdRef.bindPipeline(blurPSO);
+#ifdef USE_BINDLESS
+        cmdList->SetGraphicsRootSignature(
+            static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
+        );
+#else
         cmdList->SetGraphicsRootSignature(blurRootSig.Get());
+#endif
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         auto* gfxHeap2 = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
-        ID3D12DescriptorHeap* heaps[] = { gfxHeap2 };
-        cmdList->SetDescriptorHeaps(1, heaps);
+        auto* samplerHeap2 =
+            static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
+        ID3D12DescriptorHeap* heaps[] = { gfxHeap2, samplerHeap2 };
+        cmdList->SetDescriptorHeaps(2, heaps);
+
+#ifdef USE_BINDLESS
+        D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
+        heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
+        cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
+        D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
+        samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
+        cmdList->SetGraphicsRootDescriptorTable(4, samplerHeapStart);  // Slot 4: sampler table
+
+        struct BindlessBlurIndices
+        {
+            uint32_t ssaoIdx;
+            uint32_t _pad[3];
+        };
+        BindlessBlurIndices bi{};
+        bi.ssaoIdx = ssaoRtSrvIdx;
+        cmdList->SetGraphicsRoot32BitConstants(0, 4, &bi, 0);  // Slot 0: b0
+#else
         D3D12_GPU_DESCRIPTOR_HANDLE ssaoSrv;
         ssaoSrv.ptr = devForDestroy->srvGpuDescriptorHandle(ssaoRtSrvIdx);
         cmdList->SetGraphicsRootDescriptorTable(0, ssaoSrv);
+#endif
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionSsaoResource(
             cmdRef, ssaoBlurRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,

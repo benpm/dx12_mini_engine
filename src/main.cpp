@@ -52,18 +52,36 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
     spdlog::info("Command line: {}", GetCommandLineA());
     std::string sceneFilePath;
     bool dumpConfig = false;
+    bool showHelp = false;
     if (argv) {
         for (int i = 1; i < argc; ++i) {
             int len = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, nullptr, nullptr);
             std::string arg(len - 1, '\0');
             WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, arg.data(), len, nullptr, nullptr);
-            if (arg == "--dump-config") {
+            if (arg == "-h" || arg == "--help") {
+                showHelp = true;
+            } else if (arg == "--dump-config") {
                 dumpConfig = true;
             } else if (!arg.empty() && arg[0] != '-') {
                 sceneFilePath = arg;
             }
         }
         LocalFree(static_cast<HLOCAL>(argv));
+    }
+
+    if (showHelp) {
+        const char* helpText =
+            "DX12 Mini Engine\n\n"
+            "Usage: main.exe [options] [scene-file]\n\n"
+            "Options:\n"
+            "  -h, --help       Show this help message and exit\n"
+            "  --dump-config    Write default config.json and exit\n\n"
+            "Arguments:\n"
+            "  scene-file       Path to a JSON scene file (default: from "
+            "config.json's defaultScenePath)\n";
+        ::MessageBoxA(nullptr, helpText, "DX12 Mini Engine - Help", MB_OK | MB_ICONINFORMATION);
+        CoUninitialize();
+        return 0;
     }
 
     // Handle --dump-config: write defaults and exit

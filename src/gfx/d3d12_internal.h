@@ -571,6 +571,7 @@ namespace gfxd3d12
         uint32_t bindlessUavIndex(gfx::BufferHandle h) override;
         uint32_t bindlessSamplerIndex(gfx::SamplerHandle h) override;
         uint64_t srvGpuDescriptorHandle(uint32_t bindlessIndex) const override;
+        uint64_t samplerGpuDescriptorHandle(uint32_t bindlessIndex) const override;
         uint32_t createTypedSrv(gfx::TextureHandle h, gfx::Format viewFormat) override;
         uint32_t createExternalSrv(
             void* nativeResource,
@@ -579,13 +580,18 @@ namespace gfxd3d12
             bool isCubemap = false
         ) override;
         void* srvHeapNative() const override { return resourceHeap.native(); }
+        void* samplerHeapNative() const override { return samplerHeap_.native(); }
         uint64_t rtvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;
         uint64_t dsvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;
 
         gfx::IQueue* graphicsQueue() override { return queue.get(); }
         std::unique_ptr<gfx::ISwapChain> createSwapChain(const gfx::SwapChainDesc& desc) override;
         void retireCompletedResources() override;
+
+        void* bindlessRootSigNative() const override;
+
         void* nativeHandle() override { return d3dDevice.Get(); }
+
         void* nativeResource(gfx::TextureHandle h) override
         {
             auto* r = getTexture(h);

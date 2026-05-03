@@ -4,6 +4,8 @@ set(CMAKE_COLOR_DIAGNOSTICS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 include(CTest)
 
+option(USE_BINDLESS "Use bindless descriptor heap and root signature" ON)
+
 #Use static CRT for MSVC and Clang - cl(so no VCRUNTIME dlls are required)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -192,10 +194,15 @@ message(STATUS "Found DXC: ${DXC_EXECUTABLE}")
 function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME)
     get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
     set(OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}_cso.h")
+    set(BINDLESS_FLAG "")
+    if(USE_BINDLESS)
+        set(BINDLESS_FLAG "-DUSE_BINDLESS=1")
+    endif()
+
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
         COMMAND ${DXC_EXECUTABLE} -T ${SHADER_TYPE}_${SHADER_MODEL} -E main
-        -I ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
+        -I ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders ${BINDLESS_FLAG}
         -Fh ${OUTPUT_FILE} -Vn ${VAR_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/sky.hlsli
@@ -212,6 +219,11 @@ add_executable(main
     src/main.cpp
     src/application/application.cpp
     src/application/ui.cpp
+    src/application/ui_menu.cpp
+    src/application/ui_inspector.cpp
+    src/application/ui_metrics.cpp
+    src/application/ui_overlay.cpp
+    src/application/ui_util.cpp
     src/application/render.cpp
     src/application/setup.cpp
     src/application/scene.cpp
@@ -353,6 +365,9 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     SCRIPTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scripts"
     ICONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
 )
+if(USE_BINDLESS)
+    target_compile_definitions(main PRIVATE USE_BINDLESS=1)
+endif()
 
 target_compile_definitions(main PRIVATE
     $<$<CONFIG:Debug>:_DEBUG>

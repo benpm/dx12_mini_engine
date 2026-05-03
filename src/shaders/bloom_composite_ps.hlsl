@@ -1,3 +1,43 @@
+#ifdef USE_BINDLESS
+struct BindlessPayload
+{
+    uint sceneIdx;
+    uint bloomIdx;
+    uint samplerIdx;
+    uint _pad;
+    float2 texelSize;
+    float bloomIntensity;
+    uint tonemapMode;
+    float3 camForward;
+    float _pad1;
+    float3 camRight;
+    float _pad2;
+    float3 camUp;
+    float _pad3;
+    float3 sunDir;
+    float aspectRatio;
+    float tanHalfFov;
+    float frameTime;
+};
+ConstantBuffer<BindlessPayload> payload : register(b0);
+
+Texture2D textures[] : register(t0, space0);
+SamplerState samplers[] : register(s0, space0);
+
+    #define sceneTexture textures[payload.sceneIdx]
+    #define bloomTexture textures[payload.bloomIdx]
+    #define linearClamp samplers[payload.samplerIdx]
+    #define bloomIntensity payload.bloomIntensity
+    #define tonemapMode payload.tonemapMode
+    #define camForward payload.camForward
+    #define camRight payload.camRight
+    #define camUp payload.camUp
+    #define sunDir payload.sunDir
+    #define aspectRatio payload.aspectRatio
+    #define tanHalfFov payload.tanHalfFov
+    #define frameTime payload.frameTime
+
+#else
 Texture2D<float4> sceneTexture : register(t0);
 Texture2D<float4> bloomTexture : register(t1);
 SamplerState linearClamp : register(s0);
@@ -15,6 +55,7 @@ cbuffer BloomConstants : register(b0)
     float tanHalfFov;
     float time;
 };
+#endif
 
 // --- ACES Filmic (Narkowicz 2015) ---
 float3 ACESFilm(float3 x)
@@ -160,7 +201,7 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
         float3 viewDir = normalize(
             camForward + camRight * ndc.x * aspectRatio * tanHalfFov + camUp * ndc.y * tanHalfFov
         );
-        scene = rayleighSky(viewDir, sunDir, time);
+        scene = rayleighSky(viewDir, sunDir, frameTime);
     }
 
     float3 hdr = scene + bloom * bloomIntensity;
@@ -192,7 +233,3 @@ float4 main(float2 uv : TEXCOORD) : SV_Target
     ldr = select(ldr <= 0.0031308f, ldr * 12.92f, 1.055f * pow(ldr, 1.0f / 2.4f) - 0.055f);
     return float4(ldr, 1.0f);
 }
-
-
-
-
