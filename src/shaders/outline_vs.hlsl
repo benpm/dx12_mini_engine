@@ -7,7 +7,6 @@ struct VertexIn
     float2 UV : TEXCOORD0;
 };
 
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint drawDataIdx;
@@ -23,29 +22,9 @@ cbuffer PerPass : register(b2)
     float4 CameraPos;
 };
 
-    #define drawIndex payload.drawIndex
-    #define outlineWidth payload.outlineWidth
+#define drawIndex payload.drawIndex
+#define outlineWidth payload.outlineWidth
 
-#else
-cbuffer PerPass : register(b1)
-{
-    matrix ViewProj;
-    float4 CameraPos;
-};
-
-cbuffer DrawIndex : register(b2)
-{
-    uint drawIndex;
-};
-
-cbuffer OutlineParams : register(b3)
-{
-    float outlineWidth;
-    float outlineR;
-    float outlineG;
-    float outlineB;
-};
-#endif
 
 struct PerObjectData
 {
@@ -59,12 +38,8 @@ struct PerObjectData
     float4 Emissive;
 };
 
-#ifdef USE_BINDLESS
 StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);
-    #define drawData drawDataTables[payload.drawDataIdx]
-#else
-StructuredBuffer<PerObjectData> drawData : register(t0);
-#endif
+#define drawData drawDataTables[payload.drawDataIdx]
 
 float4 main(VertexIn IN, uint instanceID : SV_InstanceID) : SV_Position
 {

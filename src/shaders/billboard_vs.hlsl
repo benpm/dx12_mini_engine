@@ -14,7 +14,6 @@ struct PSInput
     float4 color : COLOR0;
 };
 
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint spriteIdx;
@@ -26,18 +25,9 @@ struct BindlessPayload
 };
 ConstantBuffer<BindlessPayload> payload : register(b0);
 
-    #define viewProj payload.viewProj
-    #define camRight payload.camRight
-    #define camUp payload.camUp
-
-#else
-cbuffer BillboardCB : register(b0)
-{
-    float4x4 viewProj;
-    float4 camRight;
-    float4 camUp;
-};
-#endif
+#define viewProj payload.viewProj
+#define camRight payload.camRight
+#define camUp payload.camUp
 
 PSInput main(VSInput input)
 {

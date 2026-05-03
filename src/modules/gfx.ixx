@@ -26,6 +26,7 @@ export namespace gfx
     using ::gfx::BufferUsage;
     using ::gfx::Capabilities;
     using ::gfx::ColorAttachment;
+    using ::gfx::ClearFlags;
     using ::gfx::CompareOp;
     using ::gfx::ComputePipelineDesc;
     using ::gfx::CullMode;
@@ -55,6 +56,7 @@ export namespace gfx
     using ::gfx::StencilOp;
     using ::gfx::StoreOp;
     using ::gfx::SwapChainDesc;
+    using ::gfx::TextureBarrier;
     using ::gfx::TextureDesc;
     using ::gfx::TextureHandle;
     using ::gfx::TextureUsage;

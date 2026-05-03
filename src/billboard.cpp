@@ -46,50 +46,6 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
 {
     devForDestroy = &dev;
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(device->CheckFeatureSupport(
-            D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)
-        ))) {
-        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-    }
-
-    CD3DX12_DESCRIPTOR_RANGE1 spriteSrvRange;
-    spriteSrvRange.Init(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-    );
-
-    CD3DX12_ROOT_PARAMETER1 rootParams[2];
-    rootParams[0].InitAsConstants(24, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParams[1].InitAsDescriptorTable(1, &spriteSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-
-    D3D12_STATIC_SAMPLER_DESC sampler = {};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.ShaderRegister = 0;
-    sampler.RegisterSpace = 0;
-    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-    const D3D12_ROOT_SIGNATURE_FLAGS rootSigFlags =
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
-    rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &sampler, rootSigFlags);
-
-    ComPtr<ID3DBlob> rootSigBlob;
-    ComPtr<ID3DBlob> errorBlob;
-    chkDX(D3DX12SerializeVersionedRootSignature(
-        &rootSigDesc, featureData.HighestVersion, &rootSigBlob, &errorBlob
-    ));
-    chkDX(device->CreateRootSignature(
-        0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
-        IID_PPV_ARGS(&rootSignature)
-    ));
 
     D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
@@ -105,11 +61,7 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-#ifdef USE_BINDLESS
     psoDesc.pRootSignature = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-#else
-    psoDesc.pRootSignature = rootSignature.Get();
-#endif
     psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
     psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_billboard_vs, sizeof(g_billboard_vs));
     psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_billboard_ps, sizeof(g_billboard_ps));
@@ -227,13 +179,9 @@ void BillboardRenderer::render(
     vec3 up = normalize(cross(forward, right));
 
     cmdList->SetPipelineState(pipelineState.Get());
-#ifdef USE_BINDLESS
     cmdList->SetGraphicsRootSignature(
         static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
     );
-#else
-    cmdList->SetGraphicsRootSignature(rootSignature.Get());
-#endif
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     D3D12_VERTEX_BUFFER_VIEW views[] = {
@@ -247,7 +195,6 @@ void BillboardRenderer::render(
     ID3D12DescriptorHeap* heaps[] = { gfxHeap, samplerHeap };
     cmdList->SetDescriptorHeaps(2, heaps);
 
-#ifdef USE_BINDLESS
     D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
     heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
     cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
@@ -273,12 +220,6 @@ void BillboardRenderer::render(
     std::memcpy(pl.camUp, &up, 12);
     pl.camUp[3] = 0;
     cmdList->SetGraphicsRoot32BitConstants(0, sizeof(pl) / 4, &pl, 0);
-#else
-    cmdList->SetGraphicsRoot32BitConstants(0, 24, constants, 0);
-    D3D12_GPU_DESCRIPTOR_HANDLE spriteSrv;
-    spriteSrv.ptr = devForDestroy->srvGpuDescriptorHandle(spriteSrvIdx);
-    cmdList->SetGraphicsRootDescriptorTable(1, spriteSrv);
-#endif
 
     cmdList->DrawInstanced(6, instanceCount, 0, 0);
 }

@@ -1,4 +1,3 @@
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint srcIdx;
@@ -13,23 +12,12 @@ ConstantBuffer<BindlessPayload> payload : register(b0);
 Texture2D textures[] : register(t0, space0);
 SamplerState samplers[] : register(s0, space0);
 
-    #define srcTexture textures[payload.srcIdx]
-    #define linearClamp samplers[payload.samplerIdx]
-    #define texelSize payload.texelSize
-    #define threshold payload.threshold
-    #define softKnee payload.softKnee
+#define srcTexture textures[payload.srcIdx]
+#define linearClamp samplers[payload.samplerIdx]
+#define texelSize payload.texelSize
+#define threshold payload.threshold
+#define softKnee payload.softKnee
 
-#else
-Texture2D<float4> srcTexture : register(t0);
-SamplerState linearClamp : register(s0);
-
-cbuffer BloomConstants : register(b0)
-{
-    float2 texelSize;
-    float threshold;
-    float softKnee;
-};
-#endif
 
 float luma(float3 c)
 {

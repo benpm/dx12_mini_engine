@@ -5,7 +5,6 @@ struct VSOut
     float4 Position : SV_Position;
 };
 
-#ifdef USE_BINDLESS
 struct BindlessIndices
 {
     uint normalIdx;
@@ -32,31 +31,10 @@ cbuffer SsaoCB : register(b2)
 Texture2D textures[] : register(t0, space0);
 SamplerState samplers[] : register(s0, space0);
 
-    #define normalTex textures[indices.normalIdx]
-    #define depthTex textures[indices.depthIdx]
-    #define noiseTex textures[indices.noiseIdx]
-    #define wrapSampler samplers[0]  // SSAO uses static sampler or first bindless sampler
-#else
-Texture2D<float4> normalTex : register(t0);
-Texture2D<float> depthTex : register(t1);
-Texture2D<float2> noiseTex : register(t2);
-
-cbuffer SsaoCB : register(b0)
-{
-    matrix View;
-    matrix Proj;
-    matrix InvProj;
-    float4 Samples[32];
-    float Radius;
-    float Bias;
-    float ScreenWidth;
-    float ScreenHeight;
-    int KernelSize;
-    float3 _Pad;
-};
-
-SamplerState wrapSampler : register(s0);
-#endif
+#define normalTex textures[indices.normalIdx]
+#define depthTex textures[indices.depthIdx]
+#define noiseTex textures[indices.noiseIdx]
+#define wrapSampler samplers[0]  // SSAO uses static sampler or first bindless sampler
 
 // Reconstruct view-space position from UV and NDC depth
 float3 ReconstructViewPos(float2 uv, float depth)

@@ -1,4 +1,3 @@
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint sceneIdx;
@@ -24,38 +23,19 @@ ConstantBuffer<BindlessPayload> payload : register(b0);
 Texture2D textures[] : register(t0, space0);
 SamplerState samplers[] : register(s0, space0);
 
-    #define sceneTexture textures[payload.sceneIdx]
-    #define bloomTexture textures[payload.bloomIdx]
-    #define linearClamp samplers[payload.samplerIdx]
-    #define bloomIntensity payload.bloomIntensity
-    #define tonemapMode payload.tonemapMode
-    #define camForward payload.camForward
-    #define camRight payload.camRight
-    #define camUp payload.camUp
-    #define sunDir payload.sunDir
-    #define aspectRatio payload.aspectRatio
-    #define tanHalfFov payload.tanHalfFov
-    #define frameTime payload.frameTime
+#define sceneTexture textures[payload.sceneIdx]
+#define bloomTexture textures[payload.bloomIdx]
+#define linearClamp samplers[payload.samplerIdx]
+#define bloomIntensity payload.bloomIntensity
+#define tonemapMode payload.tonemapMode
+#define camForward payload.camForward
+#define camRight payload.camRight
+#define camUp payload.camUp
+#define sunDir payload.sunDir
+#define aspectRatio payload.aspectRatio
+#define tanHalfFov payload.tanHalfFov
+#define frameTime payload.frameTime
 
-#else
-Texture2D<float4> sceneTexture : register(t0);
-Texture2D<float4> bloomTexture : register(t1);
-SamplerState linearClamp : register(s0);
-
-cbuffer BloomConstants : register(b0)
-{
-    float2 texelSize;
-    float bloomIntensity;
-    uint tonemapMode;
-    float3 camForward;
-    float3 camRight;
-    float3 camUp;
-    float3 sunDir;
-    float aspectRatio;
-    float tanHalfFov;
-    float time;
-};
-#endif
 
 // --- ACES Filmic (Narkowicz 2015) ---
 float3 ACESFilm(float3 x)

@@ -11,7 +11,6 @@ struct PixelIn
     float4 Position : SV_Position;
 };
 
-#ifdef USE_BINDLESS
 struct BindlessIndices
 {
     uint drawDataIdx;
@@ -44,29 +43,6 @@ cbuffer PerPass : register(b2)
     matrix ViewProj;
     float4 CameraPos;
 };
-#else
-cbuffer PerFrame : register(b0)
-{
-    float4 AmbientColor;
-    float4 LightPos[8];
-    float4 LightColor[8];
-    float4 DirLightDir;
-    float4 DirLightColor;
-    matrix LightViewProj;
-    float ShadowBias;
-    float ShadowMapTexelSize;
-    float FogStartY;
-    float FogDensity;
-    float4 FogColor;
-    float Time;
-};
-
-cbuffer PerPass : register(b1)
-{
-    matrix ViewProj;
-    float4 CameraPos;
-};
-#endif
 
 struct PerObjectData
 {
@@ -80,7 +56,6 @@ struct PerObjectData
     float4 Emissive;
 };
 
-#ifdef USE_BINDLESS
 // Unbounded arrays mapping to the global bindless heap
 StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);
 Texture2D textures[] : register(t0, space0);
@@ -88,20 +63,12 @@ TextureCube envMaps[] : register(t0, space2);
 SamplerState samplers[] : register(s0, space0);
 SamplerComparisonState shadowSamplers[] : register(s0, space1);
 
-    #define drawData drawDataTables[indices.drawDataIdx]
-    #define shadowMapTex textures[indices.shadowMapIdx]
-    #define envMap envMaps[indices.envMapIdx]
-    #define ssaoTex textures[indices.ssaoIdx]
-    #define shadowSampler shadowSamplers[indices.shadowSamplerIdx]
-    #define envSampler samplers[indices.envSamplerIdx]
-#else
-StructuredBuffer<PerObjectData> drawData : register(t0);
-Texture2D<float> shadowMapTex : register(t1);
-TextureCube<float3> envMap : register(t2);
-Texture2D<float> ssaoTex : register(t3);
-SamplerComparisonState shadowSampler : register(s0);
-SamplerState envSampler : register(s1);
-#endif
+#define drawData drawDataTables[indices.drawDataIdx]
+#define shadowMapTex textures[indices.shadowMapIdx]
+#define envMap envMaps[indices.envMapIdx]
+#define ssaoTex textures[indices.ssaoIdx]
+#define shadowSampler shadowSamplers[indices.shadowSamplerIdx]
+#define envSampler samplers[indices.envSamplerIdx]
 
 static const float PI = 3.14159265359f;
 

@@ -113,7 +113,6 @@ export class Application
     gfx::ShaderHandle gbufferPS{};
 
     // Infinite grid
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> gridRootSig;
     gfx::PipelineHandle gridPSO{};
     gfx::ShaderHandle gridVS{};
     gfx::ShaderHandle gridPS{};
@@ -154,8 +153,6 @@ export class Application
     float fogStartY = -4.0f;
     float fogDensity = 0.4f;
     vec3 fogColor{ 0.1f, 0.35f, 0.45f };  // ocean teal
-    char gltfPathBuf[512] = "";
-    char scenePathBuf[512] = "";
     char sceneTitleBuf[256] = "";
     char sceneDescBuf[512] = "";
     std::string sceneTitle;

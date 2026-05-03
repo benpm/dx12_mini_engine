@@ -1,7 +1,8 @@
 // Infinite grid pixel shader
 // Renders a Y=0 ground plane grid with unit lines and fade
 
-cbuffer GridCB : register(b0)
+// Bindless root sig: PerPassCB slot is b2.
+cbuffer GridCB : register(b2)
 {
     matrix ViewProj;
     matrix InvViewProj;

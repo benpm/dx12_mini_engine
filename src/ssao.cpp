@@ -150,68 +150,7 @@ void SsaoRenderer::createResources(
 {
     devForDestroy = &dev;
     auto* device = nativeDev(dev);
-
-    {
-        // 3 separate VOLATILE descriptor tables (t0=normal, t1=depth, t2=noise) + CBV
-        CD3DX12_DESCRIPTOR_RANGE1 srvRanges[3];
-        srvRanges[0].Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-        srvRanges[1].Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-        srvRanges[2].Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-        CD3DX12_ROOT_PARAMETER1 params[4];
-        params[0].InitAsDescriptorTable(1, &srvRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[1].InitAsDescriptorTable(1, &srvRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[2].InitAsDescriptorTable(1, &srvRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[3].InitAsConstantBufferView(
-            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL
-        );
-        D3D12_STATIC_SAMPLER_DESC samp = {};
-        samp.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-        samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        samp.ShaderRegister = 0;
-        samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
-        rsd.Init_1_1(
-            4, params, 1, &samp,
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
-        );
-        ComPtr<ID3DBlob> blob, err;
-        D3DX12SerializeVersionedRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &err);
-        device->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&ssaoRootSig)
-        );
-    }
-    {
-        CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-        CD3DX12_ROOT_PARAMETER1 params[1];
-        params[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
-        rsd.Init_1_1(
-            1, params, 0, nullptr,
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
-        );
-        ComPtr<ID3DBlob> blob, err;
-        D3DX12SerializeVersionedRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &err);
-        device->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&blurRootSig)
-        );
-    }
+    (void)device;
 
     {
         gfx::ShaderDesc vsd{};
@@ -233,12 +172,7 @@ void SsaoRenderer::createResources(
         pd.numRenderTargets = 1;
         pd.depthStencil.depthEnable = false;
         pd.depthStencil.depthWrite = false;
-        pd.nativeRootSignatureOverride =
-#ifdef USE_BINDLESS
-            dev.bindlessRootSigNative();
-#else
-            ssaoRootSig.Get();
-#endif
+        pd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
         pd.debugName = "ssao_pso";
         ssaoPSO = dev.createGraphicsPipeline(pd);
     }
@@ -256,12 +190,7 @@ void SsaoRenderer::createResources(
         pd.numRenderTargets = 1;
         pd.depthStencil.depthEnable = false;
         pd.depthStencil.depthWrite = false;
-        pd.nativeRootSignatureOverride =
-#ifdef USE_BINDLESS
-            dev.bindlessRootSigNative();
-#else
-            blurRootSig.Get();
-#endif
+        pd.nativeRootSignatureOverride = dev.bindlessRootSigNative();
         pd.debugName = "ssao_blur_pso";
         blurPSO = dev.createGraphicsPipeline(pd);
     }
@@ -403,13 +332,9 @@ void SsaoRenderer::render(
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
         cmdRef.bindPipeline(ssaoPSO);
-#ifdef USE_BINDLESS
         cmdList->SetGraphicsRootSignature(
             static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
         );
-#else
-        cmdList->SetGraphicsRootSignature(ssaoRootSig.Get());
-#endif
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -419,7 +344,6 @@ void SsaoRenderer::render(
         ID3D12DescriptorHeap* heaps[] = { gfxHeap, samplerHeap };
         cmdList->SetDescriptorHeaps(2, heaps);
 
-#ifdef USE_BINDLESS
         D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
         heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
         cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
@@ -442,17 +366,6 @@ void SsaoRenderer::render(
         cmdList->SetGraphicsRootConstantBufferView(
             2, cbvRes->GetGPUVirtualAddress()
         );  // Slot 2: b2 (per-pass)
-#else
-        auto getSrvGpu = [&](uint32_t idx) {
-            D3D12_GPU_DESCRIPTOR_HANDLE h;
-            h.ptr = devForDestroy->srvGpuDescriptorHandle(idx);
-            return h;
-        };
-        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(normalSrvIdx));
-        cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(depthSrvIdx));
-        cmdList->SetGraphicsRootDescriptorTable(2, getSrvGpu(noiseSrvIdx));
-        cmdList->SetGraphicsRootConstantBufferView(3, cbvRes->GetGPUVirtualAddress());
-#endif
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionSsaoResource(
             cmdRef, ssaoRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -468,13 +381,9 @@ void SsaoRenderer::render(
         D3D12_CPU_DESCRIPTOR_HANDLE rtv;
         rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoBlurRT));
         cmdRef.bindPipeline(blurPSO);
-#ifdef USE_BINDLESS
         cmdList->SetGraphicsRootSignature(
             static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
         );
-#else
-        cmdList->SetGraphicsRootSignature(blurRootSig.Get());
-#endif
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -484,7 +393,6 @@ void SsaoRenderer::render(
         ID3D12DescriptorHeap* heaps[] = { gfxHeap2, samplerHeap2 };
         cmdList->SetDescriptorHeaps(2, heaps);
 
-#ifdef USE_BINDLESS
         D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
         heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
         cmdList->SetGraphicsRootDescriptorTable(3, heapStart);  // Slot 3: SRV table
@@ -500,11 +408,6 @@ void SsaoRenderer::render(
         BindlessBlurIndices bi{};
         bi.ssaoIdx = ssaoRtSrvIdx;
         cmdList->SetGraphicsRoot32BitConstants(0, 4, &bi, 0);  // Slot 0: b0
-#else
-        D3D12_GPU_DESCRIPTOR_HANDLE ssaoSrv;
-        ssaoSrv.ptr = devForDestroy->srvGpuDescriptorHandle(ssaoRtSrvIdx);
-        cmdList->SetGraphicsRootDescriptorTable(0, ssaoSrv);
-#endif
         cmdList->DrawInstanced(3, 1, 0, 0);
         transitionSsaoResource(
             cmdRef, ssaoBlurRtRes, D3D12_RESOURCE_STATE_RENDER_TARGET,

@@ -1,11 +1,16 @@
 // Infinite grid vertex shader
 // Generates a fullscreen triangle, outputs clip-space position + near/far world positions
 
-cbuffer GridCB : register(b0)
+// Grid uses the bindless root signature's PerPassCB slot (b2) — the GridCB
+// payload (2 mat4 + 2 vec4 = 160 bytes) is too large to fit in the 32 DWORD
+// root-constant slot 0. The engine writes the CB into perPass slot 10 each
+// frame and binds it through `setConstantBuffer(bindlessPerPassCB, ...)`.
+cbuffer GridCB : register(b2)
 {
     matrix ViewProj;
     matrix InvViewProj;
     float4 CameraPos;
+    float4 GridParams;
 };
 
 struct VSOutput

@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 
 #include "gfx_types.h"
 
@@ -40,6 +41,35 @@ namespace gfx
         virtual void beginRenderPass(const RenderPassDesc& desc) = 0;
         virtual void endRenderPass() = 0;
 
+        // Bind render targets without clearing. Use beginRenderPass when load-op
+        // semantics matter; use this when you just want to switch the bound
+        // RT/DSV between passes (or within a pass for cubemap face rotations).
+        // `arraySlice` is applied to every color attachment and the depth
+        // attachment — render face-at-a-time when sub-resource granularity is
+        // needed.
+        virtual void setRenderTargets(
+            std::span<const TextureHandle> colors,
+            TextureHandle depth,
+            uint32_t arraySlice = 0
+        ) = 0;
+
+        // Clears the render target to `color`. Resource must already be in
+        // ResourceState::RenderTarget.
+        virtual void clearRenderTarget(TextureHandle texture, const float color[4]) = 0;
+
+        // Clears depth and/or stencil planes per `flags`. Resource must already
+        // be in ResourceState::DepthWrite.
+        virtual void clearDepthStencil(
+            TextureHandle texture,
+            ClearFlags flags,
+            float depth,
+            uint8_t stencil
+        ) = 0;
+
+        // Stencil reference value used by stencil tests when the bound PSO has
+        // stencilEnable.
+        virtual void setStencilRef(uint32_t ref) = 0;
+
         virtual void setViewport(const Viewport& vp) = 0;
         virtual void setScissor(const ScissorRect& sr) = 0;
 
@@ -48,9 +78,20 @@ namespace gfx
         // Bindless: small typed payload uploaded as root constants / push constants.
         virtual void setRootConstants(uint32_t slot, const void* data, uint32_t numDwords) = 0;
 
+        // Compute-pipeline counterpart of setRootConstants — required because
+        // SetGraphicsRoot32BitConstants and SetComputeRoot32BitConstants are
+        // distinct D3D12 calls keyed on whether the bound PSO is graphics or
+        // compute.
+        virtual void
+        setComputeRootConstants(uint32_t slot, const void* data, uint32_t numDwords) = 0;
+
         // Per-frame and per-pass CBVs (root descriptors in D3D12, descriptor sets
         // in Vulkan).
         virtual void setConstantBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset = 0) = 0;
+
+        // Compute-pipeline counterpart of setConstantBuffer.
+        virtual void
+        setComputeConstantBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset = 0) = 0;
 
         virtual void setVertexBuffer(
             uint32_t slot,
@@ -80,6 +121,9 @@ namespace gfx
         virtual void barrier(TextureHandle texture, ResourceState before, ResourceState after) = 0;
         virtual void barrier(BufferHandle buffer, ResourceState before, ResourceState after) = 0;
         virtual void uavBarrier(TextureHandle texture) = 0;
+        // Batched form — coalesces transitions into a single ResourceBarrier
+        // call. Render graph emits one of these per pass.
+        virtual void barriers(std::span<const TextureBarrier> ts) = 0;
 
         virtual void copyBuffer(
             BufferHandle dst,

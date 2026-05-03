@@ -3,6 +3,7 @@ module;
 #include <functional>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -78,31 +79,28 @@ namespace rg
 
     void RenderGraph::execute(gfx::ICommandList& cmd)
     {
+        std::vector<gfx::TextureBarrier> batch;
+        batch.reserve(16);
         for (auto& pass : passes) {
+            batch.clear();
+            auto enqueue = [&](ResourceHandle h, gfx::ResourceState target) {
+                if (resources[h.id].currentState == target) {
+                    return;
+                }
+                if (!resources[h.id].gfxHandle.isValid()) {
+                    return;
+                }
+                batch.push_back({ resources[h.id].gfxHandle, resources[h.id].currentState, target });
+                resources[h.id].currentState = target;
+            };
             for (size_t i = 0; i < pass.reads.size(); ++i) {
-                ResourceHandle h = pass.reads[i];
-                gfx::ResourceState target = pass.readStates[i];
-                if (resources[h.id].currentState != target) {
-                    if (resources[h.id].gfxHandle.isValid()) {
-                        cmd.barrier(
-                            resources[h.id].gfxHandle, resources[h.id].currentState, target
-                        );
-                    }
-                    resources[h.id].currentState = target;
-                }
+                enqueue(pass.reads[i], pass.readStates[i]);
             }
-
             for (size_t i = 0; i < pass.writes.size(); ++i) {
-                ResourceHandle h = pass.writes[i];
-                gfx::ResourceState target = pass.writeStates[i];
-                if (resources[h.id].currentState != target) {
-                    if (resources[h.id].gfxHandle.isValid()) {
-                        cmd.barrier(
-                            resources[h.id].gfxHandle, resources[h.id].currentState, target
-                        );
-                    }
-                    resources[h.id].currentState = target;
-                }
+                enqueue(pass.writes[i], pass.writeStates[i]);
+            }
+            if (!batch.empty()) {
+                cmd.barriers(std::span<const gfx::TextureBarrier>(batch.data(), batch.size()));
             }
 
             BuilderImpl builder(*this, pass);

@@ -108,25 +108,6 @@ void Application::createScenePSO()
 
 void Application::createGridPSO()
 {
-    if (!gridRootSig) {
-        auto* d3dDev = static_cast<ID3D12Device2*>(gfxDevice->nativeHandle());
-        CD3DX12_ROOT_PARAMETER1 rootParam;
-        rootParam.InitAsConstantBufferView(
-            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL
-        );
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsDesc;
-        rsDesc.Init_1_1(
-            1, &rootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
-        );
-        ComPtr<ID3DBlob> blob, err;
-        chkDX(D3DX12SerializeVersionedRootSignature(
-            &rsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &err
-        ));
-        chkDX(d3dDev->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&gridRootSig)
-        ));
-    }
-
     if (gridPSO.isValid()) {
         gfxDevice->destroy(gridPSO);
     }
@@ -174,7 +155,9 @@ void Application::createGridPSO()
     gd.blend[0].dstAlpha = gfx::BlendFactor::Zero;
     gd.blend[0].alphaOp = gfx::BlendOp::Add;
     gd.blend[0].writeMask = 0xF;
-    gd.nativeRootSignatureOverride = gridRootSig.Get();
+    // Use the device's bindless root sig (default when override is null) so the
+    // grid shaders use the same b2 PerPassCB binding the rest of the engine uses.
+    gd.nativeRootSignatureOverride = nullptr;
     gd.debugName = "grid_pso";
     gridPSO = gfxDevice->createGraphicsPipeline(gd);
 }

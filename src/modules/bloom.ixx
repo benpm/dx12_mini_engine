@@ -57,7 +57,6 @@ export class BloomRenderer
     ~BloomRenderer();
 
    private:
-    ComPtr<ID3D12RootSignature> bloomRootSignature;
     ComPtr<ID3D12PipelineState> prefilterPSO;
     ComPtr<ID3D12PipelineState> downsamplePSO;
     ComPtr<ID3D12PipelineState> upsamplePSO;

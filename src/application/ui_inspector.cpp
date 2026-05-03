@@ -117,22 +117,16 @@ void Application::uiInspector()
                 ImGui::SameLine();
             }
             if (!selectedEntity.has<Scripted>()) {
-                static char scriptPathBuf[256] = "color_cycle.lua";
-                ImGui::InputText("Script", scriptPathBuf, sizeof(scriptPathBuf));
-                ImGui::SameLine();
-                if (ImGui::Button("...##attach_script")) {
+                if (ImGui::Button(iconLabel("action.AttachScript", "Attach Script...").c_str())) {
                     std::vector<std::pair<std::string, std::string>> filters = {
-                        { "Lua Scripts", "*.lua" }, { "All Files", "*.*" }
+                        { "Lua Scripts", "*.lua" }
                     };
-                    std::string path =
-                        openNativeFileDialog(FileDialogType::Open, "Open Script", filters, "lua");
+                    std::string path = openNativeFileDialog(
+                        FileDialogType::Open, "Attach Script", filters, "lua"
+                    );
                     if (!path.empty()) {
-                        strncpy_s(scriptPathBuf, path.c_str(), sizeof(scriptPathBuf) - 1);
+                        luaScripting.attachScript(selectedEntity, path.c_str());
                     }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button(iconLabel("action.AttachScript", "Attach Script").c_str())) {
-                    luaScripting.attachScript(selectedEntity, scriptPathBuf);
                 }
             }
             {

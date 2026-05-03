@@ -16,48 +16,32 @@ void Application::uiMenuBar(bool& shadowPsoDirty)
     if (ImGui::BeginMainMenuBar()) {
         // --- File Menu ---
         if (ImGui::BeginMenu(iconLabel("menu.File", "File").c_str())) {
-            ImGui::PushItemWidth(300.0f);
-            ImGui::InputText("##scenePath", scenePathBuf, sizeof(scenePathBuf));
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            if (ImGui::Button("...##scene")) {
-                std::vector<std::pair<std::string, std::string>> filters = {
-                    { "Scene Files", "*.json" }, { "All Files", "*.*" }
-                };
+            const std::vector<std::pair<std::string, std::string>> sceneFilters = {
+                { "Scene Files", "*.json" }
+            };
+            const std::vector<std::pair<std::string, std::string>> gltfFilters = {
+                { "glTF Files", "*.glb;*.gltf" }
+            };
+            if (ImGui::MenuItem(iconLabel("action.LoadScene", "Load Scene...").c_str())) {
                 std::string path =
-                    openNativeFileDialog(FileDialogType::Open, "Open Scene", filters, "json");
+                    openNativeFileDialog(FileDialogType::Open, "Open Scene", sceneFilters, "json");
                 if (!path.empty()) {
-                    strncpy_s(scenePathBuf, path.c_str(), sizeof(scenePathBuf) - 1);
+                    pendingSceneLoad = std::move(path);
                 }
             }
-            if (ImGui::MenuItem(iconLabel("action.LoadScene", "Load Scene").c_str())) {
-                if (scenePathBuf[0] != '\0') {
-                    pendingSceneLoad = scenePathBuf;
-                }
-            }
-            if (ImGui::MenuItem(iconLabel("action.SaveScene", "Save Scene").c_str())) {
-                if (scenePathBuf[0] != '\0') {
-                    pendingSceneSave = scenePathBuf;
+            if (ImGui::MenuItem(iconLabel("action.SaveScene", "Save Scene...").c_str())) {
+                std::string path =
+                    openNativeFileDialog(FileDialogType::Save, "Save Scene", sceneFilters, "json");
+                if (!path.empty()) {
+                    pendingSceneSave = std::move(path);
                 }
             }
             ImGui::Separator();
-            ImGui::PushItemWidth(300.0f);
-            ImGui::InputText("##gltfPath", gltfPathBuf, sizeof(gltfPathBuf));
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            if (ImGui::Button("...##gltf")) {
-                std::vector<std::pair<std::string, std::string>> filters = {
-                    { "glTF Files", "*.glb;*.gltf" }, { "All Files", "*.*" }
-                };
+            if (ImGui::MenuItem(iconLabel("action.LoadGLB", "Load GLB...").c_str())) {
                 std::string path =
-                    openNativeFileDialog(FileDialogType::Open, "Open glTF", filters, "glb");
+                    openNativeFileDialog(FileDialogType::Open, "Open glTF", gltfFilters, "glb");
                 if (!path.empty()) {
-                    strncpy_s(gltfPathBuf, path.c_str(), sizeof(gltfPathBuf) - 1);
-                }
-            }
-            if (ImGui::MenuItem(iconLabel("action.LoadGLB", "Load GLB").c_str())) {
-                if (gltfPathBuf[0] != '\0') {
-                    pendingGltfPath = gltfPathBuf;
+                    pendingGltfPath = std::move(path);
                 }
             }
             if (ImGui::MenuItem(iconLabel("action.ResetToTeapot", "Reset to Teapot").c_str())) {
@@ -368,22 +352,15 @@ void Application::uiMenuBar(bool& shadowPsoDirty)
                     }
                 }
                 ImGui::Separator();
-                static char oneOffScriptBuf[256] = "";
-                ImGui::InputText("Script Path", oneOffScriptBuf, sizeof(oneOffScriptBuf));
-                ImGui::SameLine();
-                if (ImGui::Button("...##script")) {
+                if (ImGui::Button(iconLabel("action.Run", "Run Script...").c_str())) {
                     std::vector<std::pair<std::string, std::string>> filters = {
-                        { "Lua Scripts", "*.lua" }, { "All Files", "*.*" }
+                        { "Lua Scripts", "*.lua" }
                     };
                     std::string path =
-                        openNativeFileDialog(FileDialogType::Open, "Open Script", filters, "lua");
+                        openNativeFileDialog(FileDialogType::Open, "Run Script", filters, "lua");
                     if (!path.empty()) {
-                        strncpy_s(oneOffScriptBuf, path.c_str(), sizeof(oneOffScriptBuf) - 1);
+                        luaScripting.executeScript(path.c_str());
                     }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button(iconLabel("action.Run", "Run").c_str())) {
-                    luaScripting.executeScript(oneOffScriptBuf);
                 }
                 ImGui::PopItemWidth();
                 ImGui::EndMenu();

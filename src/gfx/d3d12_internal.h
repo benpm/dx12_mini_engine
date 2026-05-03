@@ -17,6 +17,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -377,11 +378,26 @@ namespace gfxd3d12
         void end() override;
         void beginRenderPass(const gfx::RenderPassDesc& d) override;
         void endRenderPass() override {}
+        void setRenderTargets(
+            std::span<const gfx::TextureHandle> colors,
+            gfx::TextureHandle depth,
+            uint32_t arraySlice
+        ) override;
+        void clearRenderTarget(gfx::TextureHandle texture, const float color[4]) override;
+        void clearDepthStencil(
+            gfx::TextureHandle texture,
+            gfx::ClearFlags flags,
+            float depth,
+            uint8_t stencil
+        ) override;
+        void setStencilRef(uint32_t ref) override;
         void setViewport(const gfx::Viewport& vp) override;
         void setScissor(const gfx::ScissorRect& sr) override;
         void bindPipeline(gfx::PipelineHandle p) override;
         void setRootConstants(uint32_t slot, const void* data, uint32_t numDwords) override;
+        void setComputeRootConstants(uint32_t slot, const void* data, uint32_t numDwords) override;
         void setConstantBuffer(uint32_t slot, gfx::BufferHandle b, uint64_t offset) override;
+        void setComputeConstantBuffer(uint32_t slot, gfx::BufferHandle b, uint64_t offset) override;
         void setVertexBuffer(
             uint32_t slot,
             gfx::BufferHandle b,
@@ -398,6 +414,7 @@ namespace gfxd3d12
         void
         barrier(gfx::BufferHandle h, gfx::ResourceState before, gfx::ResourceState after) override;
         void uavBarrier(gfx::TextureHandle h) override;
+        void barriers(std::span<const gfx::TextureBarrier> ts) override;
         void copyBuffer(
             gfx::BufferHandle dst,
             uint64_t dOff,

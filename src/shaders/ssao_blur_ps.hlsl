@@ -5,7 +5,6 @@ struct VSOut
     float4 Position : SV_Position;
 };
 
-#ifdef USE_BINDLESS
 struct BindlessIndices
 {
     uint ssaoIdx;
@@ -13,10 +12,7 @@ struct BindlessIndices
 };
 ConstantBuffer<BindlessIndices> indices : register(b0);
 Texture2D textures[] : register(t0, space0);
-    #define ssaoTex textures[indices.ssaoIdx]
-#else
-Texture2D<float> ssaoTex : register(t0);
-#endif
+#define ssaoTex textures[indices.ssaoIdx]
 
 float main(VSOut IN) : SV_Target
 {

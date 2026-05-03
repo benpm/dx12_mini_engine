@@ -431,6 +431,30 @@ namespace gfx
         DontCare
     };
 
+    enum class ClearFlags : uint8_t
+    {
+        None = 0,
+        Depth = 1 << 0,
+        Stencil = 1 << 1,
+        DepthStencil = Depth | Stencil,
+    };
+
+    inline ClearFlags operator|(ClearFlags a, ClearFlags b)
+    {
+        return static_cast<ClearFlags>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+    }
+    inline bool any(ClearFlags v, ClearFlags flag)
+    {
+        return (static_cast<uint8_t>(v) & static_cast<uint8_t>(flag)) != 0;
+    }
+
+    struct TextureBarrier
+    {
+        TextureHandle handle;
+        ResourceState before = ResourceState::Common;
+        ResourceState after = ResourceState::Common;
+    };
+
     struct ColorAttachment
     {
         TextureHandle texture;

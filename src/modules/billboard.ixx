@@ -23,7 +23,6 @@ export class BillboardRenderer
    public:
     static constexpr uint32_t maxInstances = 64;
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     Microsoft::WRL::ComPtr<ID3D12Resource> spriteTexture;
     uint32_t spriteSrvIdx = 0;

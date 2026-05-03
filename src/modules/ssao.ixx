@@ -64,8 +64,6 @@ export class SsaoRenderer
     uint32_t noiseSrvIdx = 0;
     uint32_t ssaoRtSrvIdx = 0;
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> ssaoRootSig;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> blurRootSig;
     gfx::PipelineHandle ssaoPSO{};
     gfx::PipelineHandle blurPSO{};
     gfx::ShaderHandle vsHandle{};

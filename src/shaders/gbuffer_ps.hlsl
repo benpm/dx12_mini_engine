@@ -1,4 +1,3 @@
-#ifdef USE_BINDLESS
 struct BindlessIndices
 {
     uint drawDataIdx;
@@ -26,23 +25,6 @@ cbuffer PerFrame : register(b1)
     float4 FogColor;
     float Time;
 };
-#else
-cbuffer PerFrame : register(b0)
-{
-    float4 AmbientColor;
-    float4 LightPos[8];
-    float4 LightColor[8];
-    float4 DirLightDir;
-    float4 DirLightColor;
-    matrix LightViewProj;
-    float ShadowBias;
-    float ShadowMapTexelSize;
-    float FogStartY;
-    float FogDensity;
-    float4 FogColor;
-    float Time;
-};
-#endif
 
 struct PerObjectData
 {
@@ -56,12 +38,8 @@ struct PerObjectData
     float4 Emissive;
 };
 
-#ifdef USE_BINDLESS
 StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);
-    #define drawData drawDataTables[indices.drawDataIdx]
-#else
-StructuredBuffer<PerObjectData> drawData : register(t0);
-#endif
+#define drawData drawDataTables[indices.drawDataIdx]
 
 struct PixelIn
 {

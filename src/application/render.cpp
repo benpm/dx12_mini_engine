@@ -17,6 +17,7 @@ module;
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <span>
 #include <vector>
 #include "profiling.h"
 
@@ -443,21 +444,14 @@ void Application::render()
             PROFILE_ZONE_NAMED("G-Buffer Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: G-Buffer");
 
-            D3D12_CPU_DESCRIPTOR_HANDLE rtvs[4];
-            for (int i = 0; i < 4; ++i) {
-                rtvs[i].ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(gbuffer.resources[i]));
-            }
-            D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-            dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-
-            FLOAT clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-            FLOAT clearZero[] = { 0, 0, 0, 0 };
-            cmd->ClearRenderTargetView(rtvs[0], clearNormal, 0, nullptr);
-            cmd->ClearRenderTargetView(rtvs[1], clearZero, 0, nullptr);
-            cmd->ClearRenderTargetView(rtvs[2], clearZero, 0, nullptr);
-            cmd->ClearRenderTargetView(rtvs[3], clearZero, 0, nullptr);
-            cmd->ClearDepthStencilView(
-                dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
+            const float clearNormal[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+            const float clearZero[] = { 0, 0, 0, 0 };
+            cmdRef.clearRenderTarget(gbuffer.resources[0], clearNormal);
+            cmdRef.clearRenderTarget(gbuffer.resources[1], clearZero);
+            cmdRef.clearRenderTarget(gbuffer.resources[2], clearZero);
+            cmdRef.clearRenderTarget(gbuffer.resources[3], clearZero);
+            cmdRef.clearDepthStencil(
+                depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
             );
 
             cmdRef.bindPipeline(this->gbufferPSO);
@@ -465,7 +459,13 @@ void Application::render()
                 static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
             );
             bindSharedGeometry(cmd);
-            cmd->OMSetRenderTargets(4, rtvs, false, &dsv);
+            gfx::TextureHandle gbufferRTs[4] = {
+                gbuffer.resources[0], gbuffer.resources[1], gbuffer.resources[2],
+                gbuffer.resources[3]
+            };
+            cmdRef.setRenderTargets(
+                std::span<const gfx::TextureHandle>(gbufferRTs, 4), depthBuffer
+            );
             bindSceneHeapAndObjects(cmd);
             bindPerFrameAndPass(cmd, gbufferPassAddr);
 
@@ -542,14 +542,10 @@ void Application::render()
             PROFILE_ZONE_NAMED("Scene Pass");
             PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Scene");
             // Clear to black — Rayleigh sky fills background in composite pass
-            FLOAT clearColor[] = { 0, 0, 0, 1 };
-            D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
-            hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
-            cmd->ClearRenderTargetView(hdrRtv, clearColor, 0, nullptr);
-            D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-            dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-            cmd->ClearDepthStencilView(
-                dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
+            const float clearColor[] = { 0, 0, 0, 1 };
+            cmdRef.clearRenderTarget(bloom.hdrRT, clearColor);
+            cmdRef.clearDepthStencil(
+                depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
             );
 
             cmdRef.bindPipeline(this->pipelineState);
@@ -557,11 +553,12 @@ void Application::render()
                 static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
             );
             bindSharedGeometry(cmd);
-            cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+            gfx::TextureHandle sceneRTs[1] = { bloom.hdrRT };
+            cmdRef.setRenderTargets(std::span<const gfx::TextureHandle>(sceneRTs, 1), depthBuffer);
             bindSceneHeapAndObjects(cmd);
             bindPerFrameAndPass(cmd, getPassCBAddress(0));
 
-            cmd->OMSetStencilRef(1);
+            cmdRef.setStencilRef(1);
             for (uint32_t i = 0; i < static_cast<uint32_t>(visibleSceneDrawCmds.size()); ++i) {
                 currentVertexCount +=
                     visibleSceneDrawCmds[i].indexCount * visibleSceneDrawCmds[i].instanceCount;
@@ -597,20 +594,20 @@ void Application::render()
             ) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Gizmo Pass");
-                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
-                cmd->ClearDepthStencilView(
-                    dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr
-                );  // clear depth so gizmo renders on top
-                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
-                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
+                // clear depth so gizmo renders on top
+                cmdRef.clearDepthStencil(
+                    depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
+                );
 
                 cmdRef.bindPipeline(this->pipelineState);
                 cmd->SetGraphicsRootSignature(
                     static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
                 );
                 bindSharedGeometry(cmd);
-                cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
+                gfx::TextureHandle gizmoRTs[1] = { bloom.hdrRT };
+                cmdRef.setRenderTargets(
+                    std::span<const gfx::TextureHandle>(gizmoRTs, 1), depthBuffer
+                );
                 bindSceneHeapAndObjects(cmd);
                 bindPerFrameAndPass(cmd, scenePassAddr);
 
@@ -664,24 +661,20 @@ void Application::render()
             },
             [&](gfx::ICommandList& cmdRef, rg::RenderGraphBuilder& builder) {
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-                D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv;
-                hdrRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(bloom.hdrRT));
-                D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-                dsv.ptr = static_cast<SIZE_T>(gfxDevice->dsvHandle(depthBuffer));
+                // bindPipeline auto-binds the bindless root sig that gridPSO
+                // is built against; no explicit SetGraphicsRootSignature needed.
                 cmdRef.bindPipeline(gridPSO);
-                cmd->SetGraphicsRootSignature(gridRootSig.Get());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                {
-                    D3D12_VIEWPORT d3dVp{ viewport.x,      viewport.y,        viewport.width,
-                                          viewport.height, viewport.minDepth, viewport.maxDepth };
-                    D3D12_RECT d3dSr{ scissorRect.x, scissorRect.y,
-                                      scissorRect.x + scissorRect.width,
-                                      scissorRect.y + scissorRect.height };
-                    cmd->RSSetViewports(1, &d3dVp);
-                    cmd->RSSetScissorRects(1, &d3dSr);
-                }
-                cmd->OMSetRenderTargets(1, &hdrRtv, true, &dsv);
-                cmd->SetGraphicsRootConstantBufferView(0, getPassCBAddress(10));
+                cmdRef.setViewport(viewport);
+                cmdRef.setScissor(scissorRect);
+                gfx::TextureHandle gridRTs[1] = { bloom.hdrRT };
+                cmdRef.setRenderTargets(
+                    std::span<const gfx::TextureHandle>(gridRTs, 1), depthBuffer
+                );
+                // Bind grid CB through the bindless PerPassCB slot (b2).
+                cmd->SetGraphicsRootConstantBufferView(
+                    app_slots::bindlessPerPassCB, getPassCBAddress(10)
+                );
                 cmd->DrawInstanced(3, 1, 0, 0);
             }
         );

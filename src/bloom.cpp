@@ -102,65 +102,7 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
 void BloomRenderer::createPipelines(gfx::IDevice& dev)
 {
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(device->CheckFeatureSupport(
-            D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData)
-        ))) {
-        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-    }
-
-    {
-        CD3DX12_DESCRIPTOR_RANGE1 srvRange0, srvRange1;
-        srvRange0.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-        srvRange1.Init(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE
-        );
-
-        CD3DX12_ROOT_PARAMETER1 bloomRootParams[3];
-        bloomRootParams[0].InitAsDescriptorTable(1, &srvRange0, D3D12_SHADER_VISIBILITY_PIXEL);
-        bloomRootParams[1].InitAsDescriptorTable(1, &srvRange1, D3D12_SHADER_VISIBILITY_PIXEL);
-        bloomRootParams[2].InitAsConstants(24, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-
-        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
-        staticSampler.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
-        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.ShaderRegister = 0;
-        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC bloomRootSigDesc;
-        bloomRootSigDesc.Init_1_1(
-            3, bloomRootParams, 1, &staticSampler,
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
-        );
-
-        ComPtr<ID3DBlob> bloomSigBlob, bloomErrBlob;
-        chkDX(D3DX12SerializeVersionedRootSignature(
-            &bloomRootSigDesc, featureData.HighestVersion, &bloomSigBlob, &bloomErrBlob
-        ));
-        chkDX(device->CreateRootSignature(
-            0, bloomSigBlob->GetBufferPointer(), bloomSigBlob->GetBufferSize(),
-            IID_PPV_ARGS(&bloomRootSignature)
-        ));
-    }
-
-#ifdef USE_BINDLESS
-    // PSOs must use the bindless root sig because bloom.render() binds that
-    // root sig at draw time and the shaders are compiled with USE_BINDLESS
-    // (b0 = root constants, t0/s0 = bindless tables).
     auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-#else
-    auto* psoRootSig = bloomRootSignature.Get();
-#endif
 
     reloadBloomPipelinesNative(
         device, psoRootSig, {}, {}, {}, {}, {}, prefilterPSO, downsamplePSO, upsamplePSO,
@@ -267,11 +209,7 @@ void BloomRenderer::reloadPipelines(
     gfx::ShaderBytecode compositePS
 )
 {
-#ifdef USE_BINDLESS
     auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-#else
-    auto* psoRootSig = bloomRootSignature.Get();
-#endif
     reloadBloomPipelinesNative(
         static_cast<ID3D12Device2*>(dev.nativeHandle()), psoRootSig,
         { fullscreenVS.data, fullscreenVS.size }, { prefilterPS.data, prefilterPS.size },
@@ -303,7 +241,6 @@ void BloomRenderer::render(
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, samplerHeap };
     cmdList->SetDescriptorHeaps(2, heaps);
 
-#ifdef USE_BINDLESS
     cmdList->SetGraphicsRootSignature(
         static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
     );
@@ -313,20 +250,12 @@ void BloomRenderer::render(
     D3D12_GPU_DESCRIPTOR_HANDLE samplerHeapStart;
     samplerHeapStart.ptr = devForDestroy->samplerGpuDescriptorHandle(0);
     cmdList->SetGraphicsRootDescriptorTable(4, samplerHeapStart);  // Slot 4: sampler table
-#else
-    cmdList->SetGraphicsRootSignature(bloomRootSignature.Get());
-#endif
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     auto getRtv = [&](gfx::TextureHandle h) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         D3D12_CPU_DESCRIPTOR_HANDLE rv;
         rv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(h));
         return rv;
-    };
-    auto getSrvGpu = [&](gfx::TextureHandle h) -> D3D12_GPU_DESCRIPTOR_HANDLE {
-        D3D12_GPU_DESCRIPTOR_HANDLE hd;
-        hd.ptr = devForDestroy->srvGpuDescriptorHandle(devForDestroy->bindlessSrvIndex(h));
-        return hd;
     };
 
     auto mipRes = [&](uint32_t i) -> ID3D12Resource* {
@@ -344,7 +273,6 @@ void BloomRenderer::render(
     // Prefilter — hdr_rt is already in PixelShaderResource state because the
     // bloom render-graph pass declared `readTexture(hHdrRT)`.
     cmdList->SetPipelineState(prefilterPSO.Get());
-#ifdef USE_BINDLESS
     struct BindlessPrefilterPayload
     {
         uint32_t srcIdx;
@@ -360,16 +288,6 @@ void BloomRenderer::render(
     pp.threshold = threshold;
     pp.softKnee = 0.5f;
     cmdList->SetGraphicsRoot32BitConstants(0, sizeof(pp) / 4, &pp, 0);
-#else
-    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
-    struct BloomCB
-    {
-        float texelSizeX, texelSizeY, param0, param1;
-    };
-    BloomCB cb = { 1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height), threshold,
-                   0.5f };
-    cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
-#endif
     auto mip0Rtv = getRtv(bloomMips[0]);
     cmdList->OMSetRenderTargets(1, &mip0Rtv, false, nullptr);
     CD3DX12_VIEWPORT vp(0.0f, 0.0f, (float)mipW[0], (float)mipH[0]);
@@ -385,7 +303,6 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
         );
-#ifdef USE_BINDLESS
         struct BindlessDownsamplePayload
         {
             uint32_t srcIdx;
@@ -399,16 +316,6 @@ void BloomRenderer::render(
         dp.texelSizeX = 1.0f / static_cast<float>(mipW[i]);
         dp.texelSizeY = 1.0f / static_cast<float>(mipH[i]);
         cmdList->SetGraphicsRoot32BitConstants(0, sizeof(dp) / 4, &dp, 0);
-#else
-        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i]));
-        struct BloomCB
-        {
-            float texelSizeX, texelSizeY, param0, param1;
-        };
-        BloomCB cb = { 1.0f / static_cast<float>(mipW[i]), 1.0f / static_cast<float>(mipH[i]), 0,
-                       0 };
-        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
-#endif
         auto rtv = getRtv(bloomMips[i + 1]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i + 1], (float)mipH[i + 1]);
@@ -429,7 +336,6 @@ void BloomRenderer::render(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_RENDER_TARGET
         );
-#ifdef USE_BINDLESS
         struct BindlessUpsamplePayload
         {
             uint32_t srcIdx;
@@ -444,16 +350,6 @@ void BloomRenderer::render(
         up.texelSizeY = 1.0f / static_cast<float>(mipH[i + 1]);
         up.intensity = 1.0f;
         cmdList->SetGraphicsRoot32BitConstants(0, sizeof(up) / 4, &up, 0);
-#else
-        cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(bloomMips[i + 1]));
-        struct BloomCB
-        {
-            float texelSizeX, texelSizeY, param0, param1;
-        };
-        BloomCB cb = { 1.0f / static_cast<float>(mipW[i + 1]),
-                       1.0f / static_cast<float>(mipH[i + 1]), 1.0f, 0 };
-        cmdList->SetGraphicsRoot32BitConstants(2, 4, &cb, 0);
-#endif
         auto rtv = getRtv(bloomMips[i]);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
         vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)mipW[i], (float)mipH[i]);
@@ -469,7 +365,6 @@ void BloomRenderer::render(
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
     cmdList->SetPipelineState(compositePSO.Get());
-#ifdef USE_BINDLESS
     struct BindlessCompositePayload
     {
         uint32_t sceneIdx;
@@ -508,29 +403,6 @@ void BloomRenderer::render(
     cp.tanHalfFov = sky.tanHalfFov;
     cp.frameTime = sky.time;
     cmdList->SetGraphicsRoot32BitConstants(0, sizeof(cp) / 4, &cp, 0);
-#else
-    cmdList->SetGraphicsRootDescriptorTable(0, getSrvGpu(hdrRT));
-    cmdList->SetGraphicsRootDescriptorTable(1, getSrvGpu(bloomMips[0]));
-    float compositeCB[24] = {};
-    compositeCB[2] = intensity;
-    *reinterpret_cast<uint32_t*>(&compositeCB[3]) = (uint32_t)tonemapMode;
-    compositeCB[4] = sky.camForward.x;
-    compositeCB[5] = sky.camForward.y;
-    compositeCB[6] = sky.camForward.z;
-    compositeCB[8] = sky.camRight.x;
-    compositeCB[9] = sky.camRight.y;
-    compositeCB[10] = sky.camRight.z;
-    compositeCB[12] = sky.camUp.x;
-    compositeCB[13] = sky.camUp.y;
-    compositeCB[14] = sky.camUp.z;
-    compositeCB[16] = sky.sunDir.x;
-    compositeCB[17] = sky.sunDir.y;
-    compositeCB[18] = sky.sunDir.z;
-    compositeCB[19] = sky.aspectRatio;
-    compositeCB[20] = sky.tanHalfFov;
-    compositeCB[21] = sky.time;
-    cmdList->SetGraphicsRoot32BitConstants(2, 24, compositeCB, 0);
-#endif
     cmdList->OMSetRenderTargets(1, &backBufRtv, false, nullptr);
     vp = CD3DX12_VIEWPORT(0.0f, 0.0f, (float)width, (float)height);
     sr = { 0, 0, (LONG)width, (LONG)height };

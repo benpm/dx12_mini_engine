@@ -302,6 +302,59 @@ namespace gfxd3d12
         }
     }
 
+    void CommandList::setRenderTargets(
+        std::span<const gfx::TextureHandle> colors,
+        gfx::TextureHandle depth,
+        uint32_t arraySlice
+    )
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[8];
+        uint32_t rtvCount = 0;
+        for (auto h : colors) {
+            if (!h.isValid() || rtvCount >= 8) {
+                continue;
+            }
+            rtvHandles[rtvCount].ptr = static_cast<SIZE_T>(device->rtvHandle(h, arraySlice));
+            ++rtvCount;
+        }
+        D3D12_CPU_DESCRIPTOR_HANDLE dsvH{};
+        bool hasDsv = depth.isValid();
+        if (hasDsv) {
+            dsvH.ptr = static_cast<SIZE_T>(device->dsvHandle(depth, arraySlice));
+        }
+        cmd->OMSetRenderTargets(
+            rtvCount, rtvCount > 0 ? rtvHandles : nullptr, FALSE, hasDsv ? &dsvH : nullptr
+        );
+    }
+
+    void CommandList::clearRenderTarget(gfx::TextureHandle texture, const float color[4])
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv;
+        rtv.ptr = static_cast<SIZE_T>(device->rtvHandle(texture, 0));
+        cmd->ClearRenderTargetView(rtv, color, 0, nullptr);
+    }
+
+    void CommandList::clearDepthStencil(
+        gfx::TextureHandle texture,
+        gfx::ClearFlags flags,
+        float depth,
+        uint8_t stencil
+    )
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+        dsv.ptr = static_cast<SIZE_T>(device->dsvHandle(texture, 0));
+        D3D12_CLEAR_FLAGS f = {};
+        if (gfx::any(flags, gfx::ClearFlags::Depth)) {
+            f |= D3D12_CLEAR_FLAG_DEPTH;
+        }
+        if (gfx::any(flags, gfx::ClearFlags::Stencil)) {
+            f |= D3D12_CLEAR_FLAG_STENCIL;
+        }
+        cmd->ClearDepthStencilView(dsv, f, depth, stencil, 0, nullptr);
+    }
+
+    void CommandList::setStencilRef(uint32_t ref) { cmd->OMSetStencilRef(ref); }
+
     void CommandList::setViewport(const gfx::Viewport& vp)
     {
         D3D12_VIEWPORT v{ vp.x, vp.y, vp.width, vp.height, vp.minDepth, vp.maxDepth };
@@ -343,6 +396,11 @@ namespace gfxd3d12
         cmd->SetGraphicsRoot32BitConstants(slot, numDwords, data, 0);
     }
 
+    void CommandList::setComputeRootConstants(uint32_t slot, const void* data, uint32_t numDwords)
+    {
+        cmd->SetComputeRoot32BitConstants(slot, numDwords, data, 0);
+    }
+
     void CommandList::setConstantBuffer(uint32_t slot, gfx::BufferHandle b, uint64_t offset)
     {
         auto* rec = device->getBuffer(b);
@@ -350,6 +408,17 @@ namespace gfxd3d12
             return;
         }
         cmd->SetGraphicsRootConstantBufferView(
+            slot, rec->resource->GetGPUVirtualAddress() + offset
+        );
+    }
+
+    void CommandList::setComputeConstantBuffer(uint32_t slot, gfx::BufferHandle b, uint64_t offset)
+    {
+        auto* rec = device->getBuffer(b);
+        if (!rec) {
+            return;
+        }
+        cmd->SetComputeRootConstantBufferView(
             slot, rec->resource->GetGPUVirtualAddress() + offset
         );
     }
@@ -437,6 +506,36 @@ namespace gfxd3d12
         }
         auto b = CD3DX12_RESOURCE_BARRIER::UAV(rec->resource.Get());
         cmd->ResourceBarrier(1, &b);
+    }
+
+    void CommandList::barriers(std::span<const gfx::TextureBarrier> ts)
+    {
+        if (ts.empty()) {
+            return;
+        }
+        // Up to 16 in one batch — render-graph passes touch far fewer.
+        D3D12_RESOURCE_BARRIER batch[16];
+        uint32_t count = 0;
+        for (const auto& t : ts) {
+            if (count >= 16) {
+                cmd->ResourceBarrier(count, batch);
+                count = 0;
+            }
+            auto* rec = device->getTexture(t.handle);
+            if (!rec) {
+                continue;
+            }
+            auto before = toD3D12States(t.before);
+            auto after = toD3D12States(t.after);
+            if (before == after) {
+                continue;
+            }
+            batch[count++] = CD3DX12_RESOURCE_BARRIER::Transition(rec->resource.Get(), before, after);
+            rec->currentState = after;
+        }
+        if (count > 0) {
+            cmd->ResourceBarrier(count, batch);
+        }
     }
 
     void CommandList::copyBuffer(

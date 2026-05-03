@@ -1,4 +1,3 @@
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint srcIdx;
@@ -12,22 +11,11 @@ ConstantBuffer<BindlessPayload> payload : register(b0);
 Texture2D textures[] : register(t0, space0);
 SamplerState samplers[] : register(s0, space0);
 
-    #define srcTexture textures[payload.srcIdx]
-    #define linearClamp samplers[payload.samplerIdx]
-    #define texelSize payload.texelSize
-    #define intensity payload.intensity
+#define srcTexture textures[payload.srcIdx]
+#define linearClamp samplers[payload.samplerIdx]
+#define texelSize payload.texelSize
+#define intensity payload.intensity
 
-#else
-Texture2D<float4> srcTexture : register(t0);
-SamplerState linearClamp : register(s0);
-
-cbuffer BloomConstants : register(b0)
-{
-    float2 texelSize;
-    float intensity;
-    float _pad0;
-};
-#endif
 
 float4 main(float2 uv : TEXCOORD) : SV_Target
 {

@@ -4,7 +4,6 @@ set(CMAKE_COLOR_DIAGNOSTICS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 include(CTest)
 
-option(USE_BINDLESS "Use bindless descriptor heap and root signature" ON)
 
 #Use static CRT for MSVC and Clang - cl(so no VCRUNTIME dlls are required)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -148,6 +147,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tracy)
 
+# Fetch nativefiledialog (mlabbe). Upstream ships Premake build files only, so
+# declare a manual `nfd` static-lib target against the source files we need.
+FetchContent_Declare(
+    nativefiledialog
+    GIT_REPOSITORY https://github.com/mlabbe/nativefiledialog.git
+    GIT_TAG release_116
+)
+FetchContent_MakeAvailable(nativefiledialog)
+add_library(nfd STATIC
+    ${nativefiledialog_SOURCE_DIR}/src/nfd_common.c
+    ${nativefiledialog_SOURCE_DIR}/src/nfd_win.cpp
+)
+target_include_directories(nfd PUBLIC ${nativefiledialog_SOURCE_DIR}/src/include)
+target_link_libraries(nfd PRIVATE ole32 shell32 uuid)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(nfd PRIVATE -Wno-everything)
+endif()
+
 # Download Sponza GLB from KhronosGroup sample assets
 set(SPONZA_URL "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/Sponza/glTF-Binary/Sponza.glb")
 set(SPONZA_DEST "${CMAKE_CURRENT_SOURCE_DIR}/resources/external_scenes/Sponza/Sponza.glb")
@@ -194,15 +211,11 @@ message(STATUS "Found DXC: ${DXC_EXECUTABLE}")
 function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME)
     get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
     set(OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}_cso.h")
-    set(BINDLESS_FLAG "")
-    if(USE_BINDLESS)
-        set(BINDLESS_FLAG "-DUSE_BINDLESS=1")
-    endif()
 
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
         COMMAND ${DXC_EXECUTABLE} -T ${SHADER_TYPE}_${SHADER_MODEL} -E main
-        -I ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders ${BINDLESS_FLAG}
+        -I ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
         -Fh ${OUTPUT_FILE} -Vn ${VAR_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/sky.hlsli
@@ -365,10 +378,6 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     SCRIPTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scripts"
     ICONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
 )
-if(USE_BINDLESS)
-    target_compile_definitions(main PRIVATE USE_BINDLESS=1)
-endif()
-
 target_compile_definitions(main PRIVATE
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
@@ -426,6 +435,7 @@ target_link_libraries(main PRIVATE
     flecs::flecs_static
     glaze::glaze
     lua_lib
+    nfd
     Microsoft::DirectX-Headers
 )
 

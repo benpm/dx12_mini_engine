@@ -1,4 +1,3 @@
-#ifdef USE_BINDLESS
 struct BindlessPayload
 {
     uint spriteIdx;
@@ -10,12 +9,8 @@ ConstantBuffer<BindlessPayload> payload : register(b0);
 Texture2D textures[] : register(t0, space0);
 SamplerState samplers[] : register(s0, space0);
 
-    #define lightSprite textures[payload.spriteIdx]
-    #define spriteSampler samplers[payload.samplerIdx]
-#else
-Texture2D lightSprite : register(t0);
-SamplerState spriteSampler : register(s0);
-#endif
+#define lightSprite textures[payload.spriteIdx]
+#define spriteSampler samplers[payload.samplerIdx]
 
 struct PSInput
 {
