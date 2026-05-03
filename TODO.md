@@ -16,23 +16,9 @@
  -->
 
 - [ ] Add native file dialogs for choosing scripts and loading scenes in the gui. Also, split the gui
-- [ ] Create a complete abstraction over all D3D12 / DirectX (gfx layer in `include/gfx.h`, `src/gfx/`, plan in `~/.claude/plans/write-an-api-abstraction-synchronous-wand.md`)
-  - [x] P0: Land gfx skeleton + D3D12 backend stubs
-  - [x] P1: Migrate device + swap chain into `gfx::IDevice` / `gfx::ISwapChain`
-  - [x] P3: Render graph callbacks take `gfx::ICommandList&`
-  - [x] P4: GBuffer signatures use gfx types
-  - [x] P5: ShadowRenderer signatures use gfx types
-  - [x] P6: SsaoRenderer signatures use gfx types
-  - [x] P7: BloomRenderer signatures use gfx types
-  - [x] P8: OutlineRenderer signatures use gfx types
-  - [x] P9: ObjectPicker signatures use gfx types
-  - [x] P10: BillboardRenderer + ImGuiLayer signatures use gfx types
-  - [x] P11: GizmoState init takes gfx types
-  - [x] P12 (partial): Scene methods take `gfx::IDevice&`. Still pending: dissolve `CommandQueue` into `gfx::IQueue`, migrate ComPtr fields to gfx handles, BLAS/TLAS gating on `caps.raytracing`.
-  - [x] P13 (partial): scene PSO, gbuffer PSO, grid PSO are `gfx::PipelineHandle` (use `nativeRootSignatureOverride` escape hatch). New `IDevice::nativeResource()` accessor. Main `depthBuffer`, cubemap color + depth migrated to `gfx::TextureHandle` via the new `TextureDesc::viewFormat` / `TextureUsage` semantics.
-  - [ ] P13 (remainder): dsvHeap / cubemap RTV+DSV heaps, rootSignature ComPtrs.
-  - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, orthogonal)
-  - [ ] P14: Cleanup — verify no `ID3D12*` outside `src/gfx/`, remove `nativeHandle()` escape hatches
+- [ ] Create a complete abstraction over all D3D12 / DirectX (gfx layer in `include/gfx.h`, `src/gfx/`, see [remaining tasks note](notes/remaining-tasks-plan.md))
+  - [x] P0–P14 (partial): All subsystems, scene, application core migrated. All D3D12 removed from `.ixx` interfaces that are not blocked on bindless. See [remaining-tasks-plan.md](notes/remaining-tasks-plan.md) for full current state.
+  - [ ] P2: Bindless descriptor heap + bindless root sig + shader rewrite (high-risk, dedicated sprint — see note for approach)
 - [ ] Use flecs
 - [ ] Implement advanced culling techniques from [the culling techniques note](notes/culling-techniques.md)
   - [x] Frustum Culling (CPU-side bounding sphere)
