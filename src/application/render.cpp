@@ -115,10 +115,11 @@ void Application::render()
     scene.populateDrawCommands(curBackBufIdx, this->matModel, cameraPos.xyz(), frustum);
     this->lastFrameObjectCount = scene.totalSlots;
 
-    // Build filtered draw command list (excludes gizmo arrows)
-    std::vector<DrawCmd> sceneDrawCmds;
-    std::vector<DrawCmd> visibleSceneDrawCmds;
-    std::vector<DrawCmd> gizmoDrawCmds;
+    // Build filtered draw command list (excludes gizmo arrows). Buffers are
+    // Application members reused across frames to avoid per-frame heap alloc.
+    sceneDrawCmds.clear();
+    visibleSceneDrawCmds.clear();
+    gizmoDrawCmds.clear();
     sceneDrawCmds.reserve(scene.drawCmds.size());
     visibleSceneDrawCmds.reserve(scene.drawCmds.size());
     for (const auto& dc : scene.drawCmds) {
@@ -200,6 +201,20 @@ void Application::render()
         cmd->SetGraphicsRootConstantBufferView(app_slots::bindlessPerPassCB, perPassAddr);
     };
 
+    // Standard pass setup: bind PSO (auto-binds matching root sig), then the
+    // shared per-frame state — geometry buffers + viewport/scissor, bindless
+    // SRV/sampler tables, per-frame and per-pass CBVs. Render targets are
+    // pass-specific and bound by the caller.
+    auto beginPass = [&](gfx::ICommandList& cmdRef,
+                         gfx::PipelineHandle pso,
+                         D3D12_GPU_VIRTUAL_ADDRESS perPassAddr) {
+        auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
+        cmdRef.bindPipeline(pso);
+        bindSharedGeometry(cmd);
+        bindSceneHeapAndObjects(cmd);
+        bindPerFrameAndPass(cmd, perPassAddr);
+    };
+
     PerObjectData* objectMapped = scene.perObjectMapped[curBackBufIdx];
 
     // Fill PerFrameCB once
@@ -271,6 +286,10 @@ void Application::render()
                 auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
                 PROFILE_ZONE_NAMED("Shadow Pass");
                 PROFILE_GPU_ZONE(g_tracyD3d12Ctx, cmd, "GPU: Shadow");
+                // Shadow pass binds the per-frame/per-pass CBVs BEFORE
+                // shadow.render() runs (which is where bindPipeline auto-sets
+                // the root sig). We need an RS bound to make the CBV bind
+                // valid, so set it explicitly here.
                 cmd->SetGraphicsRootSignature(
                     static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
                 );
@@ -298,22 +317,23 @@ void Application::render()
 
                 uint32_t cubemapBaseIdx =
                     scene.totalSlots;  // Place cubemap object data after main ones
-                std::vector<uint32_t> nonReflectiveIndices;
+                // Application member, cleared and reused per frame.
+                this->nonReflectiveIndices.clear();
                 for (uint32_t i = 0; i < scene.totalSlots; ++i) {
                     if (objectMapped[i].reflective < 0.5f &&
                         !(i < scene.isGizmoDraw.size() && scene.isGizmoDraw[i])) {
-                        nonReflectiveIndices.push_back(i);
+                        this->nonReflectiveIndices.push_back(i);
                     }
                 }
-                uint32_t nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
+                uint32_t nonReflCount = static_cast<uint32_t>(this->nonReflectiveIndices.size());
                 if (nonReflCount == 0) {
                     // Fallback: capture reflective geometry too so the cubemap is not empty.
                     for (uint32_t i = 0; i < scene.totalSlots; ++i) {
                         if (!(i < scene.isGizmoDraw.size() && scene.isGizmoDraw[i])) {
-                            nonReflectiveIndices.push_back(i);
+                            this->nonReflectiveIndices.push_back(i);
                         }
                     }
-                    nonReflCount = static_cast<uint32_t>(nonReflectiveIndices.size());
+                    nonReflCount = static_cast<uint32_t>(this->nonReflectiveIndices.size());
                     if (nonReflCount == 0) {
                         return;
                     }
@@ -356,7 +376,7 @@ void Application::render()
 
                     uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
-                        uint32_t srcIdx = nonReflectiveIndices[j];
+                        uint32_t srcIdx = this->nonReflectiveIndices[j];
                         PerObjectData& dst = objectMapped[faceObjectOffset + j];
                         dst = objectMapped[srcIdx];
                         dst.reflective = 0.0f;
@@ -368,9 +388,6 @@ void Application::render()
                 D3D12_RECT cubeScissor = { 0, 0, (LONG)cubemapResolution, (LONG)cubemapResolution };
 
                 cmdRef.bindPipeline(this->pipelineState);
-                cmd->SetGraphicsRootSignature(
-                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
-                );
                 bindSharedGeometry(cmd);
                 bindSceneHeapAndObjects(cmd);
 
@@ -403,7 +420,7 @@ void Application::render()
                     uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
                         uint32_t drawDataIdx = faceObjectOffset + j;
-                        uint32_t srcIdx = nonReflectiveIndices[j];
+                        uint32_t srcIdx = this->nonReflectiveIndices[j];
                         BindlessIndices bi{};
                         bi.drawDataIdx =
                             gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
@@ -454,11 +471,7 @@ void Application::render()
                 depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
             );
 
-            cmdRef.bindPipeline(this->gbufferPSO);
-            cmd->SetGraphicsRootSignature(
-                static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
-            );
-            bindSharedGeometry(cmd);
+            beginPass(cmdRef, this->gbufferPSO, gbufferPassAddr);
             gfx::TextureHandle gbufferRTs[4] = {
                 gbuffer.resources[0], gbuffer.resources[1], gbuffer.resources[2],
                 gbuffer.resources[3]
@@ -466,8 +479,6 @@ void Application::render()
             cmdRef.setRenderTargets(
                 std::span<const gfx::TextureHandle>(gbufferRTs, 4), depthBuffer
             );
-            bindSceneHeapAndObjects(cmd);
-            bindPerFrameAndPass(cmd, gbufferPassAddr);
 
             uint32_t occlusionQueryIndex = 0;
             for (const auto& dc : visibleSceneDrawCmds) {
@@ -548,16 +559,9 @@ void Application::render()
                 depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
             );
 
-            cmdRef.bindPipeline(this->pipelineState);
-            cmd->SetGraphicsRootSignature(
-                static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
-            );
-            bindSharedGeometry(cmd);
+            beginPass(cmdRef, this->pipelineState, getPassCBAddress(0));
             gfx::TextureHandle sceneRTs[1] = { bloom.hdrRT };
             cmdRef.setRenderTargets(std::span<const gfx::TextureHandle>(sceneRTs, 1), depthBuffer);
-            bindSceneHeapAndObjects(cmd);
-            bindPerFrameAndPass(cmd, getPassCBAddress(0));
-
             cmdRef.setStencilRef(1);
             for (uint32_t i = 0; i < static_cast<uint32_t>(visibleSceneDrawCmds.size()); ++i) {
                 currentVertexCount +=
@@ -599,17 +603,11 @@ void Application::render()
                     depthBuffer, gfx::ClearFlags::Depth | gfx::ClearFlags::Stencil, 1.0f, 0
                 );
 
-                cmdRef.bindPipeline(this->pipelineState);
-                cmd->SetGraphicsRootSignature(
-                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
-                );
-                bindSharedGeometry(cmd);
+                beginPass(cmdRef, this->pipelineState, scenePassAddr);
                 gfx::TextureHandle gizmoRTs[1] = { bloom.hdrRT };
                 cmdRef.setRenderTargets(
                     std::span<const gfx::TextureHandle>(gizmoRTs, 1), depthBuffer
                 );
-                bindSceneHeapAndObjects(cmd);
-                bindPerFrameAndPass(cmd, scenePassAddr);
 
                 for (const auto& dc : gizmoDrawCmds) {
                     BindlessIndices bi{};
@@ -744,14 +742,8 @@ void Application::render()
                 cmd->ClearRenderTargetView(idRtv, clearColor, 0, nullptr);
                 cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-                cmdRef.bindPipeline(picker.pso);
-                cmd->SetGraphicsRootSignature(
-                    static_cast<ID3D12RootSignature*>(gfxDevice->bindlessRootSigNative())
-                );
-                bindSharedGeometry(cmd);
+                beginPass(cmdRef, picker.pso, idPassAddr);
                 cmd->OMSetRenderTargets(1, &idRtv, true, &idDsv);
-                bindSceneHeapAndObjects(cmd);
-                bindPerFrameAndPass(cmd, idPassAddr);
 
                 for (const auto& dc : visibleSceneDrawCmds) {
                     BindlessIndices bi{};

@@ -164,6 +164,14 @@ export class Application
 
     uint64_t frameFenceValues[nBuffers] = {};
 
+    // Per-frame scratch buffers — cleared and reused each render() to avoid
+    // per-frame heap churn. Sized once and grown only when scene complexity
+    // requires it.
+    std::vector<DrawCmd> sceneDrawCmds;
+    std::vector<DrawCmd> visibleSceneDrawCmds;
+    std::vector<DrawCmd> gizmoDrawCmds;
+    std::vector<uint32_t> nonReflectiveIndices;
+
     float lightTime = 0.0f;
 
     bool vsync = true;

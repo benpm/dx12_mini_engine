@@ -119,15 +119,13 @@ void OutlineRenderer::render(
 )
 {
     auto* cmdList = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
+    // bindPipeline auto-binds the matching root sig (bindless).
     cmdRef.bindPipeline(pso);
     auto* gfxSrvHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->srvHeapNative());
     auto* samplerHeap = static_cast<ID3D12DescriptorHeap*>(devForDestroy->samplerHeapNative());
     ID3D12DescriptorHeap* heaps[] = { gfxSrvHeap, samplerHeap };
     cmdList->SetDescriptorHeaps(2, heaps);
 
-    cmdList->SetGraphicsRootSignature(
-        static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
-    );
     D3D12_GPU_DESCRIPTOR_HANDLE heapStart;
     heapStart.ptr = devForDestroy->srvGpuDescriptorHandle(0);
     cmdList->SetGraphicsRootDescriptorTable(app_slots::bindlessSrvTable, heapStart);

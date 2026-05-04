@@ -331,10 +331,8 @@ void SsaoRenderer::render(
         rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoRT));
         FLOAT white[] = { 1, 1, 1, 1 };
         cmdList->ClearRenderTargetView(rtv, white, 0, nullptr);
+        // bindPipeline auto-binds the matching (bindless) root sig.
         cmdRef.bindPipeline(ssaoPSO);
-        cmdList->SetGraphicsRootSignature(
-            static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
-        );
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -380,10 +378,8 @@ void SsaoRenderer::render(
         );
         D3D12_CPU_DESCRIPTOR_HANDLE rtv;
         rtv.ptr = static_cast<SIZE_T>(devForDestroy->rtvHandle(ssaoBlurRT));
+        // bindPipeline auto-binds the matching (bindless) root sig.
         cmdRef.bindPipeline(blurPSO);
-        cmdList->SetGraphicsRootSignature(
-            static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
-        );
         cmdList->RSSetViewports(1, &vp);
         cmdList->RSSetScissorRects(1, &sr);
         cmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
