@@ -54,6 +54,7 @@ void Scene::populateDrawCommands(
 {
     drawCmds.clear();
     drawIndexToEntity.clear();
+    isGizmoDraw.clear();
     anyReflective = false;
 
     uint32_t drawIdx = 0;
@@ -99,6 +100,7 @@ void Scene::populateDrawCommands(
 
         drawCmds.push_back({ mesh.indexCount, mesh.indexOffset, mesh.vertexOffset, 1, drawIdx });
         drawIndexToEntity.push_back(e);
+        isGizmoDraw.push_back(e.has<GizmoArrow>());
         drawIdx++;
     });
 
@@ -145,6 +147,7 @@ void Scene::populateDrawCommands(
             }
 
             drawIndexToEntity.push_back(e);
+            isGizmoDraw.push_back(false);  // instance groups are not gizmo arrows
             drawIdx++;
         }
         drawCmds.push_back(
@@ -163,11 +166,6 @@ void Scene::populateDrawCommands(
         objectMapped[2 * totalSlots + i] = objectMapped[i];
     }
 
-    // Mark gizmo draws for filtering in render passes
-    isGizmoDraw.resize(drawIndexToEntity.size());
-    for (uint32_t i = 0; i < drawIndexToEntity.size(); ++i) {
-        isGizmoDraw[i] = drawIndexToEntity[i].has<GizmoArrow>();
-    }
 }
 
 // ---------------------------------------------------------------------------

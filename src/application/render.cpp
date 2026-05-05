@@ -398,6 +398,12 @@ void Application::render()
                         ->GetGPUVirtualAddress();
                 cmd->SetGraphicsRootConstantBufferView(app_slots::bindlessPerFrameCB, perFrameAddr);
 
+                BindlessIndices bi{};
+                bi.drawDataIdx =
+                    gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                bi.shadowMapIdx = shadowSrvIdx;
+                bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+
                 for (uint32_t face = 0; face < 6; ++face) {
                     D3D12_CPU_DESCRIPTOR_HANDLE faceRtv;
                     faceRtv.ptr = static_cast<SIZE_T>(gfxDevice->rtvHandle(cubemapTexture, face));
@@ -419,14 +425,8 @@ void Application::render()
 
                     uint32_t faceObjectOffset = cubemapBaseIdx + face * nonReflCount;
                     for (uint32_t j = 0; j < nonReflCount; ++j) {
-                        uint32_t drawDataIdx = faceObjectOffset + j;
                         uint32_t srcIdx = this->nonReflectiveIndices[j];
-                        BindlessIndices bi{};
-                        bi.drawDataIdx =
-                            gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
-                        bi.shadowMapIdx = shadowSrvIdx;
-                        bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
-                        bi.drawIndex = drawDataIdx;
+                        bi.drawIndex = faceObjectOffset + j;
                         cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                         cmd->DrawIndexedInstanced(
                             scene.drawCmds[srcIdx].indexCount, 1,
@@ -481,6 +481,8 @@ void Application::render()
             );
 
             uint32_t occlusionQueryIndex = 0;
+            BindlessIndices bi{};
+            bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
             for (const auto& dc : visibleSceneDrawCmds) {
                 const bool queryThisDraw = recordOcclusionQueries &&
                                            occlusionQueryIndex < this->occlusionQueryCapacity &&
@@ -491,8 +493,6 @@ void Application::render()
                         occlusionQueryIndex
                     );
                 }
-                BindlessIndices bi{};
-                bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
                 bi.drawIndex = dc.baseDrawIndex;
                 cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                 cmd->DrawIndexedInstanced(
@@ -563,17 +563,17 @@ void Application::render()
             gfx::TextureHandle sceneRTs[1] = { bloom.hdrRT };
             cmdRef.setRenderTargets(std::span<const gfx::TextureHandle>(sceneRTs, 1), depthBuffer);
             cmdRef.setStencilRef(1);
+            BindlessIndices bi{};
+            bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+            bi.shadowMapIdx = shadowSrvIdx;
+            bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+            bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
+            bi.shadowSamplerIdx = 0;
+            bi.envSamplerIdx = 1;
             for (uint32_t i = 0; i < static_cast<uint32_t>(visibleSceneDrawCmds.size()); ++i) {
                 currentVertexCount +=
                     visibleSceneDrawCmds[i].indexCount * visibleSceneDrawCmds[i].instanceCount;
                 currentDrawCalls++;
-                BindlessIndices bi{};
-                bi.drawDataIdx = gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
-                bi.shadowMapIdx = shadowSrvIdx;
-                bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
-                bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
-                bi.shadowSamplerIdx = 0;
-                bi.envSamplerIdx = 1;
                 bi.drawIndex = visibleSceneDrawCmds[i].baseDrawIndex;
                 cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                 cmd->DrawIndexedInstanced(
@@ -609,15 +609,15 @@ void Application::render()
                     std::span<const gfx::TextureHandle>(gizmoRTs, 1), depthBuffer
                 );
 
+                BindlessIndices bi{};
+                bi.drawDataIdx =
+                    gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
+                bi.shadowMapIdx = shadowSrvIdx;
+                bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
+                bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
+                bi.shadowSamplerIdx = 0;
+                bi.envSamplerIdx = 1;
                 for (const auto& dc : gizmoDrawCmds) {
-                    BindlessIndices bi{};
-                    bi.drawDataIdx =
-                        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
-                    bi.shadowMapIdx = shadowSrvIdx;
-                    bi.envMapIdx = gfxDevice->bindlessSrvIndex(cubemapTexture);
-                    bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
-                    bi.shadowSamplerIdx = 0;
-                    bi.envSamplerIdx = 1;
                     bi.drawIndex = dc.baseDrawIndex;
                     cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                     cmd->DrawIndexedInstanced(
@@ -745,10 +745,10 @@ void Application::render()
                 beginPass(cmdRef, picker.pso, idPassAddr);
                 cmd->OMSetRenderTargets(1, &idRtv, true, &idDsv);
 
+                BindlessIndices bi{};
+                bi.drawDataIdx =
+                    gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
                 for (const auto& dc : visibleSceneDrawCmds) {
-                    BindlessIndices bi{};
-                    bi.drawDataIdx =
-                        gfxDevice->bindlessSrvIndex(scene.perObjectBuffer[curBackBufIdx]);
                     bi.drawIndex = dc.baseDrawIndex;
                     cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);
                     cmd->DrawIndexedInstanced(

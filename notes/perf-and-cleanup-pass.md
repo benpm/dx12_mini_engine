@@ -2,7 +2,8 @@
 
 A whole-codebase review surfaced ~20 candidate findings (perf, software design,
 GPU pipeline correctness). This note documents the changes that landed, the
-findings that were deferred, and the rationale.
+findings that were deferred, and the rationale. Extended on the same date
+with a second round of small wins (sections 3-5).
 
 ---
 
@@ -42,7 +43,42 @@ explicit calls because they use raw `cmd->SetPipelineState`, not
 `cmdRef.bindPipeline`. Migrating those PSOs to `gfx::PipelineHandle` is a
 follow-up task.
 
-### 3. `beginPass` helper extracted
+### 3. Bindless SRV index lookups hoisted out of per-draw loops
+
+`gfxDevice->bindlessSrvIndex()` and friends are pure-function lookups, but
+calling them inside a draw loop runs the lookup `N_draws` times for values
+that are constant across the entire pass (the per-object buffer SRV, the
+shadow map, the cubemap, the SSAO blur RT, the shadow/env sampler indices).
+
+All five draw loops in `render.cpp` now build a `BindlessIndices base` once
+before entering the loop and only mutate `bi.drawIndex` per draw:
+
+- Cubemap face inner loop (`render.cpp:421`).
+- G-Buffer pass (`render.cpp:484`).
+- Scene pass (`render.cpp:566`).
+- Gizmo pass (`render.cpp:611`).
+- ID pass (`render.cpp:748`).
+
+For `~10` entities × `5` per-draw lookups, this is ~50 lookups → 5
+lookups per frame.
+
+### 4. `Scene::isGizmoDraw` populated lazily
+
+Was: `populateDrawCommands` did one final pass after building draw cmds —
+`isGizmoDraw.resize(N); for (i) isGizmoDraw[i] = drawIndexToEntity[i].has<GizmoArrow>();`
+Now: `clear()` once at the start, `push_back(e.has<GizmoArrow>())` inline
+next to `drawIndexToEntity.push_back(e)` (and `push_back(false)` in the
+instance-group branch since instance groups are never gizmo arrows). One
+fewer linear pass and one fewer ECS query per frame.
+
+### 5. `BindlessHeap::free` debug-only double-free guard
+
+Added an `#ifndef NDEBUG` `assert(std::find(...) == freeList.end())` to
+both `free()` and `freeBatch()`. Production path is unchanged. Catches the
+theoretical double-destroy (`destroy(h)` called twice on a still-valid
+handle) at the source rather than as silent descriptor reuse.
+
+### 6. `beginPass` helper extracted
 
 In `render.cpp`, every passes that uses `pipelineState` / `gbufferPSO` /
 `picker.pso` repeated this 4-line pattern:
@@ -82,14 +118,6 @@ focused PR.
 
 ### Performance — medium impact
 
-- **Bindless SRV index lookups inside the per-draw loop**
-  (`render.cpp:575-578` and the gizmo pass equivalent). Same buffer queried
-  per draw — should be hoisted out of the loop into `BindlessIndices base`.
-  ~30 lookups/frame × ~10 entities, currently. Fix is straightforward but
-  would touch every draw-loop and obscures the diff for this pass.
-- **`scene.isGizmoDraw.resize()` per frame** (`scene.cpp`). Should be
-  populated lazily during `populateDrawCommands` when `drawIndexToEntity`
-  is appended to. Fix requires touching the scene draw-command path.
 - **Cubemap face loop rebuilds the 6 face viewProjs and re-copies object
   data per frame even when the reflective entity hasn't moved.** Cache
   by reflective-position hash. Skipped because cubemap-disabled is the
@@ -126,8 +154,6 @@ focused PR.
   the existing extension plan.
 - **No pass culling** in the render graph. Liveness sweep is ~1 day of
   work. Low priority — current pass set is small.
-- **`BindlessHeap::free` has no double-free guard.** Theoretical only;
-  every current `destroy()` call site already guards on `.isValid()`.
 - **`Bloom`/`Billboard` PSOs are raw `ComPtr<ID3D12PipelineState>`** with
   raw `cmd->SetPipelineState` calls. Migrating to `gfx::PipelineHandle`
   would let them benefit from `bindPipeline`'s auto-root-sig binding too.

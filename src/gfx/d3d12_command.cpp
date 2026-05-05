@@ -1,6 +1,7 @@
 // Queue + CommandList impl for the gfx D3D12 backend.
 
 #include <algorithm>
+#include <cassert>
 
 #include "d3d12_internal.h"
 
@@ -77,6 +78,12 @@ namespace gfxd3d12
             return;
         }
         std::lock_guard<std::mutex> lk(mu);
+#ifndef NDEBUG
+        assert(
+            std::find(freeList.begin(), freeList.end(), index) == freeList.end() &&
+            "BindlessHeap::free double-free"
+        );
+#endif
         freeList.push_back(index);
     }
 
@@ -87,6 +94,12 @@ namespace gfxd3d12
         }
         std::lock_guard<std::mutex> lk(mu);
         for (uint32_t i = 0; i < count; ++i) {
+#ifndef NDEBUG
+            assert(
+                std::find(freeList.begin(), freeList.end(), base + i) == freeList.end() &&
+                "BindlessHeap::freeBatch double-free"
+            );
+#endif
             freeList.push_back(base + i);
         }
     }
