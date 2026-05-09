@@ -1,0 +1,142 @@
+{
+    "title": "External Assets Showcase",
+    "description": "High-poly DamagedHelmet + Corset glTF samples",
+    "camera": {
+        "fov": 0.85,
+        "nearPlane": 0.1,
+        "farPlane": 200.0,
+        "yaw": 1.1,
+        "pitch": 0.15,
+        "radius": 9.0
+    },
+    "bloom": {
+        "threshold": 1.5,
+        "intensity": 0.12,
+        "tonemapMode": 2
+    },
+    "dirLight": {
+        "dir": { "x": 0.4, "y": -0.7, "z": 0.6 },
+        "brightness": 3.0,
+        "color": { "x": 1.0, "y": 0.95, "z": 0.85 }
+    },
+    "fog": {
+        "startY": -8.0,
+        "density": 0.15,
+        "color": { "x": 0.05, "y": 0.05, "z": 0.08 }
+    },
+    "shadow": {
+        "enabled": true,
+        "bias": 0.0002,
+        "rasterDepthBias": 1000,
+        "rasterSlopeBias": 1.0,
+        "rasterBiasClamp": 0.0,
+        "lightDistance": 25.0,
+        "orthoSize": 12.0,
+        "nearPlane": 0.1,
+        "farPlane": 60.0
+    },
+    "cubemap": {
+        "enabled": false,
+        "resolution": 128,
+        "nearPlane": 0.1,
+        "farPlane": 100.0
+    },
+    "pointLights": {
+        "brightness": 0.0,
+        "ambient": 0.05,
+        "lights": [{}, {}, {}, {}, {}, {}, {}, {}]
+    },
+    "spawning": {
+        "stopped": true,
+        "autoStop": false,
+        "stopFrameMs": 10.0,
+        "batchSize": 0
+    },
+    "display": {
+        "vsync": true,
+        "animateEntities": true,
+        "lightAnimSpeed": 1.0,
+        "showBillboards": false,
+        "showGrid": true,
+        "gridMajorSize": 1.0,
+        "gridSubdivisions": 10
+    },
+    "terrain": {
+        "gridSize": 64,
+        "worldSize": 40.0,
+        "heightScale": 0.0,
+        "octaves": 1,
+        "frequency": 0.02,
+        "seed": 42,
+        "materialAlbedo": { "x": 0.08, "y": 0.10, "z": 0.12, "w": 1.0 },
+        "materialRoughness": 0.8,
+        "positionY": -30.0
+    },
+    "bgColor": { "x": 0.04, "y": 0.04, "z": 0.06 },
+    "materials": [
+        {
+            "name": "Diffuse",
+            "albedo": { "x": 0.8, "y": 0.8, "z": 0.8, "w": 1.0 },
+            "roughness": 0.5,
+            "metallic": 0.0,
+            "emissiveStrength": 0.0,
+            "reflective": false,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        },
+        {
+            "name": "HelmetMat",
+            "albedo": { "x": 0.55, "y": 0.5, "z": 0.45, "w": 1.0 },
+            "roughness": 0.4,
+            "metallic": 0.6,
+            "emissiveStrength": 0.0,
+            "reflective": true,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        },
+        {
+            "name": "CorsetMat",
+            "albedo": { "x": 0.85, "y": 0.55, "z": 0.55, "w": 1.0 },
+            "roughness": 0.45,
+            "metallic": 0.0,
+            "emissiveStrength": 0.0,
+            "reflective": false,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        }
+    ],
+    "extraGlbs": [
+        "resources/external_scenes/DamagedHelmet/DamagedHelmet.glb",
+        "resources/external_scenes/Corset/Corset.glb"
+    ],
+    "entities": [
+        {
+            "meshName": "mesh_helmet_LP_13930damagedHelmet",
+            "materialName": "HelmetMat",
+            "position": { "x": -2.5, "y": 0.5, "z": 0.0 },
+            "scale": 1.5,
+            "rotAxis": { "x": 1.0, "y": 0.0, "z": 0.0 },
+            "rotAngle": 1.5708,
+            "albedoOverride": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+            "pickable": true
+        },
+        {
+            "meshName": "pCube49",
+            "materialName": "CorsetMat",
+            "position": { "x": 2.5, "y": -1.5, "z": 0.0 },
+            "scale": 40.0,
+            "rotAxis": { "x": 0.0, "y": 1.0, "z": 0.0 },
+            "rotAngle": -0.4,
+            "albedoOverride": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+            "pickable": true
+        }
+    ],
+    "instanceGroups": [],
+    "runtime": {
+        "useWarp": false,
+        "hideWindow": false,
+        "screenshotFrame": 0,
+        "exitAfterScreenshot": false,
+        "spawnPerFrame": 0,
+        "skipImGui": false,
+        "singleTeapotMode": false,
+        "clearOnLoad": true
+    }
+}

@@ -165,7 +165,6 @@ void Scene::populateDrawCommands(
     for (uint32_t i = 0; i < totalSlots; ++i) {
         objectMapped[2 * totalSlots + i] = objectMapped[i];
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +449,8 @@ bool Scene::loadGltf(
     const std::string& path,
     gfx::IDevice& dev,
     CommandQueue& cmdQueue,
-    bool append
+    bool append,
+    bool instantiate
 )
 {
     if (!append) {
@@ -582,10 +582,12 @@ bool Scene::loadGltf(
             bv.sphere.center = center;
             bv.sphere.radius = std::sqrt(maxDist2);
 
-            // Instantiate
-            Transform tf;
-            tf.world = mat4{};
-            ecsWorld.entity().set(tf).set(meshRef).set(bv).add<Pickable>();
+            // Instantiate (skip when instantiate=false; caller will spawn entities explicitly)
+            if (instantiate) {
+                Transform tf;
+                tf.world = mat4{};
+                ecsWorld.entity().set(tf).set(meshRef).set(bv).add<Pickable>();
+            }
         }
     }
 

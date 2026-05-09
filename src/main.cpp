@@ -53,6 +53,7 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
     std::string sceneFilePath;
     bool dumpConfig = false;
     bool showHelp = false;
+    bool testMode = false;
     if (argv) {
         for (int i = 1; i < argc; ++i) {
             int len = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, nullptr, nullptr);
@@ -62,6 +63,8 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
                 showHelp = true;
             } else if (arg == "--dump-config") {
                 dumpConfig = true;
+            } else if (arg == "--test") {
+                testMode = true;
             } else if (!arg.empty() && arg[0] != '-') {
                 sceneFilePath = arg;
             }
@@ -75,7 +78,10 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
             "Usage: main.exe [options] [scene-file]\n\n"
             "Options:\n"
             "  -h, --help       Show this help message and exit\n"
-            "  --dump-config    Write default config.json and exit\n\n"
+            "  --dump-config    Write default config.json and exit\n"
+            "  --test           Force run-screenshot-exit mode (WARP, hidden window,\n"
+            "                   screenshot at frame 10, skip ImGui). Overrides any\n"
+            "                   runtime block in the scene file.\n\n"
             "Arguments:\n"
             "  scene-file       Path to a JSON scene file (default: from "
             "config.json's defaultScenePath)\n";
@@ -111,6 +117,20 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         if (!hasSceneFile) {
             spdlog::warn("Failed to load scene file '{}', using defaults", sceneFilePath);
         }
+    }
+
+    // --test forces run-screenshot-exit behaviour regardless of what's in the scene file.
+    if (testMode) {
+        if (!hasSceneFile) {
+            sceneData = SceneFileData{};
+            hasSceneFile = true;
+        }
+        sceneData.runtime.useWarp = true;
+        sceneData.runtime.hideWindow = true;
+        sceneData.runtime.screenshotFrame = 10;
+        sceneData.runtime.exitAfterScreenshot = true;
+        sceneData.runtime.skipImGui = true;
+        spdlog::info("--test: forcing WARP + headless + screenshot at frame 10 + exit");
     }
 
     bool useWarp = hasSceneFile && sceneData.runtime.useWarp;

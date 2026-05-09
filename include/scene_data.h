@@ -110,6 +110,9 @@ struct RuntimeData
     int spawnPerFrame = 0;
     bool skipImGui = false;
     bool singleTeapotMode = false;
+    // Clear default loadContent entities (teapots + auto-instanced primitives) before
+    // applying scene entities — useful for showcase scenes that supply their own content.
+    bool clearOnLoad = false;
 };
 
 struct SceneFileData
@@ -130,5 +133,8 @@ struct SceneFileData
     std::vector<Material> materials;
     std::vector<EntityData> entities;
     std::vector<InstanceGroupData> instanceGroups;
+    // Additional GLB files to load (paths relative to working dir or absolute).
+    // Loaded in append mode without auto-spawning entities — use entities[] to place them.
+    std::vector<std::string> extraGlbs;
     RuntimeData runtime;
 };

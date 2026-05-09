@@ -184,7 +184,8 @@ export class Scene
         const std::string& path,
         gfx::IDevice& dev,
         CommandQueue& cmdQueue,
-        bool append = false
+        bool append = false,
+        bool instantiate = true
     );
     void loadTeapot(gfx::IDevice& dev, CommandQueue& cmdQueue, bool includeCompanion = true);
 

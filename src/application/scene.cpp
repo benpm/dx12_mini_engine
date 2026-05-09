@@ -253,6 +253,9 @@ void Application::applySceneData(const SceneFileData& d)
         gizmo.init(scene, *gfxDevice, cmdQueue);
         spawningStopped = true;
         autoStopSpawning = false;
+    } else if (contentLoaded && runtimeConfig.clearOnLoad) {
+        scene.clearScene(cmdQueue);
+        gizmo.init(scene, *gfxDevice, cmdQueue);
     }
 
     // Rebuild GPU resources if needed
@@ -272,7 +275,8 @@ void Application::applySceneData(const SceneFileData& d)
         }
     }
 
-    // Apply materials from scene file
+    // Apply materials from scene file (replace before loading extraGlbs so the GLB's
+    // own materials are appended on top and remain available by name).
     if (!d.materials.empty()) {
         scene.materials = d.materials;
         for (int i = 0; i < static_cast<int>(MaterialPreset::Count); ++i) {
@@ -286,6 +290,19 @@ void Application::applySceneData(const SceneFileData& d)
                 scene.presetIdx[static_cast<int>(MaterialPreset::Metal)] = i;
             } else if (n == "Mirror") {
                 scene.presetIdx[static_cast<int>(MaterialPreset::Mirror)] = i;
+            }
+        }
+    }
+
+    // Load additional GLB files (e.g. high-poly external assets). Loaded in append mode
+    // with instantiate=false so the scene's entities[] block places them explicitly.
+    if (!d.extraGlbs.empty() && contentLoaded) {
+        for (const auto& glbPath : d.extraGlbs) {
+            if (!scene.loadGltf(
+                    glbPath, *gfxDevice, cmdQueue, /*append=*/true,
+                    /*instantiate=*/false
+                )) {
+                spdlog::warn("Scene extraGlbs: failed to load '{}'", glbPath);
             }
         }
     }
