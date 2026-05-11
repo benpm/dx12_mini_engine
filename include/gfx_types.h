@@ -321,6 +321,17 @@ namespace gfx
         uint32_t semanticIndex = 0;
         Format format = Format::Unknown;
         uint32_t offset = 0;
+        // Multi-stream input layouts (e.g. per-vertex + per-instance) reference
+        // streams by slot. Default 0 keeps the single-stream API source-compatible.
+        uint32_t inputSlot = 0;
+    };
+
+    // Per-input-slot vertex stream descriptor. Used for multi-buffer input
+    // layouts where some attributes step per-vertex and others step per-instance.
+    struct VertexStream
+    {
+        uint32_t stride = 0;
+        bool perInstance = false;  // true => one element per instance instead of per vertex
     };
 
     struct DepthStencilState
@@ -366,6 +377,11 @@ namespace gfx
         ShaderHandle ps;
         std::span<const VertexAttribute> vertexAttributes;
         uint32_t vertexStride = 0;
+        // Optional. When set, treated as per-slot stream descriptors so the
+        // backend can emit the correct InputClassification for each attribute.
+        // When empty, the single-stream `vertexStride` is used for slot 0
+        // (per-vertex) and we assume no instance streams.
+        std::span<const VertexStream> vertexStreams;
         PrimitiveTopology topology = PrimitiveTopology::TriangleList;
         DepthStencilState depthStencil;
         BlendState blend[8];

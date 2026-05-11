@@ -61,6 +61,7 @@ export namespace gfx
     using ::gfx::TextureHandle;
     using ::gfx::TextureUsage;
     using ::gfx::VertexAttribute;
+    using ::gfx::VertexStream;
     using ::gfx::VertexBufferView;
     using ::gfx::Viewport;
 

@@ -111,11 +111,15 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **`gfx::` Bindless model**: single global SRV/UAV heap (default 65k descriptors) and sampler heap. Bindless root signature: `[32 root constants b0][CBV b1][CBV b2][SRV/UAV descriptor table][sampler descriptor table]`. Enabled by default via `USE_BINDLESS=ON`.
 
 **What still leaks D3D12 in subsystems (private fields, blocked on deeper rewrites):**
-- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). `spriteTexture` and Scene's glTF PBR textures have migrated to `gfx::adoptTexture` + `TextureHandle`.
+- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). Texture resources (`spriteTexture`, Scene glTF PBR maps) all migrated through `gfx::adoptTexture`.
 - `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` (needed by `imgui_impl_dx12`) and `ReStirRenderer::uavHeap`.
-- `ComPtr<ID3D12PipelineState>` remaining in Billboard (1 PSO — needs `VertexAttribute` API extension for per-instance streams), SSAO (2 PSOs), Shadow (1), Outline (1), ObjectPicker (1), ReStir (4 compute PSOs). Bloom's four PSOs have migrated to `gfx::PipelineHandle`.
+- `ComPtr<ID3D12PipelineState>` remaining only in `ReStirRenderer` (4 compute PSOs). All graphics PSOs — bloom, SSAO, shadow, outline, object_picker, billboard — are now `gfx::PipelineHandle`.
 - `ComPtr<ID3D12RootSignature>` in ReStir (compute-specific layout).
 - `ID3D12CommandQueue*` in `ImGuiLayer::init` — required by `imgui_impl_dx12`.
+
+**Recent gfx-API extensions** to support these migrations:
+- `gfx::IDevice::adoptTexture(nativeResource, format, mipLevels, isCubemap)` — gfx takes ownership of an externally-allocated D3D12 resource and registers its bindless SRV.
+- `gfx::VertexAttribute::inputSlot` + `gfx::VertexStream { stride, perInstance }` — multi-stream input layouts. Used by billboard to keep its quad-mesh + per-instance buffer layout.
 
 **ECS Update systems**: Native flecs systems in `Scene::setupSystems()` driven by `scene.progress(dt)`:
 - `StorePrevTransforms` / `StorePrevInstanceTransforms`: motion vector data

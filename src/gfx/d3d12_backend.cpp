@@ -530,7 +530,20 @@ namespace gfxd3d12
             e.SemanticIndex = a.semanticIndex;
             e.Format = toDXGI(a.format);
             e.AlignedByteOffset = a.offset;
-            e.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+            e.InputSlot = a.inputSlot;
+            // Per-stream classification: prefer the explicit vertexStreams[]
+            // entry when provided; otherwise default to per-vertex (slot 0).
+            bool perInstance = false;
+            if (a.inputSlot < d.vertexStreams.size()) {
+                perInstance = d.vertexStreams[a.inputSlot].perInstance;
+            }
+            if (perInstance) {
+                e.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
+                e.InstanceDataStepRate = 1;
+            } else {
+                e.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+                e.InstanceDataStepRate = 0;
+            }
             elems.push_back(e);
         }
 

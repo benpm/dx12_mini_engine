@@ -26,7 +26,10 @@ export class BillboardRenderer
     // sizeof(BillboardInstance)≈36, trivial.
     static constexpr uint32_t maxInstances = 4096;
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
+    // Pipeline + backing shaders are gfx-managed now. Destructor releases them.
+    gfx::PipelineHandle pipelineState{};
+    gfx::ShaderHandle vsHandle{};
+    gfx::ShaderHandle psHandle{};
     // spriteTexture is owned through gfx now (was raw ComPtr<ID3D12Resource>).
     // Resource still comes from DirectXTK's WICTextureLoader; adoptTexture
     // wraps it in a gfx::TextureHandle so the lifetime + SRV slot are managed

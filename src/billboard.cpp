@@ -42,6 +42,15 @@ BillboardRenderer::~BillboardRenderer()
         if (spriteTexture.isValid()) {
             devForDestroy->destroy(spriteTexture);
         }
+        if (pipelineState.isValid()) {
+            devForDestroy->destroy(pipelineState);
+        }
+        if (vsHandle.isValid()) {
+            devForDestroy->destroy(vsHandle);
+        }
+        if (psHandle.isValid()) {
+            devForDestroy->destroy(psHandle);
+        }
     }
 }
 
@@ -50,47 +59,61 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     devForDestroy = &dev;
     auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
 
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-          0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-          0 },
-        { "INSTANCE_POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0,
-          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-        { "INSTANCE_COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 12,
-          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-        { "INSTANCE_SIZE", 0, DXGI_FORMAT_R32_FLOAT, 1, 28,
-          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+    // Two input streams: slot 0 = per-vertex quad (pos + uv), slot 1 = per-instance
+    // (world pos, color, size). gfx::VertexAttribute now supports inputSlot and
+    // the per-stream classification is read from GraphicsPipelineDesc::vertexStreams.
+    const gfx::VertexAttribute billboardAttrs[] = {
+        { "POSITION", 0, gfx::Format::RG32Float, 0, 0 },
+        { "TEXCOORD", 0, gfx::Format::RG32Float, 8, 0 },
+        { "INSTANCE_POS", 0, gfx::Format::RGB32Float, 0, 1 },
+        { "INSTANCE_COLOR", 0, gfx::Format::RGBA32Float, 12, 1 },
+        { "INSTANCE_SIZE", 0, gfx::Format::R32Float, 28, 1 },
+    };
+    const gfx::VertexStream billboardStreams[] = {
+        { 16, false },                            // slot 0: quad vertex (vec2 pos + vec2 uv)
+        { sizeof(BillboardInstance), true },      // slot 1: per-instance
     };
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.pRootSignature = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-    psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
-    psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_billboard_vs, sizeof(g_billboard_vs));
-    psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_billboard_ps, sizeof(g_billboard_ps));
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
-    psoDesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    psoDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-    psoDesc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-    psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
-    psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-    // Match the application's main depth buffer (D32_FLOAT_S8X24_UINT) — the
-    // billboard pass binds depth_buffer's DSV for depth-test (no depth write).
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-    psoDesc.SampleDesc = { 1, 0 };
+    {
+        gfx::ShaderDesc sd{};
+        sd.bytecode = g_billboard_vs;
+        sd.bytecodeSize = sizeof(g_billboard_vs);
+        sd.stage = gfx::ShaderStage::Vertex;
+        sd.debugName = "billboard_vs";
+        vsHandle = dev.createShader(sd);
+    }
+    {
+        gfx::ShaderDesc sd{};
+        sd.bytecode = g_billboard_ps;
+        sd.bytecodeSize = sizeof(g_billboard_ps);
+        sd.stage = gfx::ShaderStage::Pixel;
+        sd.debugName = "billboard_ps";
+        psHandle = dev.createShader(sd);
+    }
 
-    chkDX(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
+    gfx::GraphicsPipelineDesc pd{};
+    pd.vs = vsHandle;
+    pd.ps = psHandle;
+    pd.vertexAttributes = billboardAttrs;
+    pd.vertexStreams = billboardStreams;
+    pd.rasterizer.cull = gfx::CullMode::None;
+    pd.depthStencil.depthEnable = true;
+    pd.depthStencil.depthWrite = false;
+    pd.depthStencil.depthCompare = gfx::CompareOp::Less;
+    pd.depthStencil.stencilEnable = false;
+    // Additive-with-alpha blend (matches the existing premultiplied-alpha look).
+    pd.blend[0].blendEnable = true;
+    pd.blend[0].srcColor = gfx::BlendFactor::SrcAlpha;
+    pd.blend[0].dstColor = gfx::BlendFactor::One;
+    pd.blend[0].colorOp = gfx::BlendOp::Add;
+    pd.blend[0].srcAlpha = gfx::BlendFactor::One;
+    pd.blend[0].dstAlpha = gfx::BlendFactor::One;
+    pd.blend[0].alphaOp = gfx::BlendOp::Add;
+    pd.numRenderTargets = 1;
+    pd.renderTargetFormats[0] = gfx::Format::R11G11B10Float;
+    pd.depthStencilFormat = gfx::Format::D32FloatS8X24Uint;
+    pd.debugName = "billboard_pso";
+    pipelineState = dev.createGraphicsPipeline(pd);
 
     auto* queue = static_cast<ID3D12CommandQueue*>(dev.graphicsQueue()->nativeHandle());
     DirectX::ResourceUploadBatch upload(device);
@@ -201,10 +224,8 @@ void BillboardRenderer::render(
     vec3 right = normalize(cross(worldUp, forward));
     vec3 up = normalize(cross(forward, right));
 
-    cmdList->SetPipelineState(pipelineState.Get());
-    cmdList->SetGraphicsRootSignature(
-        static_cast<ID3D12RootSignature*>(devForDestroy->bindlessRootSigNative())
-    );
+    // bindPipeline also binds the matching root sig (gfx bindless).
+    cmdRef.bindPipeline(pipelineState);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     D3D12_VERTEX_BUFFER_VIEW views[] = {
