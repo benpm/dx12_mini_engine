@@ -45,6 +45,11 @@ int engine_physics_raycast(
     void* physicsPtr, float ox, float oy, float oz, float dx, float dy, float dz,
     float maxDistance, float* hitX, float* hitY, float* hitZ, float* hitDistance
 );
+void engine_physics_apply_force(void* physicsPtr, unsigned int id, float fx, float fy, float fz);
+void engine_physics_apply_impulse(void* physicsPtr, unsigned int id, float ix, float iy, float iz);
+void engine_physics_set_body_position(
+    void* physicsPtr, unsigned int id, float px, float py, float pz
+);
 
 // Particle ops. particlesPtr is the address of a ParticleSystem instance.
 void engine_particles_emit(

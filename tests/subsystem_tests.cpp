@@ -104,6 +104,44 @@ TEST_CASE("PhysicsWorld: dynamic body rotates as it falls")
     CHECK(len2 == doctest::Approx(1.0f).epsilon(0.001));
 }
 
+TEST_CASE("PhysicsWorld: applyImpulse sends a body upward")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    // Static floor so the body has something to land on (matters for later
+    // tests but not this one — verify it doesn't crash with no floor).
+    auto box = w.createBoxBody(0, 0, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/true, 1.0f);
+    REQUIRE(box != 0);
+
+    // Apply an upward impulse strong enough to overcome a single step's
+    // gravity (~0.16 m/s downward at 60Hz).
+    w.applyImpulse(box, 0, 10.0f, 0);
+
+    // One step at 60Hz: 10 m/s up, minus 9.81/60 ≈ 0.16 m/s of gravity ≈ 9.84 m/s.
+    // After dt=1/60, y should be at +9.84/60 ≈ +0.16 m above start.
+    w.step(1.0f / 60.0f);
+    float x = 0, y = 0, z = 0;
+    w.getBodyPosition(box, x, y, z);
+    CHECK(y > 0.05f);
+}
+
+TEST_CASE("PhysicsWorld: setBodyPosition teleports the body")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    auto box = w.createBoxBody(0, 0, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/true, 1.0f);
+    REQUIRE(box != 0);
+
+    w.setBodyPosition(box, 10.0f, 20.0f, 30.0f);
+    float x = 0, y = 0, z = 0;
+    w.getBodyPosition(box, x, y, z);
+    CHECK(x == doctest::Approx(10.0f));
+    CHECK(y == doctest::Approx(20.0f));
+    CHECK(z == doctest::Approx(30.0f));
+}
+
 TEST_CASE("PhysicsWorld: raycast hits a body")
 {
     PhysicsWorld w;

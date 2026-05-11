@@ -87,6 +87,33 @@ extern "C" void engine_physics_get_body_rotation(
     if (outW) *outW = w_;
 }
 
+extern "C" void engine_physics_apply_force(
+    void* p, unsigned int id, float fx, float fy, float fz
+)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->applyForce(id, fx, fy, fz);
+    }
+}
+
+extern "C" void engine_physics_apply_impulse(
+    void* p, unsigned int id, float ix, float iy, float iz
+)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->applyImpulse(id, ix, iy, iz);
+    }
+}
+
+extern "C" void engine_physics_set_body_position(
+    void* p, unsigned int id, float px, float py, float pz
+)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->setBodyPosition(id, px, py, pz);
+    }
+}
+
 extern "C" int engine_physics_raycast(
     void* p, float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
     float* hitX, float* hitY, float* hitZ, float* hitDistance
@@ -371,6 +398,36 @@ void PhysicsWorld::getBodyRotation(BodyId id, float& qx, float& qy, float& qz, f
     qy = q.GetY();
     qz = q.GetZ();
     qw = q.GetW();
+}
+
+void PhysicsWorld::applyForce(BodyId id, float fx, float fy, float fz)
+{
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    impl->system->GetBodyInterface().AddForce(toJoltId(id), JPH::Vec3(fx, fy, fz));
+}
+
+void PhysicsWorld::applyImpulse(BodyId id, float ix, float iy, float iz)
+{
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    impl->system->GetBodyInterface().AddImpulse(toJoltId(id), JPH::Vec3(ix, iy, iz));
+}
+
+void PhysicsWorld::setBodyPosition(BodyId id, float px, float py, float pz, bool activate)
+{
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    impl->system->GetBodyInterface().SetPosition(
+        toJoltId(id), JPH::Vec3(px, py, pz),
+        activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate
+    );
 }
 
 bool PhysicsWorld::raycast(

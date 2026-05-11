@@ -101,3 +101,7 @@ extern "C" int engine_physics_raycast(
     if (hd) *hd = 0;
     return 0;
 }
+
+extern "C" void engine_physics_apply_force(void*, unsigned int, float, float, float) {}
+extern "C" void engine_physics_apply_impulse(void*, unsigned int, float, float, float) {}
+extern "C" void engine_physics_set_body_position(void*, unsigned int, float, float, float) {}

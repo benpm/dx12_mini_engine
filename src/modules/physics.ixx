@@ -56,6 +56,17 @@ export class PhysicsWorld
     bool raycast(float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
                  float& hitX, float& hitY, float& hitZ, float& hitDistance) const;
 
+    // Apply a continuous force at the body's center of mass for one step.
+    // Effective only on dynamic bodies; no-op for static/kinematic.
+    void applyForce(BodyId id, float fx, float fy, float fz);
+
+    // Apply an instantaneous impulse (mass-independent velocity kick).
+    void applyImpulse(BodyId id, float ix, float iy, float iz);
+
+    // Teleport a body to a new position. Useful for kinematic-style movement
+    // and respawn logic.
+    void setBodyPosition(BodyId id, float px, float py, float pz, bool activate = true);
+
    private:
     void* state = nullptr;  // opaque PhysicsWorldImpl* (defined in physics.cpp)
     bool ready = false;
