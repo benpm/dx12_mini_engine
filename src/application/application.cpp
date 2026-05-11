@@ -534,9 +534,25 @@ void Application::update()
     t0 = t1;
     const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
 
-    // Physics step before ECS so any future RigidBody→Transform sync happens
+    // Physics step before ECS so RigidBody → Transform sync happens
     // before transform-dependent systems (animation, motion vectors) read it.
     physicsWorld.step(dt);
+
+    // Pull body positions back into the entity Transform. We preserve the
+    // existing rotation/scale by only overwriting the translation row; future
+    // work will also sync the body's rotation quaternion.
+    scene.ecsWorld.query<Transform, const RigidBody>().each(
+        [&](Transform& tf, const RigidBody& rb) {
+            if (rb.bodyId == 0) {
+                return;
+            }
+            float px = 0, py = 0, pz = 0;
+            physicsWorld.getBodyPosition(rb.bodyId, px, py, pz);
+            tf.world._41 = px;
+            tf.world._42 = py;
+            tf.world._43 = pz;
+        }
+    );
 
     // Particle simulation. Output is consumed by the billboard renderer
     // each frame via a snapshot, see render.cpp for the upload path.

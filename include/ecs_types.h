@@ -47,6 +47,15 @@ struct Animator
     bool playing = true;
 };
 
+// Binds an entity to a Jolt physics body. The SyncPhysicsToTransform system
+// updates the entity's Transform.world translation from the body's position
+// each frame after PhysicsWorld::step. Existing Transform scale/rotation are
+// preserved so visuals don't snap on attach. A bodyId of 0 means no body.
+struct RigidBody
+{
+    uint32_t bodyId = 0;
+};
+
 // Bounding volume for culling
 struct BoundingVolume
 {

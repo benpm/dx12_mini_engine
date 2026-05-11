@@ -15,6 +15,10 @@
         {
             "name": "Delete All",
             "script": "delete_all.lua"
+        },
+        {
+            "name": "Physics Demo",
+            "script": "physics_demo.lua"
         }
     ]
 }

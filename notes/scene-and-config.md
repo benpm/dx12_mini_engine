@@ -49,5 +49,5 @@ Lua 5.4 (FetchContent, compiled as static C lib). Module in `lua_scripting.ixx` 
 ## Example Lua Scripts (`resources/scripts/`)
 
 * **Per-entity**: `orbit.lua` (Y-axis orbit), `bounce.lua` (vertical bounce with squash/stretch), `pulse_emissive.lua` (pulsing glow)
-* **One-shot actions**: `spawn_grid.lua` (5x5 entity grid), `randomize_colors.lua` (random albedo on all MeshRef entities), `delete_all.lua` (destroy all MeshRef entities)
+* **One-shot actions**: `spawn_grid.lua` (5x5 entity grid), `randomize_colors.lua` (random albedo on all MeshRef entities), `delete_all.lua` (destroy all MeshRef entities), `physics_demo.lua` (static floor + stack of dynamic boxes attached to mesh entities via Jolt)
 * **Action bindings**: `resources/scripts/actions.json` maps action names to script paths

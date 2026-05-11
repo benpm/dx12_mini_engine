@@ -917,6 +917,25 @@ static int l_get_body_position(lua_State* L)
     return 3;
 }
 
+static int l_attach_rigid_body(lua_State* L)
+{
+    auto* w = getEcsWorld(L);
+    if (!w) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    uint64_t entityId = (uint64_t)luaL_checkinteger(L, 1);
+    unsigned int bodyId = (unsigned int)luaL_checkinteger(L, 2);
+    flecs::entity e(*w, entityId);
+    if (!e.is_alive()) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    e.set(RigidBody{ bodyId });
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_raycast(lua_State* L)
 {
     float ox = (float)luaL_checknumber(L, 1);
@@ -1010,6 +1029,7 @@ static const luaL_Reg engineFuncs[] = {
     { "remove_body", l_remove_body },
     { "get_body_position", l_get_body_position },
     { "raycast", l_raycast },
+    { "attach_rigid_body", l_attach_rigid_body },
     { nullptr, nullptr }
 };
 
