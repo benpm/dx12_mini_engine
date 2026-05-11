@@ -178,6 +178,7 @@ void Scene::populateDrawCommands(
 
 void Scene::createMegaBuffers(gfx::IDevice& dev)
 {
+    devForDestroy = &dev;  // stash for clearScene / ~Scene to release owned gfx handles
     spdlog::info(
         "Scene::createMegaBuffers (VB={} KB, IB={} KB)", megaVBCapacity * sizeof(VertexPBR) / 1024,
         megaIBCapacity * sizeof(uint32_t) / 1024
@@ -315,6 +316,17 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     spawnableMeshRefs.clear();
     spawnableMeshNames.clear();
     spawnTimer = 0.0f;
+
+    // Release adopted PBR textures back to gfx. Safe to call destroy on each
+    // because the cmdQueue.flush above guarantees no in-flight references.
+    if (devForDestroy) {
+        for (auto h : ownedTextureHandles) {
+            if (h.isValid()) {
+                devForDestroy->destroy(h);
+            }
+        }
+    }
+    ownedTextureHandles.clear();
 
     blasMap.clear();
     tlasBuffer.Reset();
@@ -547,10 +559,13 @@ bool Scene::loadGltf(
                 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
             );
 
-            uint32_t srvIdx =
-                dev.createExternalSrv(tex.Get(), gfx::Format::RGBA8UnormSrgb, /*mipLevels=*/1);
-            ownedTextures.push_back(tex);
-            imageBindlessIdx[i] = static_cast<int>(srvIdx);
+            // Hand the resource to gfx so lifetime + SRV slot are managed
+            // through the same pendingDestroys/fence path as engine-allocated
+            // textures. We don't need to keep our own ComPtr after this.
+            gfx::TextureHandle handle =
+                dev.adoptTexture(tex.Get(), gfx::Format::RGBA8UnormSrgb, /*mipLevels=*/1);
+            ownedTextureHandles.push_back(handle);
+            imageBindlessIdx[i] = static_cast<int>(dev.bindlessSrvIndex(handle));
         }
 
         auto fut = upload.End(queue);

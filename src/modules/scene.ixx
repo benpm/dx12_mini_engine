@@ -123,12 +123,19 @@ export class Scene
     int selectedMaterialIdx = 0;
     std::vector<MeshRef> spawnableMeshRefs;
     std::vector<std::string> spawnableMeshNames;
+
+    // Stored once during createMegaBuffers so clearScene() and the destructor
+    // can release gfx-owned textures without re-threading the device through
+    // every callsite.
+    gfx::IDevice* devForDestroy = nullptr;
     float spawnTimer = 0.0f;
     std::mt19937 rng{ std::random_device{}() };
 
-    // Owned GPU resources for PBR textures loaded from glTF. Bindless SRV index for
-    // each is stored on the Material struct (albedoTexId / normalTexId / ...).
-    std::vector<ComPtr<ID3D12Resource>> ownedTextures;
+    // Owned GPU textures for PBR maps loaded from glTF. Lifetime is managed
+    // by gfx (the ComPtr<ID3D12Resource> is owned inside gfx::Device after
+    // adoptTexture); we hold the TextureHandle so clearScene() can destroy
+    // them on demand. Bindless SRV index for each is stored on the Material.
+    std::vector<gfx::TextureHandle> ownedTextureHandles;
 
     // Cached ECS queries
     flecs::query<const Transform, const MeshRef> drawQuery{
