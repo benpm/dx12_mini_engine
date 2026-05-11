@@ -104,7 +104,8 @@
     ],
     "extraGlbs": [
         "resources/external_scenes/DamagedHelmet/DamagedHelmet.glb",
-        "resources/external_scenes/Corset/Corset.glb"
+        "resources/external_scenes/Corset/Corset.glb",
+        "resources/external_scenes/CesiumMan/CesiumMan.glb"
     ],
     "entities": [
         {

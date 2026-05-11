@@ -236,6 +236,7 @@ endfunction()
 download_asset("DamagedHelmet" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb")
 download_asset("SciFiHelmet" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/SciFiHelmet/glTF-Binary/SciFiHelmet.glb")
 download_asset("Corset" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/Corset/glTF-Binary/Corset.glb")
+download_asset("CesiumMan" "https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb")
 set_target_properties(TracyClient PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
