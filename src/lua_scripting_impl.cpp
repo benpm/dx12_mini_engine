@@ -37,6 +37,7 @@ static const char* kRegAudio = "engine_audio";
 static const char* kRegApp = "engine_app";
 static const char* kRegHud = "engine_hud";
 static const char* kRegParticles = "engine_particles";
+static const char* kRegPhysics = "engine_physics";
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -860,6 +861,83 @@ static int l_particle_count(lua_State* L)
     return 1;
 }
 
+static void* getPhysics(lua_State* L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegPhysics);
+    void* p = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return p;
+}
+
+static int l_add_box_body(lua_State* L)
+{
+    float px = (float)luaL_checknumber(L, 1);
+    float py = (float)luaL_checknumber(L, 2);
+    float pz = (float)luaL_checknumber(L, 3);
+    float hx = (float)luaL_optnumber(L, 4, 0.5);
+    float hy = (float)luaL_optnumber(L, 5, 0.5);
+    float hz = (float)luaL_optnumber(L, 6, 0.5);
+    bool dynamic = lua_toboolean(L, 7);
+    float mass = (float)luaL_optnumber(L, 8, 1.0);
+    lua_pushinteger(
+        L, engine_physics_create_box(getPhysics(L), px, py, pz, hx, hy, hz, dynamic ? 1 : 0, mass)
+    );
+    return 1;
+}
+
+static int l_add_sphere_body(lua_State* L)
+{
+    float px = (float)luaL_checknumber(L, 1);
+    float py = (float)luaL_checknumber(L, 2);
+    float pz = (float)luaL_checknumber(L, 3);
+    float r = (float)luaL_optnumber(L, 4, 0.5);
+    bool dynamic = lua_toboolean(L, 5);
+    float mass = (float)luaL_optnumber(L, 6, 1.0);
+    lua_pushinteger(
+        L, engine_physics_create_sphere(getPhysics(L), px, py, pz, r, dynamic ? 1 : 0, mass)
+    );
+    return 1;
+}
+
+static int l_remove_body(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    engine_physics_destroy_body(getPhysics(L), id);
+    return 0;
+}
+
+static int l_get_body_position(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float x = 0, y = 0, z = 0;
+    engine_physics_get_body_position(getPhysics(L), id, &x, &y, &z);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    lua_pushnumber(L, z);
+    return 3;
+}
+
+static int l_raycast(lua_State* L)
+{
+    float ox = (float)luaL_checknumber(L, 1);
+    float oy = (float)luaL_checknumber(L, 2);
+    float oz = (float)luaL_checknumber(L, 3);
+    float dx = (float)luaL_checknumber(L, 4);
+    float dy = (float)luaL_checknumber(L, 5);
+    float dz = (float)luaL_checknumber(L, 6);
+    float maxDist = (float)luaL_optnumber(L, 7, 100.0);
+    float hx = 0, hy = 0, hz = 0, hd = 0;
+    int hit = engine_physics_raycast(
+        getPhysics(L), ox, oy, oz, dx, dy, dz, maxDist, &hx, &hy, &hz, &hd
+    );
+    lua_pushboolean(L, hit);
+    lua_pushnumber(L, hx);
+    lua_pushnumber(L, hy);
+    lua_pushnumber(L, hz);
+    lua_pushnumber(L, hd);
+    return 5;
+}
+
 // ---------------------------------------------------------------------------
 // Registration table
 // ---------------------------------------------------------------------------
@@ -926,6 +1004,12 @@ static const luaL_Reg engineFuncs[] = {
     { "spawn_particles", l_spawn_particles },
     { "clear_particles", l_clear_particles },
     { "particle_count", l_particle_count },
+    // Physics
+    { "add_box_body", l_add_box_body },
+    { "add_sphere_body", l_add_sphere_body },
+    { "remove_body", l_remove_body },
+    { "get_body_position", l_get_body_position },
+    { "raycast", l_raycast },
     { nullptr, nullptr }
 };
 
@@ -997,6 +1081,12 @@ void luaScripting_setParticles(lua_State* L, void* particles)
 {
     lua_pushlightuserdata(L, particles);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegParticles);
+}
+
+void luaScripting_setPhysics(lua_State* L, void* physics)
+{
+    lua_pushlightuserdata(L, physics);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegPhysics);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

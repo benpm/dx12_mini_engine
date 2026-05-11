@@ -40,6 +40,9 @@ export class LuaScripting
     // Register the ParticleSystem for engine.spawn_particles bindings.
     void setParticles(void* particles);
 
+    // Register the PhysicsWorld for engine.add_box_body / raycast / etc.
+    void setPhysics(void* physics);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

@@ -26,6 +26,23 @@ int engine_app_queue_scene_save(void* appPtr, const char* path);
 // outBuf (UTF-8). Returns 1 on success. Caller's outBuf must be at least 260 bytes.
 int engine_save_slot_path(const char* slotName, char* outBuf, int outBufSize);
 
+// Physics ops. physicsPtr is the address of a PhysicsWorld instance.
+unsigned int engine_physics_create_box(
+    void* physicsPtr, float px, float py, float pz, float hx, float hy, float hz, int dynamic,
+    float mass
+);
+unsigned int engine_physics_create_sphere(
+    void* physicsPtr, float px, float py, float pz, float radius, int dynamic, float mass
+);
+void engine_physics_destroy_body(void* physicsPtr, unsigned int id);
+void engine_physics_get_body_position(
+    void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ
+);
+int engine_physics_raycast(
+    void* physicsPtr, float ox, float oy, float oz, float dx, float dy, float dz,
+    float maxDistance, float* hitX, float* hitY, float* hitZ, float* hitDistance
+);
+
 // Particle ops. particlesPtr is the address of a ParticleSystem instance.
 void engine_particles_emit(
     void* particlesPtr, float x, float y, float z, int count, unsigned int rgba, float life

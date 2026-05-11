@@ -54,3 +54,40 @@ extern "C" int engine_particles_alive_count(void*)
 {
     return 0;
 }
+
+extern "C" unsigned int engine_physics_create_box(
+    void*, float, float, float, float, float, float, int, float
+)
+{
+    return 0;
+}
+
+extern "C" unsigned int engine_physics_create_sphere(
+    void*, float, float, float, float, int, float
+)
+{
+    return 0;
+}
+
+extern "C" void engine_physics_destroy_body(void*, unsigned int) {}
+
+extern "C" void engine_physics_get_body_position(
+    void*, unsigned int, float* x, float* y, float* z
+)
+{
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (z) *z = 0;
+}
+
+extern "C" int engine_physics_raycast(
+    void*, float, float, float, float, float, float, float, float* hx, float* hy, float* hz,
+    float* hd
+)
+{
+    if (hx) *hx = 0;
+    if (hy) *hy = 0;
+    if (hz) *hz = 0;
+    if (hd) *hd = 0;
+    return 0;
+}

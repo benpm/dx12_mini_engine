@@ -10,7 +10,12 @@ module;
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -25,6 +30,65 @@ module;
 #include <thread>
 
 module physics;
+
+#include "audio_capi.h"
+
+extern "C" unsigned int engine_physics_create_box(
+    void* p, float px, float py, float pz, float hx, float hy, float hz, int dynamic, float mass
+)
+{
+    if (!p) return 0;
+    return static_cast<PhysicsWorld*>(p)->createBoxBody(
+        px, py, pz, hx, hy, hz, dynamic != 0, mass
+    );
+}
+
+extern "C" unsigned int engine_physics_create_sphere(
+    void* p, float px, float py, float pz, float radius, int dynamic, float mass
+)
+{
+    if (!p) return 0;
+    return static_cast<PhysicsWorld*>(p)->createSphereBody(
+        px, py, pz, radius, dynamic != 0, mass
+    );
+}
+
+extern "C" void engine_physics_destroy_body(void* p, unsigned int id)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->destroyBody(id);
+    }
+}
+
+extern "C" void engine_physics_get_body_position(
+    void* p, unsigned int id, float* outX, float* outY, float* outZ
+)
+{
+    float x = 0, y = 0, z = 0;
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->getBodyPosition(id, x, y, z);
+    }
+    if (outX) *outX = x;
+    if (outY) *outY = y;
+    if (outZ) *outZ = z;
+}
+
+extern "C" int engine_physics_raycast(
+    void* p, float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
+    float* hitX, float* hitY, float* hitZ, float* hitDistance
+)
+{
+    if (!p) return 0;
+    float hx = 0, hy = 0, hz = 0, hd = 0;
+    bool ok = static_cast<PhysicsWorld*>(p)->raycast(
+        ox, oy, oz, dx, dy, dz, maxDistance, hx, hy, hz, hd
+    );
+    if (hitX) *hitX = hx;
+    if (hitY) *hitY = hy;
+    if (hitZ) *hitZ = hz;
+    if (hitDistance) *hitDistance = hd;
+    return ok ? 1 : 0;
+}
 
 namespace
 {
@@ -198,4 +262,112 @@ uint32_t PhysicsWorld::bodyCount() const
     }
     auto* impl = static_cast<PhysicsWorldImpl*>(state);
     return impl->system->GetNumBodies();
+}
+
+namespace
+{
+    // Helper: pack a Jolt BodyID into a PhysicsWorld::BodyId. Jolt BodyID is a
+    // single uint32 already, so the conversion is trivial — we keep the
+    // engine-side handle opaque so callers don't depend on Jolt directly.
+    inline PhysicsWorld::BodyId toEngineId(JPH::BodyID b) { return b.GetIndexAndSequenceNumber(); }
+    inline JPH::BodyID toJoltId(PhysicsWorld::BodyId id) { return JPH::BodyID(id); }
+
+    JPH::BodyID createBodyImpl(
+        JPH::PhysicsSystem& sys, JPH::ShapeRefC shape, JPH::Vec3 pos, bool dynamic, float mass
+    )
+    {
+        JPH::BodyCreationSettings bcs(
+            shape, pos, JPH::Quat::sIdentity(),
+            dynamic ? JPH::EMotionType::Dynamic : JPH::EMotionType::Static,
+            dynamic ? 1 : 0  // ObjectLayer: MOVING vs NON_MOVING
+        );
+        if (dynamic) {
+            bcs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+            bcs.mMassPropertiesOverride.mMass = std::max(0.001f, mass);
+        }
+        auto& bi = sys.GetBodyInterface();
+        JPH::BodyID id = bi.CreateAndAddBody(bcs, JPH::EActivation::Activate);
+        return id;
+    }
+}  // namespace
+
+PhysicsWorld::BodyId PhysicsWorld::createBoxBody(
+    float px, float py, float pz, float halfX, float halfY, float halfZ, bool dynamic, float mass
+)
+{
+    if (!ready) {
+        return 0;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    JPH::ShapeRefC shape = new JPH::BoxShape(JPH::Vec3(halfX, halfY, halfZ));
+    JPH::BodyID id = createBodyImpl(*impl->system, shape, JPH::Vec3(px, py, pz), dynamic, mass);
+    return toEngineId(id);
+}
+
+PhysicsWorld::BodyId PhysicsWorld::createSphereBody(
+    float px, float py, float pz, float radius, bool dynamic, float mass
+)
+{
+    if (!ready) {
+        return 0;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    JPH::ShapeRefC shape = new JPH::SphereShape(std::max(0.001f, radius));
+    JPH::BodyID id = createBodyImpl(*impl->system, shape, JPH::Vec3(px, py, pz), dynamic, mass);
+    return toEngineId(id);
+}
+
+void PhysicsWorld::destroyBody(BodyId id)
+{
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    auto& bi = impl->system->GetBodyInterface();
+    JPH::BodyID jid = toJoltId(id);
+    bi.RemoveBody(jid);
+    bi.DestroyBody(jid);
+}
+
+void PhysicsWorld::getBodyPosition(BodyId id, float& px, float& py, float& pz) const
+{
+    px = py = pz = 0.0f;
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    auto& bi = impl->system->GetBodyInterface();
+    JPH::RVec3 p = bi.GetPosition(toJoltId(id));
+    px = static_cast<float>(p.GetX());
+    py = static_cast<float>(p.GetY());
+    pz = static_cast<float>(p.GetZ());
+}
+
+bool PhysicsWorld::raycast(
+    float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance, float& hitX,
+    float& hitY, float& hitZ, float& hitDistance
+) const
+{
+    hitX = hitY = hitZ = 0.0f;
+    hitDistance = 0.0f;
+    if (!ready) {
+        return false;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    JPH::Vec3 origin(ox, oy, oz);
+    JPH::Vec3 dir = JPH::Vec3(dx, dy, dz) * maxDistance;
+    JPH::RRayCast ray(origin, dir);
+    JPH::RayCastResult hit;
+    const auto& bpQuery = impl->system->GetBroadPhaseQuery();
+    (void)bpQuery;
+    // Use the narrow-phase query so we get the actual hit point, not just AABB.
+    if (!impl->system->GetNarrowPhaseQuery().CastRay(ray, hit)) {
+        return false;
+    }
+    JPH::Vec3 hitPos = origin + dir * hit.mFraction;
+    hitX = static_cast<float>(hitPos.GetX());
+    hitY = static_cast<float>(hitPos.GetY());
+    hitZ = static_cast<float>(hitPos.GetZ());
+    hitDistance = maxDistance * hit.mFraction;
+    return true;
 }

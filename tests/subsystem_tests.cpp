@@ -45,6 +45,55 @@ TEST_CASE("PhysicsWorld: steps without crashing")
     CHECK(w.bodyCount() == 0);  // no bodies created
 }
 
+TEST_CASE("PhysicsWorld: dynamic body falls under gravity, static body stays put")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    // Big static floor at y=0, half-thickness 0.5.
+    auto floor = w.createBoxBody(0, -0.5f, 0, 100.0f, 0.5f, 100.0f, /*dynamic=*/false);
+    CHECK(floor != 0);
+
+    // Dynamic box dropped from y=5.
+    auto box = w.createBoxBody(0, 5.0f, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/true, 1.0f);
+    CHECK(box != 0);
+
+    float x0 = 0, y0 = 0, z0 = 0;
+    w.getBodyPosition(box, x0, y0, z0);
+    CHECK(y0 == doctest::Approx(5.0f));
+
+    // Simulate one second at 60 Hz; box should fall but stop on the floor
+    // (final y should be roughly halfExtent above the floor's top).
+    for (int i = 0; i < 60; ++i) {
+        w.step(1.0f / 60.0f);
+    }
+    float x1 = 0, y1 = 0, z1 = 0;
+    w.getBodyPosition(box, x1, y1, z1);
+    CHECK(y1 < y0);            // moved downward
+    CHECK(y1 > -1.0f);         // not through the floor
+    CHECK(y1 < 5.0f);          // and is below start
+}
+
+TEST_CASE("PhysicsWorld: raycast hits a body")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    auto box = w.createBoxBody(0, 0, 0, 1.0f, 1.0f, 1.0f, /*dynamic=*/false);
+    REQUIRE(box != 0);
+
+    float hx = 0, hy = 0, hz = 0, hd = 0;
+    bool hit = w.raycast(0, 5, 0, 0, -1, 0, /*maxDistance=*/10.0f, hx, hy, hz, hd);
+    CHECK(hit);
+    CHECK(hy == doctest::Approx(1.0f).epsilon(0.01));  // hit top face of the box
+    CHECK(hd == doctest::Approx(4.0f).epsilon(0.01));
+
+    // Ray missing into empty space.
+    bool miss =
+        w.raycast(100, 100, 100, 1, 0, 0, /*maxDistance=*/1.0f, hx, hy, hz, hd);
+    CHECK_FALSE(miss);
+}
+
 TEST_CASE("JobSystem: schedules and runs tasks on the worker pool")
 {
     JobSystem js;
