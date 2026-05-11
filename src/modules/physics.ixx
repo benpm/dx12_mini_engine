@@ -47,6 +47,10 @@ export class PhysicsWorld
     // Query position. Returns 0,0,0 for invalid ids.
     void getBodyPosition(BodyId id, float& px, float& py, float& pz) const;
 
+    // Query rotation as a quaternion (x, y, z, w). Returns identity (0,0,0,1)
+    // for invalid ids.
+    void getBodyRotation(BodyId id, float& qx, float& qy, float& qz, float& qw) const;
+
     // Cast a ray from origin in direction (normalized). Returns true on hit
     // and writes the hit point + distance. distance is treated as a max.
     bool raycast(float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,

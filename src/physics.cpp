@@ -73,6 +73,20 @@ extern "C" void engine_physics_get_body_position(
     if (outZ) *outZ = z;
 }
 
+extern "C" void engine_physics_get_body_rotation(
+    void* p, unsigned int id, float* outX, float* outY, float* outZ, float* outW
+)
+{
+    float x = 0, y = 0, z = 0, w_ = 1;
+    if (auto* world = static_cast<PhysicsWorld*>(p)) {
+        world->getBodyRotation(id, x, y, z, w_);
+    }
+    if (outX) *outX = x;
+    if (outY) *outY = y;
+    if (outZ) *outZ = z;
+    if (outW) *outW = w_;
+}
+
 extern "C" int engine_physics_raycast(
     void* p, float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
     float* hitX, float* hitY, float* hitZ, float* hitDistance
@@ -341,6 +355,22 @@ void PhysicsWorld::getBodyPosition(BodyId id, float& px, float& py, float& pz) c
     px = static_cast<float>(p.GetX());
     py = static_cast<float>(p.GetY());
     pz = static_cast<float>(p.GetZ());
+}
+
+void PhysicsWorld::getBodyRotation(BodyId id, float& qx, float& qy, float& qz, float& qw) const
+{
+    qx = qy = qz = 0.0f;
+    qw = 1.0f;
+    if (!ready || id == 0) {
+        return;
+    }
+    auto* impl = static_cast<PhysicsWorldImpl*>(state);
+    auto& bi = impl->system->GetBodyInterface();
+    JPH::Quat q = bi.GetRotation(toJoltId(id));
+    qx = q.GetX();
+    qy = q.GetY();
+    qz = q.GetZ();
+    qw = q.GetW();
 }
 
 bool PhysicsWorld::raycast(

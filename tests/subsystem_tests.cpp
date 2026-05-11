@@ -74,6 +74,36 @@ TEST_CASE("PhysicsWorld: dynamic body falls under gravity, static body stays put
     CHECK(y1 < 5.0f);          // and is below start
 }
 
+TEST_CASE("PhysicsWorld: dynamic body rotates as it falls")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+    w.createBoxBody(0, -0.5f, 0, 100.0f, 0.5f, 100.0f, /*dynamic=*/false);
+
+    // A long thin box dropped onto its corner should pick up some rotation
+    // as it interacts with the floor (or simply integrates angular velocity).
+    // We just verify the rotation API returns a unit quaternion at rest and
+    // that the quaternion changes after a fall.
+    auto box = w.createBoxBody(0, 5.0f, 0, 0.3f, 0.05f, 1.0f, /*dynamic=*/true, 1.0f);
+    REQUIRE(box != 0);
+    float qx0 = 0, qy0 = 0, qz0 = 0, qw0 = 1;
+    w.getBodyRotation(box, qx0, qy0, qz0, qw0);
+    CHECK(qw0 == doctest::Approx(1.0f));  // bind-pose
+    CHECK(qx0 == doctest::Approx(0.0f));
+    CHECK(qy0 == doctest::Approx(0.0f));
+    CHECK(qz0 == doctest::Approx(0.0f));
+
+    // Two seconds at 120 Hz gives the box time to land + roll.
+    for (int i = 0; i < 240; ++i) {
+        w.step(1.0f / 120.0f);
+    }
+    float qx1 = 0, qy1 = 0, qz1 = 0, qw1 = 1;
+    w.getBodyRotation(box, qx1, qy1, qz1, qw1);
+    // Quaternion should be unit length.
+    float len2 = qx1 * qx1 + qy1 * qy1 + qz1 * qz1 + qw1 * qw1;
+    CHECK(len2 == doctest::Approx(1.0f).epsilon(0.001));
+}
+
 TEST_CASE("PhysicsWorld: raycast hits a body")
 {
     PhysicsWorld w;

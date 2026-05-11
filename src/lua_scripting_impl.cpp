@@ -917,6 +917,18 @@ static int l_get_body_position(lua_State* L)
     return 3;
 }
 
+static int l_get_body_rotation(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float x = 0, y = 0, z = 0, w = 1;
+    engine_physics_get_body_rotation(getPhysics(L), id, &x, &y, &z, &w);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    lua_pushnumber(L, z);
+    lua_pushnumber(L, w);
+    return 4;
+}
+
 static int l_attach_rigid_body(lua_State* L)
 {
     auto* w = getEcsWorld(L);
@@ -1028,6 +1040,7 @@ static const luaL_Reg engineFuncs[] = {
     { "add_sphere_body", l_add_sphere_body },
     { "remove_body", l_remove_body },
     { "get_body_position", l_get_body_position },
+    { "get_body_rotation", l_get_body_rotation },
     { "raycast", l_raycast },
     { "attach_rigid_body", l_attach_rigid_body },
     { nullptr, nullptr }

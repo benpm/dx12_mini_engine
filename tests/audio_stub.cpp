@@ -80,6 +80,16 @@ extern "C" void engine_physics_get_body_position(
     if (z) *z = 0;
 }
 
+extern "C" void engine_physics_get_body_rotation(
+    void*, unsigned int, float* x, float* y, float* z, float* w
+)
+{
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (z) *z = 0;
+    if (w) *w = 1;
+}
+
 extern "C" int engine_physics_raycast(
     void*, float, float, float, float, float, float, float, float* hx, float* hy, float* hz,
     float* hd

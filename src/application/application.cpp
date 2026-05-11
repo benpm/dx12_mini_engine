@@ -538,9 +538,10 @@ void Application::update()
     // before transform-dependent systems (animation, motion vectors) read it.
     physicsWorld.step(dt);
 
-    // Pull body positions back into the entity Transform. We preserve the
-    // existing rotation/scale by only overwriting the translation row; future
-    // work will also sync the body's rotation quaternion.
+    // Pull body translation + rotation back into the entity Transform. The
+    // entity's existing uniform scale is preserved by extracting its length
+    // from the first basis row of the current transform before composing the
+    // new T * R * S matrix.
     scene.ecsWorld.query<Transform, const RigidBody>().each(
         [&](Transform& tf, const RigidBody& rb) {
             if (rb.bodyId == 0) {
@@ -548,9 +549,23 @@ void Application::update()
             }
             float px = 0, py = 0, pz = 0;
             physicsWorld.getBodyPosition(rb.bodyId, px, py, pz);
-            tf.world._41 = px;
-            tf.world._42 = py;
-            tf.world._43 = pz;
+            float qx = 0, qy = 0, qz = 0, qw = 1;
+            physicsWorld.getBodyRotation(rb.bodyId, qx, qy, qz, qw);
+
+            // Extract current uniform scale from row 0 of the existing matrix.
+            float sx = std::sqrt(
+                tf.world._11 * tf.world._11 + tf.world._12 * tf.world._12 +
+                tf.world._13 * tf.world._13
+            );
+            if (sx == 0.0f) {
+                sx = 1.0f;
+            }
+
+            using namespace DirectX;
+            XMMATRIX S = XMMatrixScaling(sx, sx, sx);
+            XMMATRIX R = XMMatrixRotationQuaternion(XMVectorSet(qx, qy, qz, qw));
+            XMMATRIX T = XMMatrixTranslation(px, py, pz);
+            XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&tf.world), S * R * T);
         }
     );
 

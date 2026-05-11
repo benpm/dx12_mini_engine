@@ -38,6 +38,9 @@ void engine_physics_destroy_body(void* physicsPtr, unsigned int id);
 void engine_physics_get_body_position(
     void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ
 );
+void engine_physics_get_body_rotation(
+    void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ, float* outW
+);
 int engine_physics_raycast(
     void* physicsPtr, float ox, float oy, float oz, float dx, float dy, float dz,
     float maxDistance, float* hitX, float* hitY, float* hitZ, float* hitDistance
