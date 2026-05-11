@@ -570,6 +570,7 @@ void Application::render()
             bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
             bi.shadowSamplerIdx = 0;
             bi.envSamplerIdx = 1;
+            bi.pbrSamplerIdx = pbrSamplerIdx;
             for (uint32_t i = 0; i < static_cast<uint32_t>(visibleSceneDrawCmds.size()); ++i) {
                 currentVertexCount +=
                     visibleSceneDrawCmds[i].indexCount * visibleSceneDrawCmds[i].instanceCount;
@@ -617,6 +618,7 @@ void Application::render()
                 bi.ssaoIdx = gfxDevice->bindlessSrvIndex(ssao.blurRT());
                 bi.shadowSamplerIdx = 0;
                 bi.envSamplerIdx = 1;
+                bi.pbrSamplerIdx = pbrSamplerIdx;
                 for (const auto& dc : gizmoDrawCmds) {
                     bi.drawIndex = dc.baseDrawIndex;
                     cmd->SetGraphicsRoot32BitConstants(app_slots::bindlessIndices, 16, &bi, 0);

@@ -5,6 +5,7 @@ module;
 #endif
 
 #include <d3d12.h>
+#include <directxtk12/ResourceUploadBatch.h>
 #include <DirectXCollision.h>
 #include <DirectXMath.h>
 #include <flecs.h>
@@ -39,6 +40,10 @@ static void fillPerObject(PerObjectData& pod, const Material& mat, const vec4& a
     pod.emissiveStrength = mat.emissiveStrength;
     pod.reflective = mat.reflective ? 1.0f : 0.0f;
     pod.emissive = mat.emissive;
+    pod.albedoTexId = mat.albedoTexId;
+    pod.normalTexId = mat.normalTexId;
+    pod.mrTexId = mat.mrTexId;
+    pod.emissiveTexId = mat.emissiveTexId;
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +478,97 @@ bool Scene::loadGltf(
         return false;
     }
 
+    // --- Load embedded glTF images into GPU textures, registered in the
+    // global bindless heap. tinygltf has already decoded each image to
+    // raw RGBA in `image.image` via stb_image. We upload via DirectXTK's
+    // ResourceUploadBatch (the same path billboard.cpp uses for the
+    // light sprite), then register an external SRV. ---
+    std::vector<int> imageBindlessIdx(model.images.size(), -1);
+    if (!model.images.empty()) {
+        auto* d3dDev = static_cast<ID3D12Device2*>(dev.nativeHandle());
+        auto* queue = static_cast<ID3D12CommandQueue*>(dev.graphicsQueue()->nativeHandle());
+        DirectX::ResourceUploadBatch upload(d3dDev);
+        upload.Begin(D3D12_COMMAND_LIST_TYPE_DIRECT);
+
+        for (size_t i = 0; i < model.images.size(); ++i) {
+            const auto& img = model.images[i];
+            if (img.image.empty() || img.width <= 0 || img.height <= 0) {
+                continue;
+            }
+
+            // tinygltf typically gives us 4 components (RGBA). If 3, expand to 4
+            // here so we can use the universal R8G8B8A8 path.
+            const uint8_t* srcBytes = img.image.data();
+            std::vector<uint8_t> rgbaCopy;
+            if (img.component == 3) {
+                rgbaCopy.resize(size_t(img.width) * img.height * 4);
+                for (size_t p = 0; p < size_t(img.width) * img.height; ++p) {
+                    rgbaCopy[p * 4 + 0] = img.image[p * 3 + 0];
+                    rgbaCopy[p * 4 + 1] = img.image[p * 3 + 1];
+                    rgbaCopy[p * 4 + 2] = img.image[p * 3 + 2];
+                    rgbaCopy[p * 4 + 3] = 255;
+                }
+                srcBytes = rgbaCopy.data();
+            } else if (img.component != 4) {
+                spdlog::warn(
+                    "glTF image {} has {} components (need 3 or 4), skipping", i, img.component
+                );
+                continue;
+            }
+
+            // Create a default-heap R8G8B8A8_UNORM_SRGB texture (sRGB for albedo;
+            // future work: detect linear maps like normal/MR and use UNORM there).
+            D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Tex2D(
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, UINT64(img.width), UINT(img.height), 1, 1
+            );
+            auto heap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+            ComPtr<ID3D12Resource> tex;
+            HRESULT hr = d3dDev->CreateCommittedResource(
+                &heap, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                IID_PPV_ARGS(&tex)
+            );
+            if (FAILED(hr)) {
+                spdlog::warn("glTF: CreateCommittedResource for image {} failed 0x{:08x}", i, hr);
+                continue;
+            }
+            std::wstring wname(img.name.begin(), img.name.end());
+            if (wname.empty()) {
+                wname = L"gltf_image";
+            }
+            tex->SetName(wname.c_str());
+
+            D3D12_SUBRESOURCE_DATA sub{};
+            sub.pData = srcBytes;
+            sub.RowPitch = LONG_PTR(img.width) * 4;
+            sub.SlicePitch = sub.RowPitch * img.height;
+            upload.Upload(tex.Get(), 0, &sub, 1);
+            upload.Transition(
+                tex.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+            );
+
+            uint32_t srvIdx =
+                dev.createExternalSrv(tex.Get(), gfx::Format::RGBA8UnormSrgb, /*mipLevels=*/1);
+            ownedTextures.push_back(tex);
+            imageBindlessIdx[i] = static_cast<int>(srvIdx);
+        }
+
+        auto fut = upload.End(queue);
+        fut.wait();
+    }
+
+    // Map a glTF texture-info index → bindless heap index via the texture's source image.
+    auto textureBindless = [&](int textureIdx) -> int {
+        if (textureIdx < 0 || textureIdx >= int(model.textures.size())) {
+            return -1;
+        }
+        int imgIdx = model.textures[textureIdx].source;
+        if (imgIdx < 0 || imgIdx >= int(imageBindlessIdx.size())) {
+            return -1;
+        }
+        return imageBindlessIdx[imgIdx];
+    };
+
     int materialBaseIdx = (int)materials.size();
     for (const auto& gMat : model.materials) {
         Material mat;
@@ -485,6 +581,10 @@ bool Scene::loadGltf(
         mat.emissive = { (float)gMat.emissiveFactor[0], (float)gMat.emissiveFactor[1],
                          (float)gMat.emissiveFactor[2], 1.0f };
         mat.emissiveStrength = 1.0f;  // tinygltf uses factor directly, could scale here
+        mat.albedoTexId = textureBindless(pbr.baseColorTexture.index);
+        mat.normalTexId = textureBindless(gMat.normalTexture.index);
+        mat.mrTexId = textureBindless(pbr.metallicRoughnessTexture.index);
+        mat.emissiveTexId = textureBindless(gMat.emissiveTexture.index);
         materials.push_back(mat);
     }
 

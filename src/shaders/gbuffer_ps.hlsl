@@ -36,6 +36,10 @@ struct PerObjectData
     float EmissiveStrength;
     float Reflective;
     float4 Emissive;
+    int AlbedoTexId;
+    int NormalTexId;
+    int MrTexId;
+    int EmissiveTexId;
 };
 
 StructuredBuffer<PerObjectData> drawDataTables[] : register(t0, space1);

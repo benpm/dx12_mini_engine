@@ -33,6 +33,7 @@ extern void luaScripting_setScenePointers(
     std::vector<std::string>* meshNames,
     std::vector<uint64_t>* pendingDestroys
 );
+extern void luaScripting_setAudioSystem(lua_State* L, void* audioSystem);
 extern void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount);
 extern void luaScripting_setSelectedEntity(lua_State* L, uint64_t id);
 extern bool luaScripting_loadFile(lua_State* L, const char* path, int* outRef);
@@ -84,6 +85,13 @@ bool LuaScripting::init(Scene& scene, const std::string& scriptsDir)
     initialized = true;
     spdlog::info("Lua scripting initialized (scripts dir: {})", scriptsBasePath);
     return true;
+}
+
+void LuaScripting::setAudioSystem(void* audioSystem)
+{
+    if (L) {
+        luaScripting_setAudioSystem(L, audioSystem);
+    }
 }
 
 void LuaScripting::shutdown()

@@ -21,4 +21,10 @@ struct Material
     bool reflective{ false };
     vec4 emissive{ 0.0f, 0.0f, 0.0f, 0.0f };
     std::string name;
+    // Bindless heap indices for PBR texture maps (-1 = no texture, use factor only).
+    // Only baseColor is wired up in the first PBR pass; others reserved for future.
+    int albedoTexId{ -1 };
+    int normalTexId{ -1 };
+    int mrTexId{ -1 };  // metallic-roughness (g=roughness, b=metallic in glTF)
+    int emissiveTexId{ -1 };
 };

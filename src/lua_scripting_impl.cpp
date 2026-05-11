@@ -19,6 +19,7 @@ extern "C" {
 #include <cstring>
 #include <string>
 #include <vector>
+#include "audio_capi.h"
 #include "ecs_types.h"
 #include "material_types.h"
 #include "math_types.h"
@@ -32,6 +33,7 @@ static const char* kRegPendingDestroys = "engine_pending_destroys";
 static const char* kRegDt = "engine_dt";
 static const char* kRegTime = "engine_time";
 static const char* kRegFrameCount = "engine_frame_count";
+static const char* kRegAudio = "engine_audio";
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -720,6 +722,18 @@ static int l_get_frame_count(lua_State* L)
     return 1;
 }
 
+static int l_play_sound(lua_State* L)
+{
+    const char* path = luaL_checkstring(L, 1);
+    float volume = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegAudio);
+    void* audio = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    int ok = engine_audio_play_sound(audio, path, volume);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
 // ---------------------------------------------------------------------------
 // Registration table
 // ---------------------------------------------------------------------------
@@ -771,6 +785,8 @@ static const luaL_Reg engineFuncs[] = {
     { "get_dt", l_get_dt },
     { "get_time", l_get_time },
     { "get_frame_count", l_get_frame_count },
+    // Audio
+    { "play_sound", l_play_sound },
     { nullptr, nullptr }
 };
 
@@ -818,6 +834,12 @@ void luaScripting_setScenePointers(
     lua_setfield(L, LUA_REGISTRYINDEX, "engine_mesh_names");
     lua_pushlightuserdata(L, pendingDestroys);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegPendingDestroys);
+}
+
+void luaScripting_setAudioSystem(lua_State* L, void* audioSystem)
+{
+    lua_pushlightuserdata(L, audioSystem);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegAudio);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

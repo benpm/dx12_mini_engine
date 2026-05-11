@@ -206,6 +206,7 @@ Application::Application()
     #define SCRIPTS_DIR ""
 #endif
     luaScripting.init(scene, SCRIPTS_DIR);
+    luaScripting.setAudioSystem(&audioSystem);
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(

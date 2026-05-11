@@ -85,8 +85,9 @@ export struct BindlessIndices
     uint32_t shadowSamplerIdx;
     uint32_t envSamplerIdx;
     uint32_t drawIndex;
-    uint32_t miscIdx;  // Can be used for source texture in post-fx
-    uint32_t _pad[8];  // Reserved for 64-uint root constant block (256 bytes)
+    uint32_t miscIdx;          // Can be used for source texture in post-fx
+    uint32_t pbrSamplerIdx;    // Linear/repeat sampler for PBR material textures
+    uint32_t _pad[7];          // Reserved for 32-uint root constant block (128 bytes)
 };
 
 export namespace app_slots

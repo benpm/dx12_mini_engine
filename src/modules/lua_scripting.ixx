@@ -26,6 +26,10 @@ export class LuaScripting
     bool init(Scene& scene, const std::string& scriptsDir);
     void shutdown();
 
+    // Register an AudioSystem* (or any opaque pointer) for engine.play_sound. Must be called
+    // after init(). Passing nullptr is valid and disables audio bindings cleanly.
+    void setAudioSystem(void* audioSystem);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

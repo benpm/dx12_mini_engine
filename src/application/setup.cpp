@@ -221,6 +221,18 @@ bool Application::loadContent()
     // Create typed R32_FLOAT SRV for the shadow map (R32Typeless resource) in the gfx heap.
     shadowSrvIdx = gfxDevice->createTypedSrv(shadow.shadowMap, gfx::Format::R32Float);
 
+    // Linear/repeat sampler for PBR material textures (anisotropy and mip clamp
+    // not yet wired through gfx::SamplerDesc — defaults are fine for the first pass).
+    {
+        gfx::SamplerDesc sd{};
+        sd.addressU = gfx::AddressMode::Repeat;
+        sd.addressV = gfx::AddressMode::Repeat;
+        sd.addressW = gfx::AddressMode::Repeat;
+        sd.maxAnisotropy = 8;
+        auto handle = gfxDevice->createSampler(sd);
+        pbrSamplerIdx = gfxDevice->bindlessSamplerIndex(handle);
+    }
+
     bloom.createResources(*gfxDevice, clientWidth, clientHeight);
     outline.createResources(
         *gfxDevice, { g_outline_vs, sizeof(g_outline_vs) }, { g_outline_ps, sizeof(g_outline_ps) }

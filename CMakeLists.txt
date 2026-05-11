@@ -147,6 +147,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tracy)
 
+# Fetch miniaudio (single-header audio engine, MIT). Header-only.
+FetchContent_Declare(
+    miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG 0.11.21
+)
+FetchContent_MakeAvailable(miniaudio)
+add_library(miniaudio INTERFACE)
+target_include_directories(miniaudio SYSTEM INTERFACE ${miniaudio_SOURCE_DIR})
+
 # Fetch nativefiledialog (mlabbe). Upstream ships Premake build files only, so
 # declare a manual `nfd` static-lib target against the source files we need.
 FetchContent_Declare(
@@ -226,10 +236,22 @@ function(compile_shader SHADER_FILE SHADER_TYPE SHADER_MODEL OUTPUT_VAR VAR_NAME
 endfunction()
 
 # -------------------------------
-# Targets
+# Targets — engine_lib (STATIC) + editor (main exe) + game_app
 # -------------------------------
-add_executable(main
-    src/main.cpp
+#
+# Layout:
+#   engine_lib  — all engine sources + C++23 module interfaces. PUBLIC link
+#                 against deps so consumers (editor/game) inherit them.
+#   main        — editor exe: thin entry point + resources.rc. Keeps the
+#                 historical target name so README/CI invocations still work.
+#   game_app    — runtime-only exe: an alternate entry that forces
+#                 `runtime.skipImGui` to suppress the editor UI. ImGui code is
+#                 still linked (lives in engine_lib for now) but inert.
+#
+# Future refactors will pull ImGui-using subsystems (gizmo/picker/inspector)
+# out of engine_lib into an editor_lib so game_app can avoid linking them.
+
+add_library(engine_lib STATIC
     src/application/application.cpp
     src/application/ui.cpp
     src/application/ui_menu.cpp
@@ -264,13 +286,13 @@ add_executable(main
     src/restir.cpp
     src/lua_scripting.cpp
     src/lua_scripting_impl.cpp
+    src/audio.cpp
     src/gfx/d3d12_backend.cpp
     src/gfx/d3d12_command.cpp
     src/gfx/d3d12_swapchain.cpp
-    resources.rc
 )
-target_sources(main
-    PRIVATE
+target_sources(engine_lib
+    PUBLIC
     FILE_SET cxx_modules TYPE CXX_MODULES
     BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/modules
     FILES
@@ -298,14 +320,36 @@ target_sources(main
     src/modules/gbuffer.ixx
     src/modules/restir.ixx
     src/modules/lua_scripting.ixx
+    src/modules/audio.ixx
     src/modules/application.ixx
     src/modules/window.ixx
     src/modules/gfx.ixx
 )
+target_compile_features(engine_lib PUBLIC cxx_std_23)
+set_target_properties(engine_lib PROPERTIES CXX_SCAN_FOR_MODULES ON)
+target_include_directories(engine_lib PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(engine_lib SYSTEM PRIVATE ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR})
+
+# Generated shader CSO headers live in the binary dir; engine_lib needs them
+# and downstream targets inherit via PUBLIC.
+target_include_directories(engine_lib PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+
+# Two executable entry points. Both link engine_lib for all engine code.
+add_executable(main
+    src/main.cpp
+    resources.rc
+)
 target_compile_features(main PRIVATE cxx_std_23)
 set_target_properties(main PROPERTIES CXX_SCAN_FOR_MODULES ON)
-target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_include_directories(main SYSTEM PRIVATE ${tinygltf_SOURCE_DIR} ${perlin_noise_SOURCE_DIR})
+target_link_libraries(main PRIVATE engine_lib)
+
+add_executable(game_app
+    src/game_main.cpp
+    resources.rc
+)
+target_compile_features(game_app PRIVATE cxx_std_23)
+set_target_properties(game_app PROPERTIES CXX_SCAN_FOR_MODULES ON)
+target_link_libraries(game_app PRIVATE engine_lib)
 
 # -------------------------------
 # Shader compilation
@@ -340,15 +384,14 @@ add_custom_target(shaders DEPENDS
     ${GRID_VS_HDR} ${GRID_PS_HDR}
     ${GBUFFER_PS_HDR}
 )
-add_dependencies(main shaders)
+add_dependencies(engine_lib shaders)
 
 # -------------------------------
-# Compiler options (base + per-config)
+# Compiler options on engine_lib (PUBLIC so consumers inherit)
 # -------------------------------
-target_include_directories(main PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
     message(STATUS "Clang detected, configuring compile flags")
-    target_compile_options(main PRIVATE
+    target_compile_options(engine_lib PUBLIC
         -Wall -Wno-c++98-compat -fcolor-diagnostics
         $<$<CONFIG:Debug>:-O0 -g>
         $<$<CONFIG:Release>:-O2>
@@ -356,7 +399,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
     )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     message(STATUS "MSVC detected, configuring compile flags")
-    target_compile_options(main PRIVATE
+    target_compile_options(engine_lib PUBLIC
         /W3
         $<$<CONFIG:Debug>:/Od /Zi>
         $<$<CONFIG:Release>:/O2>
@@ -364,13 +407,13 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     )
 else()
     message(WARNING "Unknown compiler: ${CMAKE_CXX_COMPILER_ID}")
-    target_compile_options(main PRIVATE -Wall)
+    target_compile_options(engine_lib PUBLIC -Wall)
 endif()
 
 # -------------------------------
-# Platform & configuration defines
+# Platform & configuration defines (PUBLIC for both exes + lib)
 # -------------------------------
-target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
+target_compile_definitions(engine_lib PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX
     DXC_PATH="${DXC_EXECUTABLE}"
     SHADER_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
     MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
@@ -378,7 +421,7 @@ target_compile_definitions(main PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
     SCRIPTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/scripts"
     ICONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
 )
-target_compile_definitions(main PRIVATE
+target_compile_definitions(engine_lib PUBLIC
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
     $<$<CONFIG:Release>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
@@ -390,36 +433,37 @@ target_compile_definitions(main PRIVATE
 # -------------------------------
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_link_options(main PRIVATE "LINKER:/SUBSYSTEM:WINDOWS" "LINKER:/ignore:importeddllmain")
-else()
-    target_link_options(main PRIVATE /SUBSYSTEM:WINDOWS)
-endif()
+foreach(_exe main game_app)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_link_options(${_exe} PRIVATE "LINKER:/SUBSYSTEM:WINDOWS" "LINKER:/ignore:importeddllmain")
+    else()
+        target_link_options(${_exe} PRIVATE /SUBSYSTEM:WINDOWS)
+    endif()
+endforeach()
 
-# Copy Roboto-Medium.ttf (bundled with imgui) next to the executable
-add_custom_command(TARGET main POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
-    $<TARGET_FILE_DIR:main>/Roboto-Medium.ttf
-    COMMENT "Copying Roboto-Medium.ttf to output directory"
-)
+# Copy Roboto-Medium.ttf (bundled with imgui) next to each executable
+foreach(_exe main game_app)
+    add_custom_command(TARGET ${_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
+        $<TARGET_FILE_DIR:${_exe}>/Roboto-Medium.ttf
+        COMMENT "Copying Roboto-Medium.ttf to ${_exe} output directory"
+    )
+    add_custom_command(TARGET ${_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/light.png
+        $<TARGET_FILE_DIR:${_exe}>/light.png
+        COMMENT "Copying light sprite to ${_exe} output directory"
+    )
+    add_custom_command(TARGET ${_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/MaterialIcons-Regular.ttf
+        $<TARGET_FILE_DIR:${_exe}>/MaterialIcons-Regular.ttf
+        COMMENT "Copying MaterialIcons-Regular.ttf to ${_exe} output directory"
+    )
+endforeach()
 
-add_custom_command(TARGET main POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/light.png
-    $<TARGET_FILE_DIR:main>/light.png
-    COMMENT "Copying light sprite to output directory"
-)
-
-# Copy MaterialIcons-Regular.ttf (icon font for UI menus)
-add_custom_command(TARGET main POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/MaterialIcons-Regular.ttf
-    $<TARGET_FILE_DIR:main>/MaterialIcons-Regular.ttf
-    COMMENT "Copying MaterialIcons-Regular.ttf to output directory"
-)
-
-target_link_libraries(main PRIVATE
+target_link_libraries(engine_lib PUBLIC
     TracyClient
     d3d12.lib dxgi.lib dxguid.lib uuid.lib
     d3dcompiler.lib
@@ -436,6 +480,7 @@ target_link_libraries(main PRIVATE
     glaze::glaze
     lua_lib
     nfd
+    miniaudio
     Microsoft::DirectX-Headers
 )
 
@@ -478,6 +523,7 @@ if(BUILD_TESTING)
     add_executable(lua_scripting_tests
         tests/lua_scripting_tests.cpp
         src/lua_scripting_impl.cpp
+        tests/audio_stub.cpp
     )
     target_compile_features(lua_scripting_tests PRIVATE cxx_std_23)
     target_include_directories(lua_scripting_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)

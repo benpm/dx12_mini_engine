@@ -38,6 +38,7 @@ export import render_graph;
 export import lua_scripting;
 export import gbuffer;
 export import gfx;
+export import audio;
 
 export class Application
 {
@@ -94,6 +95,11 @@ export class Application
     ShadowRenderer shadow;
     OutlineRenderer outline;
     GizmoState gizmo;
+
+   public:
+    AudioSystem audioSystem;  // public so Lua bindings (in lua_scripting_impl) can reach it
+
+   private:
     // Entity picking/selection
     flecs::entity hoveredEntity;
     flecs::entity selectedEntity;
@@ -105,6 +111,9 @@ export class Application
     // Bindless SRV index for the shadow map typed view (R32Float of R32Typeless resource).
     // Created via gfxDevice->createTypedSrv() after shadow.createResources().
     uint32_t shadowSrvIdx = 0;
+    // Bindless sampler index for PBR material textures (linear filter, repeat addressing).
+    // Created once in loadContent().
+    uint32_t pbrSamplerIdx = 0;
     gfx::PipelineHandle pipelineState{};
     gfx::ShaderHandle scenePsoVS{};
     gfx::ShaderHandle scenePsoPS{};

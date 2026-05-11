@@ -19,6 +19,9 @@ struct BindlessIndices
     uint ssaoIdx;
     uint shadowSamplerIdx;
     uint envSamplerIdx;
+    uint drawIndex;
+    uint miscIdx;
+    uint pbrSamplerIdx;
 };
 ConstantBuffer<BindlessIndices> indices : register(b0);
 
@@ -54,6 +57,11 @@ struct PerObjectData
     float EmissiveStrength;
     float Reflective;
     float4 Emissive;
+    // PBR texture bindless indices (-1 = no texture). Packed as int4 for tight alignment.
+    int AlbedoTexId;
+    int NormalTexId;
+    int MrTexId;
+    int EmissiveTexId;
 };
 
 // Unbounded arrays mapping to the global bindless heap
@@ -129,6 +137,24 @@ float4 main(PixelIn IN) : SV_Target
     float roughness = clamp(objData.Roughness, 0.04f, 1.0f);
     float metallic = saturate(objData.Metallic);
     float3 emissive = objData.Emissive.rgb * objData.EmissiveStrength;
+
+    // PBR textures (bindless): albedo multiplied by sRGB baseColor map.
+    // Metallic-roughness map uses glTF channel layout (g=roughness, b=metallic).
+    // Emissive is multiplied. Normal map intentionally deferred to next pass
+    // (would need tangent vectors, which the vertex pipeline doesn't yet emit).
+    if (objData.AlbedoTexId >= 0) {
+        float4 tex = textures[objData.AlbedoTexId].Sample(samplers[indices.pbrSamplerIdx], IN.UV);
+        albedo *= tex.rgb;
+    }
+    if (objData.MrTexId >= 0) {
+        float3 mr = textures[objData.MrTexId].Sample(samplers[indices.pbrSamplerIdx], IN.UV).rgb;
+        roughness = clamp(mr.g * roughness, 0.04f, 1.0f);
+        metallic = saturate(mr.b * (metallic > 0 ? metallic : 1.0f));
+    }
+    if (objData.EmissiveTexId >= 0) {
+        float3 em = textures[objData.EmissiveTexId].Sample(samplers[indices.pbrSamplerIdx], IN.UV).rgb;
+        emissive += em * objData.EmissiveStrength;
+    }
 
     float3 N = normalize(IN.Normal);
     float3 V = normalize(CameraPos.xyz - IN.WorldPos);

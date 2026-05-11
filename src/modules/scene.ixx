@@ -99,6 +99,12 @@ export struct PerObjectData
     float emissiveStrength;
     float reflective;
     vec4 emissive;
+    // PBR texture bindless indices (x=albedo, y=normal, z=metallicRoughness, w=emissive).
+    // -1 means "no texture, use scalar factor only".
+    int albedoTexId;
+    int normalTexId;
+    int mrTexId;
+    int emissiveTexId;
 };
 
 // ---------------------------------------------------------------------------
@@ -119,6 +125,10 @@ export class Scene
     std::vector<std::string> spawnableMeshNames;
     float spawnTimer = 0.0f;
     std::mt19937 rng{ std::random_device{}() };
+
+    // Owned GPU resources for PBR textures loaded from glTF. Bindless SRV index for
+    // each is stored on the Material struct (albedoTexId / normalTexId / ...).
+    std::vector<ComPtr<ID3D12Resource>> ownedTextures;
 
     // Cached ECS queries
     flecs::query<const Transform, const MeshRef> drawQuery{
