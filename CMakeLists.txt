@@ -654,4 +654,21 @@ if(BUILD_TESTING)
         )
     endif()
     doctest_discover_tests(gfx_tests)
+
+    # Subsystem tests — link engine_lib so we get the real AudioSystem,
+    # PhysicsWorld, JobSystem, Hud, ParticleSystem, SaveGame implementations.
+    add_executable(subsystem_tests tests/subsystem_tests.cpp)
+    target_compile_features(subsystem_tests PRIVATE cxx_std_23)
+    set_target_properties(subsystem_tests PROPERTIES CXX_SCAN_FOR_MODULES ON)
+    target_link_libraries(subsystem_tests PRIVATE doctest::doctest engine_lib)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+        target_compile_options(subsystem_tests PRIVATE
+            -Wall -Wno-c++98-compat -fcolor-diagnostics
+            $<$<CONFIG:Debug>:-O0 -g>
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+        )
+        target_link_options(subsystem_tests PRIVATE "LINKER:/SUBSYSTEM:CONSOLE")
+    endif()
+    doctest_discover_tests(subsystem_tests)
 endif()
