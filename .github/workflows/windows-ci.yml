@@ -37,10 +37,24 @@ jobs:
               with:
                   arch: x64
 
-            - name: Install LLVM from GitHub releases
-              uses: KyleMayes/install-llvm-action@v2
-              with:
-                  version: ${{ env.LLVM_VERSION }}
+            - name: Install LLVM from llvm/llvm-project releases
+              shell: pwsh
+              run: |
+                  $version = $env:LLVM_VERSION
+                  $asset = "clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz"
+                  $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/$asset"
+                  $tarball = Join-Path $env:RUNNER_TEMP $asset
+                  $extractRoot = Join-Path $env:RUNNER_TEMP 'llvm'
+                  New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+                  curl.exe -L --fail -o $tarball $url
+                  if ($LASTEXITCODE -ne 0) { throw "Failed to download $url" }
+                  tar -xf $tarball -C $extractRoot
+                  if ($LASTEXITCODE -ne 0) { throw "Failed to extract $tarball" }
+                  $binDir = Join-Path $extractRoot "clang+llvm-$version-x86_64-pc-windows-msvc\bin"
+                  if (-not (Test-Path (Join-Path $binDir 'clang++.exe'))) {
+                      throw "clang++.exe not found at $binDir"
+                  }
+                  Add-Content -Path $env:GITHUB_PATH -Value $binDir
 
             - name: Bootstrap vcpkg
               shell: pwsh
@@ -112,10 +126,24 @@ jobs:
               with:
                   arch: x64
 
-            - name: Install LLVM from GitHub releases
-              uses: KyleMayes/install-llvm-action@v2
-              with:
-                  version: ${{ env.LLVM_VERSION }}
+            - name: Install LLVM from llvm/llvm-project releases
+              shell: pwsh
+              run: |
+                  $version = $env:LLVM_VERSION
+                  $asset = "clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz"
+                  $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/$asset"
+                  $tarball = Join-Path $env:RUNNER_TEMP $asset
+                  $extractRoot = Join-Path $env:RUNNER_TEMP 'llvm'
+                  New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+                  curl.exe -L --fail -o $tarball $url
+                  if ($LASTEXITCODE -ne 0) { throw "Failed to download $url" }
+                  tar -xf $tarball -C $extractRoot
+                  if ($LASTEXITCODE -ne 0) { throw "Failed to extract $tarball" }
+                  $binDir = Join-Path $extractRoot "clang+llvm-$version-x86_64-pc-windows-msvc\bin"
+                  if (-not (Test-Path (Join-Path $binDir 'clang++.exe'))) {
+                      throw "clang++.exe not found at $binDir"
+                  }
+                  Add-Content -Path $env:GITHUB_PATH -Value $binDir
 
             - name: Bootstrap vcpkg
               shell: pwsh
