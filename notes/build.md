@@ -14,9 +14,21 @@ cmake --build build --config Release
 # Test (loads test scene: WARP adapter, 10 frames, screenshot, exit)
 ./build/Debug/main.exe resources/scenes/test.json
 
-# Unit tests (doctest + CTest, includes lua_scripting_tests)
+# Unit tests (doctest + CTest, includes lua_scripting_tests + subsystem_tests)
 ctest --test-dir build -C Debug --output-on-failure
 ```
+
+## Physics backend (`ENGINE_PHYSICS_BACKEND`)
+
+`PhysicsWorld` is a thin facade over `IPhysicsBackend` (`include/physics_backend.h`). Pick the backend at configure time:
+
+```bash
+cmake --preset windows-clang -DENGINE_PHYSICS_BACKEND=Jolt    # default
+cmake --preset windows-clang -DENGINE_PHYSICS_BACKEND=PhysX   # opt-in, requires user-supplied PhysX
+cmake --preset windows-clang -DENGINE_PHYSICS_BACKEND=None    # no-op (test/CI use)
+```
+
+The PhysX backend stub (`src/physics_physx.cpp`) intentionally fails the build if `ENGINE_PHYSICS_BACKEND_PHYSX` is defined without a PhysX SDK plugged in — licensing/version is left to the project that needs it.
 
 **NOTE:** Sometimes the build will fail with a file lock issue ("user-mapped section open"). When this happens, stop execution immediately. The issue is likely due to the language server in the open editor. The user must shut it down before you can continue.
 

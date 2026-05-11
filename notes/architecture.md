@@ -34,7 +34,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `gbuffer.ixx` | `GBuffer` class — 4-target G-Buffer (Normal, Albedo, Material, Motion), RTV+SRV heaps |
 | `restir.ixx` | `ReStirRenderer` class — skeleton for ReSTIR DI (reservoir buffers, root sig; shaders TBD) |
 | `audio.ixx` | `AudioSystem` class — miniaudio wrapper, `engine.play_sound` Lua binding, listener pose API. Graceful no-op when no audio device available. |
-| `physics.ixx` | `PhysicsWorld` class — Jolt 5.2 wrapper, default MOVING/NON_MOVING layers, temp allocator + thread-pool job system. World steps in `Application::update()` ahead of `scene.progress(dt)`, immediately followed by a `RigidBody → Transform` sync (full translation + quaternion rotation, entity scale preserved by extracting it from the existing transform). Body API: `createBoxBody`, `createSphereBody`, `destroyBody`, `getBodyPosition`, `getBodyRotation`, `applyForce`, `applyImpulse`, `setBodyPosition`, `raycast`. Lua bindings: `engine.add_box_body`, `engine.add_sphere_body`, `engine.remove_body`, `engine.get_body_position`, `engine.get_body_rotation`, `engine.apply_force`, `engine.apply_impulse`, `engine.set_body_position`, `engine.raycast`, `engine.attach_rigid_body(entity, body)`. ECS component `RigidBody{ bodyId }` binds an entity to a Jolt body; see `resources/scripts/physics_demo.lua`. |
+| `physics.ixx` | `PhysicsWorld` class — backend-agnostic facade that forwards every call to an `IPhysicsBackend` (interface in `include/physics_backend.h`). Active backend is chosen at compile time via the CMake option `ENGINE_PHYSICS_BACKEND` (`Jolt` default, `PhysX` opt-in, `None` for no-op). Steps in `Application::update()` ahead of `scene.progress(dt)`, immediately followed by a `RigidBody → Transform` sync (full translation + quaternion rotation, entity scale preserved by extracting it from the existing transform). Body API: `createBoxBody`, `createSphereBody`, `destroyBody`, `getBodyPosition`, `getBodyRotation`, `applyForce`, `applyImpulse`, `setBodyPosition`, `raycast`. Lua bindings: `engine.add_box_body`, `engine.add_sphere_body`, `engine.remove_body`, `engine.get_body_position`, `engine.get_body_rotation`, `engine.apply_force`, `engine.apply_impulse`, `engine.set_body_position`, `engine.raycast`, `engine.attach_rigid_body(entity, body)`. ECS component `RigidBody{ bodyId }` binds an entity to a body; see `resources/scripts/physics_demo.lua`. |
 | `localisation.ixx` | `Localisation` class — flat key→string table loaded from `resources/i18n/<locale>.json`. `tr(key)` returns translation or key itself when missing. |
 | `save_game.ixx` | `SaveGame` namespace — resolves slot names to `%LOCALAPPDATA%\dx12_mini_engine\saves\<name>.json` paths. Pairs with `engine.save_scene/load_scene/save_game/load_game` Lua bindings. |
 | `jobs.ixx` | `JobSystem` class — google/marl scheduler bound on main thread; `schedule(fn)` enqueues fire-and-forget work onto a worker pool sized to `hardware_concurrency - 1`. |
@@ -120,6 +120,18 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **Recent gfx-API extensions** to support these migrations:
 - `gfx::IDevice::adoptTexture(nativeResource, format, mipLevels, isCubemap)` — gfx takes ownership of an externally-allocated D3D12 resource and registers its bindless SRV.
 - `gfx::VertexAttribute::inputSlot` + `gfx::VertexStream { stride, perInstance }` — multi-stream input layouts. Used by billboard to keep its quad-mesh + per-instance buffer layout.
+
+## Physics backend selection
+
+`include/physics_backend.h` defines `IPhysicsBackend` (pure-virtual; one method per `PhysicsWorld` operation). `PhysicsWorld` holds a `unique_ptr<IPhysicsBackend>` and forwards every call. Three implementations ship:
+
+| File | Backend | When active |
+|----|----|----|
+| `src/physics_jolt.cpp` | Jolt 5.2 | `ENGINE_PHYSICS_BACKEND=Jolt` (default) |
+| `src/physics_physx.cpp` | NVIDIA PhysX (user-supplied) | `ENGINE_PHYSICS_BACKEND=PhysX` *and* the user provides a built PhysX SDK |
+| `src/physics_null.cpp` | No-op | `ENGINE_PHYSICS_BACKEND=None`, or when the chosen backend's `create*Backend()` returns nullptr |
+
+Swap backends without touching call sites: `cmake --preset windows-clang -DENGINE_PHYSICS_BACKEND=PhysX`. The PhysX stub documents the integration entry points the user has to fill in (no PhysX SDK is bundled — licensing/version is a project-level choice).
 
 **ECS Update systems**: Native flecs systems in `Scene::setupSystems()` driven by `scene.progress(dt)`:
 - `StorePrevTransforms` / `StorePrevInstanceTransforms`: motion vector data

@@ -173,6 +173,19 @@ if(TARGET marl AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(marl PRIVATE -Wno-everything)
 endif()
 
+# -------------------------------
+# Physics backend selection
+# -------------------------------
+# Engine ships with a Jolt 5.2 backend (default). To plug in PhysX, set
+# ENGINE_PHYSICS_BACKEND=PhysX and provide a PhysX SDK location:
+#   cmake --preset windows-clang -DENGINE_PHYSICS_BACKEND=PhysX -DPHYSX_ROOT=...
+# The PhysX backend stub in src/physics_physx.cpp documents the integration
+# steps. The architecture lets you swap backends by toggling this flag without
+# touching call sites — both implement IPhysicsBackend (include/physics_backend.h).
+set(ENGINE_PHYSICS_BACKEND "Jolt" CACHE STRING "Physics backend: Jolt, PhysX, or None")
+set_property(CACHE ENGINE_PHYSICS_BACKEND PROPERTY STRINGS "Jolt" "PhysX" "None")
+message(STATUS "Physics backend: ${ENGINE_PHYSICS_BACKEND}")
+
 # Fetch Jolt Physics. Single static lib, C++17. We disable Jolt's samples /
 # hello-world / unit-tests to keep the build slim. Static CRT matches engine.
 set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
@@ -327,6 +340,9 @@ add_library(engine_lib STATIC
     src/lua_scripting_impl.cpp
     src/audio.cpp
     src/physics.cpp
+    src/physics_jolt.cpp
+    src/physics_physx.cpp
+    src/physics_null.cpp
     src/localisation.cpp
     src/save_game.cpp
     src/jobs.cpp
@@ -478,6 +494,16 @@ target_compile_definitions(engine_lib PUBLIC
     $<$<CONFIG:Release>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
     $<$<CONFIG:RelWithDebInfo>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
 )
+
+# Physics backend macro — physics.cpp's makeActiveBackend reads these to
+# choose the impl at link time. Exactly one of {JOLT, PHYSX, NONE} is set.
+if(ENGINE_PHYSICS_BACKEND STREQUAL "PhysX")
+    target_compile_definitions(engine_lib PUBLIC ENGINE_PHYSICS_BACKEND_PHYSX)
+elseif(ENGINE_PHYSICS_BACKEND STREQUAL "None")
+    target_compile_definitions(engine_lib PUBLIC ENGINE_PHYSICS_BACKEND_NONE)
+else()
+    target_compile_definitions(engine_lib PUBLIC ENGINE_PHYSICS_BACKEND_JOLT)
+endif()
 
 # -------------------------------
 # Outputs & linking

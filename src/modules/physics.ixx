@@ -68,6 +68,9 @@ export class PhysicsWorld
     void setBodyPosition(BodyId id, float px, float py, float pz, bool activate = true);
 
    private:
-    void* state = nullptr;  // opaque PhysicsWorldImpl* (defined in physics.cpp)
+    // Opaque pointer to the active IPhysicsBackend. The header defining that
+    // interface lives in include/physics_backend.h; physics.cpp's factory
+    // picks Jolt (default) / PhysX / null based on the CMake-selected backend.
+    void* state = nullptr;
     bool ready = false;
 };
