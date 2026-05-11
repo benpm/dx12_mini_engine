@@ -94,6 +94,27 @@ void Application::uiInspector()
                         ImGui::EndTabItem();
                     }
                 }
+                if (selectedEntity.has<RigidBody>()) {
+                    if (ImGui::BeginTabItem("Physics")) {
+                        auto rb = selectedEntity.get<RigidBody>();
+                        ImGui::Text("Body ID: %u", rb.bodyId);
+                        if (rb.bodyId != 0) {
+                            float px = 0, py = 0, pz = 0;
+                            physicsWorld.getBodyPosition(rb.bodyId, px, py, pz);
+                            ImGui::Text("Body pos: %.2f, %.2f, %.2f", px, py, pz);
+                            float qx = 0, qy = 0, qz = 0, qw = 1;
+                            physicsWorld.getBodyRotation(rb.bodyId, qx, qy, qz, qw);
+                            ImGui::Text("Body rot: %.2f, %.2f, %.2f, %.2f", qx, qy, qz, qw);
+                        }
+                        if (ImGui::Button("Detach Body")) {
+                            if (rb.bodyId != 0) {
+                                physicsWorld.destroyBody(rb.bodyId);
+                            }
+                            selectedEntity.remove<RigidBody>();
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
                 ImGui::EndTabBar();
             }
 
