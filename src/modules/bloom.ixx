@@ -57,10 +57,17 @@ export class BloomRenderer
     ~BloomRenderer();
 
    private:
-    ComPtr<ID3D12PipelineState> prefilterPSO;
-    ComPtr<ID3D12PipelineState> downsamplePSO;
-    ComPtr<ID3D12PipelineState> upsamplePSO;
-    ComPtr<ID3D12PipelineState> compositePSO;
+    // PSOs and their backing shaders are owned by gfx now. The destructor
+    // releases everything through devForDestroy->destroy().
+    gfx::PipelineHandle prefilterPSO{};
+    gfx::PipelineHandle downsamplePSO{};
+    gfx::PipelineHandle upsamplePSO{};
+    gfx::PipelineHandle compositePSO{};
+    gfx::ShaderHandle vsHandle{};
+    gfx::ShaderHandle prefilterPSShader{};
+    gfx::ShaderHandle downsamplePSShader{};
+    gfx::ShaderHandle upsamplePSShader{};
+    gfx::ShaderHandle compositePSShader{};
 
     gfx::IDevice* devForDestroy = nullptr;
 

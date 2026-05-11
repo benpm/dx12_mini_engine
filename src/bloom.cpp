@@ -12,19 +12,37 @@ module bloom;
 
 using Microsoft::WRL::ComPtr;
 
-static void reloadBloomPipelinesNative(
-    ID3D12Device2* device,
-    ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE fullscreenVS,
-    D3D12_SHADER_BYTECODE prefilterPS,
-    D3D12_SHADER_BYTECODE downsamplePS,
-    D3D12_SHADER_BYTECODE upsamplePS,
-    D3D12_SHADER_BYTECODE compositePS,
-    ComPtr<ID3D12PipelineState>& outPrefilter,
-    ComPtr<ID3D12PipelineState>& outDownsample,
-    ComPtr<ID3D12PipelineState>& outUpsample,
-    ComPtr<ID3D12PipelineState>& outComposite
-);
+// Build (and replace) the bloom pipeline state objects through gfx. All four
+// pipelines share the same fullscreen-quad VS; only the PS and blend state
+// differ. The bindless root sig is used by default (passing
+// nativeRootSignatureOverride = nullptr); bloom shaders compile with
+// USE_BINDLESS so their register layout already matches.
+static gfx::PipelineHandle makeBloomPipeline(
+    gfx::IDevice& dev, gfx::ShaderHandle vs, gfx::ShaderHandle ps, gfx::Format rtFormat,
+    bool additiveBlend, const char* debugName
+)
+{
+    gfx::GraphicsPipelineDesc pd{};
+    pd.vs = vs;
+    pd.ps = ps;
+    pd.rasterizer.cull = gfx::CullMode::None;
+    pd.depthStencil.depthEnable = false;
+    pd.depthStencil.depthWrite = false;
+    pd.depthStencil.stencilEnable = false;
+    pd.numRenderTargets = 1;
+    pd.renderTargetFormats[0] = rtFormat;
+    if (additiveBlend) {
+        pd.blend[0].blendEnable = true;
+        pd.blend[0].srcColor = gfx::BlendFactor::One;
+        pd.blend[0].dstColor = gfx::BlendFactor::One;
+        pd.blend[0].colorOp = gfx::BlendOp::Add;
+        pd.blend[0].srcAlpha = gfx::BlendFactor::One;
+        pd.blend[0].dstAlpha = gfx::BlendFactor::One;
+        pd.blend[0].alphaOp = gfx::BlendOp::Add;
+    }
+    pd.debugName = debugName;
+    return dev.createGraphicsPipeline(pd);
+}
 
 static void transitionResource(
     ID3D12GraphicsCommandList2* cmdList,
@@ -51,6 +69,17 @@ BloomRenderer::~BloomRenderer()
         for (auto& m : bloomMips) {
             if (m.isValid()) {
                 devForDestroy->destroy(m);
+            }
+        }
+        for (auto h : { prefilterPSO, downsamplePSO, upsamplePSO, compositePSO }) {
+            if (h.isValid()) {
+                devForDestroy->destroy(h);
+            }
+        }
+        for (auto h : { vsHandle, prefilterPSShader, downsamplePSShader, upsamplePSShader,
+                        compositePSShader }) {
+            if (h.isValid()) {
+                devForDestroy->destroy(h);
             }
         }
     }
@@ -101,13 +130,9 @@ void BloomRenderer::createTexturesAndHeaps(gfx::IDevice& dev, uint32_t width, ui
 
 void BloomRenderer::createPipelines(gfx::IDevice& dev)
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-    auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-
-    reloadBloomPipelinesNative(
-        device, psoRootSig, {}, {}, {}, {}, {}, prefilterPSO, downsamplePSO, upsamplePSO,
-        compositePSO
-    );
+    // Defer to reloadPipelines so the shader-hotreload path and the initial
+    // create path share one builder.
+    reloadPipelines(dev);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,66 +165,6 @@ void BloomRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 // BloomRenderer::reloadPipelines
 // ---------------------------------------------------------------------------
 
-static void reloadBloomPipelinesNative(
-    ID3D12Device2* device,
-    ID3D12RootSignature* rootSig,
-    D3D12_SHADER_BYTECODE fullscreenVS,
-    D3D12_SHADER_BYTECODE prefilterPS,
-    D3D12_SHADER_BYTECODE downsamplePS,
-    D3D12_SHADER_BYTECODE upsamplePS,
-    D3D12_SHADER_BYTECODE compositePS,
-    ComPtr<ID3D12PipelineState>& outPrefilter,
-    ComPtr<ID3D12PipelineState>& outDownsample,
-    ComPtr<ID3D12PipelineState>& outUpsample,
-    ComPtr<ID3D12PipelineState>& outComposite
-)
-{
-    auto resolve = [](D3D12_SHADER_BYTECODE bc, const BYTE* def, size_t defSize) {
-        return bc.pShaderBytecode ? bc : D3D12_SHADER_BYTECODE{ def, defSize };
-    };
-    auto vs = resolve(fullscreenVS, g_fullscreen_vs, sizeof(g_fullscreen_vs));
-    auto pre = resolve(prefilterPS, g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps));
-    auto down = resolve(downsamplePS, g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps));
-    auto up = resolve(upsamplePS, g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps));
-    auto comp = resolve(compositePS, g_bloom_composite_ps, sizeof(g_bloom_composite_ps));
-
-    auto createPSO = [&](D3D12_SHADER_BYTECODE ps, DXGI_FORMAT rtFormat,
-                         bool additiveBlend) -> ComPtr<ID3D12PipelineState> {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-        desc.pRootSignature = rootSig;
-        desc.VS = vs;
-        desc.PS = ps;
-        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        if (additiveBlend) {
-            desc.BlendState.RenderTarget[0].BlendEnable = TRUE;
-            desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-            desc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
-            desc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        }
-        desc.DepthStencilState.DepthEnable = FALSE;
-        desc.DepthStencilState.StencilEnable = FALSE;
-        desc.SampleMask = UINT_MAX;
-        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = rtFormat;
-        desc.SampleDesc.Count = 1;
-        ComPtr<ID3D12PipelineState> pso;
-        chkDX(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso)));
-        return pso;
-    };
-
-    const DXGI_FORMAT hdrFormat = DXGI_FORMAT_R11G11B10_FLOAT;
-    outPrefilter = createPSO(pre, hdrFormat, false);
-    outDownsample = createPSO(down, hdrFormat, false);
-    outUpsample = createPSO(up, hdrFormat, true);
-    outComposite = createPSO(comp, DXGI_FORMAT_R8G8B8A8_UNORM, false);
-}
-
 void BloomRenderer::reloadPipelines(
     gfx::IDevice& dev,
     gfx::ShaderBytecode fullscreenVS,
@@ -209,13 +174,69 @@ void BloomRenderer::reloadPipelines(
     gfx::ShaderBytecode compositePS
 )
 {
-    auto* psoRootSig = static_cast<ID3D12RootSignature*>(dev.bindlessRootSigNative());
-    reloadBloomPipelinesNative(
-        static_cast<ID3D12Device2*>(dev.nativeHandle()), psoRootSig,
-        { fullscreenVS.data, fullscreenVS.size }, { prefilterPS.data, prefilterPS.size },
-        { downsamplePS.data, downsamplePS.size }, { upsamplePS.data, upsamplePS.size },
-        { compositePS.data, compositePS.size }, prefilterPSO, downsamplePSO, upsamplePSO,
-        compositePSO
+    devForDestroy = &dev;
+
+    // Resolve bytecode: caller-supplied (for hot reload) or the compiled-in
+    // defaults baked into the engine at build time.
+    auto resolve = [](gfx::ShaderBytecode bc, const BYTE* def, size_t defSize) {
+        return bc.data ? bc : gfx::ShaderBytecode{ def, defSize };
+    };
+    auto vsBc = resolve(fullscreenVS, g_fullscreen_vs, sizeof(g_fullscreen_vs));
+    auto preBc = resolve(prefilterPS, g_bloom_prefilter_ps, sizeof(g_bloom_prefilter_ps));
+    auto downBc = resolve(downsamplePS, g_bloom_downsample_ps, sizeof(g_bloom_downsample_ps));
+    auto upBc = resolve(upsamplePS, g_bloom_upsample_ps, sizeof(g_bloom_upsample_ps));
+    auto compBc = resolve(compositePS, g_bloom_composite_ps, sizeof(g_bloom_composite_ps));
+
+    // Release old handles before allocating new ones; destroy is fence-tracked
+    // inside gfx so it's safe mid-frame.
+    auto destroyPSO = [&](gfx::PipelineHandle& h) {
+        if (h.isValid()) {
+            dev.destroy(h);
+            h = {};
+        }
+    };
+    auto destroyShader = [&](gfx::ShaderHandle& h) {
+        if (h.isValid()) {
+            dev.destroy(h);
+            h = {};
+        }
+    };
+    destroyPSO(prefilterPSO);
+    destroyPSO(downsamplePSO);
+    destroyPSO(upsamplePSO);
+    destroyPSO(compositePSO);
+    destroyShader(vsHandle);
+    destroyShader(prefilterPSShader);
+    destroyShader(downsamplePSShader);
+    destroyShader(upsamplePSShader);
+    destroyShader(compositePSShader);
+
+    auto makeShader = [&](gfx::ShaderBytecode bc, gfx::ShaderStage stage, const char* name) {
+        gfx::ShaderDesc sd{};
+        sd.bytecode = bc.data;
+        sd.bytecodeSize = bc.size;
+        sd.stage = stage;
+        sd.debugName = name;
+        return dev.createShader(sd);
+    };
+
+    vsHandle = makeShader(vsBc, gfx::ShaderStage::Vertex, "bloom_fullscreen_vs");
+    prefilterPSShader = makeShader(preBc, gfx::ShaderStage::Pixel, "bloom_prefilter_ps");
+    downsamplePSShader = makeShader(downBc, gfx::ShaderStage::Pixel, "bloom_downsample_ps");
+    upsamplePSShader = makeShader(upBc, gfx::ShaderStage::Pixel, "bloom_upsample_ps");
+    compositePSShader = makeShader(compBc, gfx::ShaderStage::Pixel, "bloom_composite_ps");
+
+    prefilterPSO = makeBloomPipeline(
+        dev, vsHandle, prefilterPSShader, gfx::Format::R11G11B10Float, false, "bloom_prefilter"
+    );
+    downsamplePSO = makeBloomPipeline(
+        dev, vsHandle, downsamplePSShader, gfx::Format::R11G11B10Float, false, "bloom_downsample"
+    );
+    upsamplePSO = makeBloomPipeline(
+        dev, vsHandle, upsamplePSShader, gfx::Format::R11G11B10Float, true, "bloom_upsample"
+    );
+    compositePSO = makeBloomPipeline(
+        dev, vsHandle, compositePSShader, gfx::Format::RGBA8Unorm, false, "bloom_composite"
     );
 }
 
@@ -272,7 +293,7 @@ void BloomRenderer::render(
 
     // Prefilter — hdr_rt is already in PixelShaderResource state because the
     // bloom render-graph pass declared `readTexture(hHdrRT)`.
-    cmdList->SetPipelineState(prefilterPSO.Get());
+    cmdRef.bindPipeline(prefilterPSO);
     struct BindlessPrefilterPayload
     {
         uint32_t srcIdx;
@@ -297,7 +318,7 @@ void BloomRenderer::render(
     cmdList->DrawInstanced(3, 1, 0, 0);
 
     // Downsample
-    cmdList->SetPipelineState(downsamplePSO.Get());
+    cmdRef.bindPipeline(downsamplePSO);
     for (uint32_t i = 0; i < bloomMipCount - 1; ++i) {
         transitionResource(
             cmdList, mipRes(i), D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -326,7 +347,7 @@ void BloomRenderer::render(
     }
 
     // Upsample (additive)
-    cmdList->SetPipelineState(upsamplePSO.Get());
+    cmdRef.bindPipeline(upsamplePSO);
     for (int i = bloomMipCount - 2; i >= 0; --i) {
         transitionResource(
             cmdList, mipRes(i + 1), D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -364,7 +385,7 @@ void BloomRenderer::render(
         cmdList, mipRes(0), D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
     );
-    cmdList->SetPipelineState(compositePSO.Get());
+    cmdRef.bindPipeline(compositePSO);
     struct BindlessCompositePayload
     {
         uint32_t sceneIdx;
