@@ -30,6 +30,10 @@ export class LuaScripting
     // after init(). Passing nullptr is valid and disables audio bindings cleanly.
     void setAudioSystem(void* audioSystem);
 
+    // Register the Application* so engine.save_scene/load_scene/save_game/load_game can
+    // queue deferred work. nullptr disables those bindings.
+    void setApplication(void* app);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

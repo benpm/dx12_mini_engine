@@ -23,6 +23,7 @@ module;
 #include <random>
 #include <string>
 #include <vector>
+#include "audio_capi.h"
 #include "d3dx12_clean.h"
 #include "icons.h"
 #include "profiling.h"
@@ -207,6 +208,7 @@ Application::Application()
 #endif
     luaScripting.init(scene, SCRIPTS_DIR);
     luaScripting.setAudioSystem(&audioSystem);
+    luaScripting.setApplication(this);
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
@@ -1055,6 +1057,28 @@ void Application::setFullscreen(bool val)
 void Application::flush()
 {
     this->cmdQueue.flush();
+}
+
+// C API consumed by non-module TUs (e.g. lua_scripting_impl.cpp) so they can
+// queue scene save/load without importing the application module.
+extern "C" int engine_app_queue_scene_load(void* appPtr, const char* path)
+{
+    auto* app = static_cast<Application*>(appPtr);
+    if (!app || !path) {
+        return 0;
+    }
+    app->queueSceneLoad(path);
+    return 1;
+}
+
+extern "C" int engine_app_queue_scene_save(void* appPtr, const char* path)
+{
+    auto* app = static_cast<Application*>(appPtr);
+    if (!app || !path) {
+        return 0;
+    }
+    app->queueSceneSave(path);
+    return 1;
 }
 
 // createScenePSO, createShadowPSO, createCubemapResources, loadContent, onResize

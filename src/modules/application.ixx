@@ -40,6 +40,7 @@ export import gbuffer;
 export import gfx;
 export import audio;
 export import physics;
+export import jobs;
 
 export class Application
 {
@@ -62,6 +63,12 @@ export class Application
     // Config
     void applyConfig(const ConfigData& cfg);
     ConfigData extractConfig() const;
+
+    // Queue scene file load/save (processed at the start of the next update()).
+    // Mutates ECS state, so direct calls from inside render/ImGui are unsafe;
+    // the deferred path is the only sanctioned API for scripts and UI.
+    void queueSceneLoad(const std::string& path) { pendingSceneLoad = path; }
+    void queueSceneSave(const std::string& path) { pendingSceneSave = path; }
 
    private:
     constexpr static uint8_t nBuffers = 3u;
@@ -100,6 +107,7 @@ export class Application
    public:
     AudioSystem audioSystem;  // public so Lua bindings (in lua_scripting_impl) can reach it
     PhysicsWorld physicsWorld;  // public for future Lua/scene-file access
+    JobSystem jobSystem;  // marl scheduler; subsystems schedule via jobSystem.schedule(fn)
 
    private:
     // Entity picking/selection

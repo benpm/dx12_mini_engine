@@ -7,3 +7,21 @@ extern "C" int engine_audio_play_sound(void* /*audio*/, const char* /*path*/, fl
 {
     return 0;
 }
+
+extern "C" int engine_app_queue_scene_load(void* /*app*/, const char* /*path*/)
+{
+    return 0;
+}
+
+extern "C" int engine_app_queue_scene_save(void* /*app*/, const char* /*path*/)
+{
+    return 0;
+}
+
+extern "C" int engine_save_slot_path(const char* /*slot*/, char* outBuf, int outBufSize)
+{
+    if (outBuf && outBufSize > 0) {
+        outBuf[0] = '\0';
+    }
+    return 0;
+}

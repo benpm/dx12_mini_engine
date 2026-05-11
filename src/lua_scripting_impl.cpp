@@ -34,6 +34,7 @@ static const char* kRegDt = "engine_dt";
 static const char* kRegTime = "engine_time";
 static const char* kRegFrameCount = "engine_frame_count";
 static const char* kRegAudio = "engine_audio";
+static const char* kRegApp = "engine_app";
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -734,6 +735,56 @@ static int l_play_sound(lua_State* L)
     return 1;
 }
 
+static int l_save_scene(lua_State* L)
+{
+    const char* path = luaL_checkstring(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegApp);
+    void* app = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_app_queue_scene_save(app, path));
+    return 1;
+}
+
+static int l_load_scene(lua_State* L)
+{
+    const char* path = luaL_checkstring(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegApp);
+    void* app = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_app_queue_scene_load(app, path));
+    return 1;
+}
+
+static int l_save_game(lua_State* L)
+{
+    const char* slot = luaL_checkstring(L, 1);
+    char path[260];
+    if (!engine_save_slot_path(slot, path, sizeof(path))) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegApp);
+    void* app = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_app_queue_scene_save(app, path));
+    return 1;
+}
+
+static int l_load_game(lua_State* L)
+{
+    const char* slot = luaL_checkstring(L, 1);
+    char path[260];
+    if (!engine_save_slot_path(slot, path, sizeof(path))) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegApp);
+    void* app = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_app_queue_scene_load(app, path));
+    return 1;
+}
+
 // ---------------------------------------------------------------------------
 // Registration table
 // ---------------------------------------------------------------------------
@@ -787,6 +838,11 @@ static const luaL_Reg engineFuncs[] = {
     { "get_frame_count", l_get_frame_count },
     // Audio
     { "play_sound", l_play_sound },
+    // Scene save/load
+    { "save_scene", l_save_scene },
+    { "load_scene", l_load_scene },
+    { "save_game", l_save_game },
+    { "load_game", l_load_game },
     { nullptr, nullptr }
 };
 
@@ -840,6 +896,12 @@ void luaScripting_setAudioSystem(lua_State* L, void* audioSystem)
 {
     lua_pushlightuserdata(L, audioSystem);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegAudio);
+}
+
+void luaScripting_setApplication(lua_State* L, void* app)
+{
+    lua_pushlightuserdata(L, app);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegApp);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

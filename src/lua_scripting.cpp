@@ -34,6 +34,7 @@ extern void luaScripting_setScenePointers(
     std::vector<uint64_t>* pendingDestroys
 );
 extern void luaScripting_setAudioSystem(lua_State* L, void* audioSystem);
+extern void luaScripting_setApplication(lua_State* L, void* app);
 extern void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount);
 extern void luaScripting_setSelectedEntity(lua_State* L, uint64_t id);
 extern bool luaScripting_loadFile(lua_State* L, const char* path, int* outRef);
@@ -91,6 +92,13 @@ void LuaScripting::setAudioSystem(void* audioSystem)
 {
     if (L) {
         luaScripting_setAudioSystem(L, audioSystem);
+    }
+}
+
+void LuaScripting::setApplication(void* app)
+{
+    if (L) {
+        luaScripting_setApplication(L, app);
     }
 }
 

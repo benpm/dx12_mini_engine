@@ -157,6 +157,22 @@ FetchContent_MakeAvailable(miniaudio)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio SYSTEM INTERFACE ${miniaudio_SOURCE_DIR})
 
+# Fetch marl (google/marl) — coroutine-fiber job system, MIT, static lib.
+set(MARL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MARL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MARL_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(MARL_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(MARL_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    marl
+    GIT_REPOSITORY https://github.com/google/marl.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(marl)
+if(TARGET marl AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(marl PRIVATE -Wno-everything)
+endif()
+
 # Fetch Jolt Physics. Single static lib, C++17. We disable Jolt's samples /
 # hello-world / unit-tests to keep the build slim. Static CRT matches engine.
 set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
@@ -311,6 +327,8 @@ add_library(engine_lib STATIC
     src/audio.cpp
     src/physics.cpp
     src/localisation.cpp
+    src/save_game.cpp
+    src/jobs.cpp
     src/gfx/d3d12_backend.cpp
     src/gfx/d3d12_command.cpp
     src/gfx/d3d12_swapchain.cpp
@@ -347,6 +365,8 @@ target_sources(engine_lib
     src/modules/audio.ixx
     src/modules/physics.ixx
     src/modules/localisation.ixx
+    src/modules/save_game.ixx
+    src/modules/jobs.ixx
     src/modules/application.ixx
     src/modules/window.ixx
     src/modules/gfx.ixx
@@ -509,6 +529,7 @@ target_link_libraries(engine_lib PUBLIC
     nfd
     miniaudio
     Jolt
+    marl
     Microsoft::DirectX-Headers
 )
 
@@ -523,6 +544,7 @@ if(BUILD_TESTING)
 
     add_executable(unit_tests
         tests/math_types_tests.cpp
+        tests/localisation_tests.cpp
     )
     target_compile_features(unit_tests PRIVATE cxx_std_23)
     target_include_directories(unit_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
