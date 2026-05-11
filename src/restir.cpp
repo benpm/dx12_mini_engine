@@ -18,8 +18,12 @@ void ReStirRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t
 
 void ReStirRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
-    reservoirs[0].Reset();
-    reservoirs[1].Reset();
+    for (auto& h : reservoirs) {
+        if (h.isValid()) {
+            dev.destroy(h);
+            h = {};
+        }
+    }
     createTextures(dev, width, height);
 }
 
@@ -44,50 +48,26 @@ void ReStirRenderer::render(
         return;
     }
 
-    auto* cmd = static_cast<ID3D12GraphicsCommandList2*>(cmdRef.nativeHandle());
-
-    D3D12_RESOURCE_BARRIER barriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            reservoirs[0].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-        ),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            reservoirs[1].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-        )
-    };
-    cmd->ResourceBarrier(2, barriers);
-
-    cmd->SetComputeRootSignature(rootSig.Get());
-    cmd->SetComputeRootConstantBufferView(3, perFrameCBAddr);
-
-    ID3D12DescriptorHeap* heaps[] = { uavHeap.Get() };
-    cmd->SetDescriptorHeaps(1, heaps);
-    // TODO: dispatch once shaders are ready.
-
-    D3D12_RESOURCE_BARRIER resolveBarriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            reservoirs[0].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON
-        ),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            reservoirs[1].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON
-        )
-    };
-    cmd->ResourceBarrier(2, resolveBarriers);
+    // ReStir dispatch is still a stub — once the compute shaders land, this
+    // body will transition reservoirs[] to UnorderedAccess via the gfx
+    // command list, bind the bindless root sig, dispatch the four PSOs, and
+    // transition back. Avoid touching command list state today since nothing
+    // actually executes.
+    (void)cmdRef;
+    (void)perFrameCBAddr;
 }
 
 void ReStirRenderer::createTextures(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-    const CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-    const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
-        DXGI_FORMAT_R32G32B32A32_UINT, width, height, 1, 1, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-    );
-
-    for (int i = 0; i < 2; ++i) {
-        chkDX(device->CreateCommittedResource(
-            &hp, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
-            IID_PPV_ARGS(&reservoirs[i])
-        ));
+    for (auto& h : reservoirs) {
+        gfx::TextureDesc td{};
+        td.width = width;
+        td.height = height;
+        td.format = gfx::Format::RGBA32Uint;
+        td.usage = gfx::TextureUsage::UnorderedAccess | gfx::TextureUsage::ShaderResource;
+        td.initialState = gfx::ResourceState::Common;
+        td.debugName = "restir_reservoir";
+        h = dev.createTexture(td);
     }
 }
 

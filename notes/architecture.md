@@ -111,10 +111,10 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **`gfx::` Bindless model**: single global SRV/UAV heap (default 65k descriptors) and sampler heap. Bindless root signature: `[32 root constants b0][CBV b1][CBV b2][SRV/UAV descriptor table][sampler descriptor table]`. Enabled by default via `USE_BINDLESS=ON`.
 
 **What still leaks D3D12 in subsystems (private fields, blocked on deeper rewrites):**
-- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). Texture resources (`spriteTexture`, Scene glTF PBR maps) all migrated through `gfx::adoptTexture`.
-- `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` (needed by `imgui_impl_dx12`) and `ReStirRenderer::uavHeap`.
-- `ComPtr<ID3D12PipelineState>` remaining only in `ReStirRenderer` (4 compute PSOs). All graphics PSOs — bloom, SSAO, shadow, outline, object_picker, billboard — are now `gfx::PipelineHandle`.
-- `ComPtr<ID3D12RootSignature>` in ReStir (compute-specific layout).
+- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). Texture resources (`spriteTexture`, Scene glTF PBR maps, ReStir reservoirs) all migrated through `gfx::adoptTexture` / `createTexture`.
+- `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` (needed by `imgui_impl_dx12`). ReStir's UAV heap is gone.
+- `ComPtr<ID3D12PipelineState>` — **all graphics and compute PSOs in the engine are now `gfx::PipelineHandle`.** Bloom, SSAO, shadow, outline, object_picker, billboard, and the four ReStir compute PSO slots all use gfx.
+- `ComPtr<ID3D12RootSignature>` in ReStir (compute-specific descriptor layout, predates the bindless rewrite).
 - `ID3D12CommandQueue*` in `ImGuiLayer::init` — required by `imgui_impl_dx12`.
 
 **Recent gfx-API extensions** to support these migrations:

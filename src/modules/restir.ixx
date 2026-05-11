@@ -44,14 +44,22 @@ export class ReStirRenderer
     );
 
    private:
-    Microsoft::WRL::ComPtr<ID3D12Resource> reservoirs[2];
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> uavHeap;
-    UINT uavDescSize = 0;
+    // Reservoir UAV textures (RGBA32_UINT, double-buffered for temporal reuse).
+    // Migrated to gfx so the resource + bindless UAV slot are managed centrally.
+    gfx::TextureHandle reservoirs[2]{};
+
+    // Compute-shader root signature. ReStir defines its own layout (non-bindless)
+    // because the shaders predate the bindless rewrite. Migrating to the engine's
+    // bindless root sig is part of the eventual ReStir shader port.
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSig;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> initialPSO;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> temporalPSO;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> spatialPSO;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> resolvePSO;
+
+    // 4 PSOs (initial / temporal / spatial / resolve) were stubs and never
+    // allocated; their ComPtrs are removed in favour of gfx::PipelineHandle
+    // slots that the eventual shader implementation will create on demand.
+    gfx::PipelineHandle initialPSO{};
+    gfx::PipelineHandle temporalPSO{};
+    gfx::PipelineHandle spatialPSO{};
+    gfx::PipelineHandle resolvePSO{};
 
     gfx::IDevice* devForDestroy = nullptr;
 
