@@ -33,6 +33,19 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `logging.ixx` | spdlog setup with custom error sink |
 | `gbuffer.ixx` | `GBuffer` class — 4-target G-Buffer (Normal, Albedo, Material, Motion), RTV+SRV heaps |
 | `restir.ixx` | `ReStirRenderer` class — skeleton for ReSTIR DI (reservoir buffers, root sig; shaders TBD) |
+| `audio.ixx` | `AudioSystem` class — miniaudio wrapper, `engine.play_sound` Lua binding, listener pose API. Graceful no-op when no audio device available. |
+| `physics.ixx` | `PhysicsWorld` class — Jolt 5.2 wrapper, default MOVING/NON_MOVING layers, temp allocator + thread-pool job system. World steps in `Application::update()` ahead of `scene.progress(dt)`. RigidBody/Collider components and Lua bindings are follow-up work. |
+| `localisation.ixx` | `Localisation` class — flat key→string table loaded from `resources/i18n/<locale>.json`. `tr(key)` returns translation or key itself when missing. |
+
+## Build layout
+
+CMake produces three targets:
+
+- **`engine_lib`** (STATIC) — every engine source + module interface. Deps (TracyClient, ImGui, Flecs, Lua, miniaudio, Jolt, …) link as `PUBLIC` so consumers inherit them.
+- **`main`** (executable) — editor entry point. `src/main.cpp` only. Historical name kept so README/CI scripts work unchanged.
+- **`game_app`** (executable) — runtime entry point. `src/game_main.cpp`. Forces `runtime.skipImGui = true` so editor panels don't draw. ImGui code still compiles into `engine_lib` for now; pulling it into a separate `editor_lib` is the next CMake refactor.
+
+Both exes install an SEH handler that writes a minidump (`crash_*.dmp` / `crash_game_*.dmp`) alongside the log so postmortem analysis can pinpoint the crash site via WinDbg / VS.
 
 ## Module conventions
 
