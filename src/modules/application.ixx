@@ -39,6 +39,7 @@ export import lua_scripting;
 export import gbuffer;
 export import gfx;
 export import audio;
+export import physics;
 
 export class Application
 {
@@ -98,6 +99,7 @@ export class Application
 
    public:
     AudioSystem audioSystem;  // public so Lua bindings (in lua_scripting_impl) can reach it
+    PhysicsWorld physicsWorld;  // public for future Lua/scene-file access
 
    private:
     // Entity picking/selection

@@ -157,6 +157,28 @@ FetchContent_MakeAvailable(miniaudio)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio SYSTEM INTERFACE ${miniaudio_SOURCE_DIR})
 
+# Fetch Jolt Physics. Single static lib, C++17. We disable Jolt's samples /
+# hello-world / unit-tests to keep the build slim. Static CRT matches engine.
+set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
+set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+set(TARGET_SAMPLES OFF CACHE BOOL "" FORCE)
+set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY ON CACHE BOOL "" FORCE)
+set(GENERATE_DEBUG_SYMBOLS ON CACHE BOOL "" FORCE)
+set(CROSS_PLATFORM_DETERMINISTIC OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG v5.2.0
+    SOURCE_SUBDIR Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+if(TARGET Jolt AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(Jolt PRIVATE -Wno-everything)
+endif()
+
 # Fetch nativefiledialog (mlabbe). Upstream ships Premake build files only, so
 # declare a manual `nfd` static-lib target against the source files we need.
 FetchContent_Declare(
@@ -287,6 +309,7 @@ add_library(engine_lib STATIC
     src/lua_scripting.cpp
     src/lua_scripting_impl.cpp
     src/audio.cpp
+    src/physics.cpp
     src/gfx/d3d12_backend.cpp
     src/gfx/d3d12_command.cpp
     src/gfx/d3d12_swapchain.cpp
@@ -321,6 +344,7 @@ target_sources(engine_lib
     src/modules/restir.ixx
     src/modules/lua_scripting.ixx
     src/modules/audio.ixx
+    src/modules/physics.ixx
     src/modules/application.ixx
     src/modules/window.ixx
     src/modules/gfx.ixx
@@ -481,6 +505,7 @@ target_link_libraries(engine_lib PUBLIC
     lua_lib
     nfd
     miniaudio
+    Jolt
     Microsoft::DirectX-Headers
 )
 

@@ -529,6 +529,10 @@ void Application::update()
     t0 = t1;
     const float dt = static_cast<float>(static_cast<double>(deltaTime.count()) * 1e-9);
 
+    // Physics step before ECS so any future RigidBody→Transform sync happens
+    // before transform-dependent systems (animation, motion vectors) read it.
+    physicsWorld.step(dt);
+
     // ECS progress (runs systems: store prev transforms, animations)
     scene.progress(dt);
 
