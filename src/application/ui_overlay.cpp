@@ -26,6 +26,9 @@ void Application::uiOverlay()
         ImGui::End();
     }
 
+    // --- Lua-driven HUD elements ---
+    hud.render();
+
     // --- Scene title/description overlay (bottom-right) ---
     if (!sceneTitle.empty() || !sceneDescription.empty()) {
         const float margin = 10.0f;

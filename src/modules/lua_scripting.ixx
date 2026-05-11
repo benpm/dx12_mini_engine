@@ -34,6 +34,9 @@ export class LuaScripting
     // queue deferred work. nullptr disables those bindings.
     void setApplication(void* app);
 
+    // Register the Hud instance for engine.hud_* bindings. nullptr disables.
+    void setHud(void* hud);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

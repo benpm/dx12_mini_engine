@@ -26,6 +26,16 @@ int engine_app_queue_scene_save(void* appPtr, const char* path);
 // outBuf (UTF-8). Returns 1 on success. Caller's outBuf must be at least 260 bytes.
 int engine_save_slot_path(const char* slotName, char* outBuf, int outBufSize);
 
+// HUD ops. hudPtr is the address of a Hud instance.
+void engine_hud_clear(void* hudPtr);
+void engine_hud_text(void* hudPtr, float x, float y, const char* text, unsigned int color, float scale);
+void engine_hud_filled_rect(
+    void* hudPtr, float x, float y, float w, float h, unsigned int color
+);
+void engine_hud_outline_rect(
+    void* hudPtr, float x, float y, float w, float h, unsigned int color
+);
+
 #ifdef __cplusplus
 }
 #endif

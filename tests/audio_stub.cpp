@@ -25,3 +25,19 @@ extern "C" int engine_save_slot_path(const char* /*slot*/, char* outBuf, int out
     }
     return 0;
 }
+
+extern "C" void engine_hud_clear(void*)
+{
+}
+
+extern "C" void engine_hud_text(void*, float, float, const char*, unsigned int, float)
+{
+}
+
+extern "C" void engine_hud_filled_rect(void*, float, float, float, float, unsigned int)
+{
+}
+
+extern "C" void engine_hud_outline_rect(void*, float, float, float, float, unsigned int)
+{
+}

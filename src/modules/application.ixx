@@ -41,6 +41,7 @@ export import gfx;
 export import audio;
 export import physics;
 export import jobs;
+export import hud;
 
 export class Application
 {
@@ -108,6 +109,7 @@ export class Application
     AudioSystem audioSystem;  // public so Lua bindings (in lua_scripting_impl) can reach it
     PhysicsWorld physicsWorld;  // public for future Lua/scene-file access
     JobSystem jobSystem;  // marl scheduler; subsystems schedule via jobSystem.schedule(fn)
+    Hud hud;  // in-game UI elements rendered each frame after ImGui
 
    private:
     // Entity picking/selection

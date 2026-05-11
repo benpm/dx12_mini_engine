@@ -35,6 +35,7 @@ static const char* kRegTime = "engine_time";
 static const char* kRegFrameCount = "engine_frame_count";
 static const char* kRegAudio = "engine_audio";
 static const char* kRegApp = "engine_app";
+static const char* kRegHud = "engine_hud";
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -785,6 +786,47 @@ static int l_load_game(lua_State* L)
     return 1;
 }
 
+static void* getHud(lua_State* L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegHud);
+    void* h = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return h;
+}
+
+static int l_hud_clear(lua_State* L)
+{
+    engine_hud_clear(getHud(L));
+    return 0;
+}
+
+static int l_hud_text(lua_State* L)
+{
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    const char* text = luaL_checkstring(L, 3);
+    unsigned int color = static_cast<unsigned int>(luaL_optinteger(L, 4, 0xFFFFFFFFu));
+    float scale = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    engine_hud_text(getHud(L), x, y, text, color, scale);
+    return 0;
+}
+
+static int l_hud_rect(lua_State* L)
+{
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float w = static_cast<float>(luaL_checknumber(L, 3));
+    float h = static_cast<float>(luaL_checknumber(L, 4));
+    unsigned int color = static_cast<unsigned int>(luaL_optinteger(L, 5, 0xFF808080u));
+    bool filled = lua_toboolean(L, 6);
+    if (filled) {
+        engine_hud_filled_rect(getHud(L), x, y, w, h, color);
+    } else {
+        engine_hud_outline_rect(getHud(L), x, y, w, h, color);
+    }
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Registration table
 // ---------------------------------------------------------------------------
@@ -843,6 +885,10 @@ static const luaL_Reg engineFuncs[] = {
     { "load_scene", l_load_scene },
     { "save_game", l_save_game },
     { "load_game", l_load_game },
+    // HUD
+    { "hud_clear", l_hud_clear },
+    { "hud_text", l_hud_text },
+    { "hud_rect", l_hud_rect },
     { nullptr, nullptr }
 };
 
@@ -902,6 +948,12 @@ void luaScripting_setApplication(lua_State* L, void* app)
 {
     lua_pushlightuserdata(L, app);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegApp);
+}
+
+void luaScripting_setHud(lua_State* L, void* hud)
+{
+    lua_pushlightuserdata(L, hud);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegHud);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

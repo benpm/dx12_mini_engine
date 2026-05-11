@@ -209,6 +209,7 @@ Application::Application()
     luaScripting.init(scene, SCRIPTS_DIR);
     luaScripting.setAudioSystem(&audioSystem);
     luaScripting.setApplication(this);
+    luaScripting.setHud(&hud);
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
