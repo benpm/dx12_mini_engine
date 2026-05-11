@@ -535,6 +535,21 @@ target_link_libraries(engine_lib PUBLIC
     Microsoft::DirectX-Headers
 )
 
+# -------------------------------
+# Asset cooker (CLI tool)
+# -------------------------------
+add_executable(asset_cooker tools/asset_cooker.cpp)
+target_compile_features(asset_cooker PRIVATE cxx_std_23)
+target_include_directories(asset_cooker SYSTEM PRIVATE ${tinygltf_SOURCE_DIR})
+target_link_libraries(asset_cooker PRIVATE Microsoft::DirectXTK12)
+target_compile_definitions(asset_cooker PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    target_compile_options(asset_cooker PRIVATE -Wall -Wno-c++98-compat
+        $<$<CONFIG:Debug>:-O0 -g>
+        $<$<CONFIG:Release>:-O2>
+    )
+endif()
+
 if(BUILD_TESTING)
     FetchContent_Declare(
         doctest
