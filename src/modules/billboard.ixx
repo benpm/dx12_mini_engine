@@ -21,10 +21,17 @@ export struct BillboardInstance
 export class BillboardRenderer
 {
    public:
-    static constexpr uint32_t maxInstances = 64;
+    // Sized generously so the same buffer can host lights (≤8) AND the bulk of
+    // particle billboards (≤4096) without a second draw call. ~144 KB at
+    // sizeof(BillboardInstance)≈36, trivial.
+    static constexpr uint32_t maxInstances = 4096;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
-    Microsoft::WRL::ComPtr<ID3D12Resource> spriteTexture;
+    // spriteTexture is owned through gfx now (was raw ComPtr<ID3D12Resource>).
+    // Resource still comes from DirectXTK's WICTextureLoader; adoptTexture
+    // wraps it in a gfx::TextureHandle so the lifetime + SRV slot are managed
+    // through the same pendingDestroys path as engine-allocated textures.
+    gfx::TextureHandle spriteTexture{};
     uint32_t spriteSrvIdx = 0;
     gfx::BufferHandle quadVertexBuffer{};
     gfx::BufferHandle instanceBuffer{};
@@ -36,6 +43,12 @@ export class BillboardRenderer
 
     void init(gfx::IDevice& dev, const wchar_t* texturePath);
     void updateInstances(const vec4* lightPos, const vec4* lightColor, uint32_t count);
+    // Append particle billboards after the most recent updateInstances call.
+    // Caller passes parallel arrays (positions/colors/sizes). Returns the number
+    // of particles actually appended (clamped to maxInstances).
+    uint32_t appendParticles(
+        const vec3* positions, const vec4* colors, const float* sizes, uint32_t count
+    );
     void render(gfx::ICommandList& cmdRef, const mat4& viewProj, const vec3& cameraPos);
 
     ~BillboardRenderer();

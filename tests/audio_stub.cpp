@@ -41,3 +41,16 @@ extern "C" void engine_hud_filled_rect(void*, float, float, float, float, unsign
 extern "C" void engine_hud_outline_rect(void*, float, float, float, float, unsigned int)
 {
 }
+
+extern "C" void engine_particles_emit(void*, float, float, float, int, unsigned int, float)
+{
+}
+
+extern "C" void engine_particles_clear(void*)
+{
+}
+
+extern "C" int engine_particles_alive_count(void*)
+{
+    return 0;
+}

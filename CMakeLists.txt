@@ -330,6 +330,7 @@ add_library(engine_lib STATIC
     src/save_game.cpp
     src/jobs.cpp
     src/hud.cpp
+    src/particles.cpp
     src/gfx/d3d12_backend.cpp
     src/gfx/d3d12_command.cpp
     src/gfx/d3d12_swapchain.cpp
@@ -369,6 +370,7 @@ target_sources(engine_lib
     src/modules/save_game.ixx
     src/modules/jobs.ixx
     src/modules/hud.ixx
+    src/modules/particles.ixx
     src/modules/application.ixx
     src/modules/window.ixx
     src/modules/gfx.ixx

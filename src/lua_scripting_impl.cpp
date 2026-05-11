@@ -36,6 +36,7 @@ static const char* kRegFrameCount = "engine_frame_count";
 static const char* kRegAudio = "engine_audio";
 static const char* kRegApp = "engine_app";
 static const char* kRegHud = "engine_hud";
+static const char* kRegParticles = "engine_particles";
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -827,6 +828,38 @@ static int l_hud_rect(lua_State* L)
     return 0;
 }
 
+static void* getParticles(lua_State* L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegParticles);
+    void* p = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return p;
+}
+
+static int l_spawn_particles(lua_State* L)
+{
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    int count = static_cast<int>(luaL_checkinteger(L, 4));
+    unsigned int color = static_cast<unsigned int>(luaL_optinteger(L, 5, 0xFF22AAFFu));
+    float life = static_cast<float>(luaL_optnumber(L, 6, 1.5));
+    engine_particles_emit(getParticles(L), x, y, z, count, color, life);
+    return 0;
+}
+
+static int l_clear_particles(lua_State* L)
+{
+    engine_particles_clear(getParticles(L));
+    return 0;
+}
+
+static int l_particle_count(lua_State* L)
+{
+    lua_pushinteger(L, engine_particles_alive_count(getParticles(L)));
+    return 1;
+}
+
 // ---------------------------------------------------------------------------
 // Registration table
 // ---------------------------------------------------------------------------
@@ -889,6 +922,10 @@ static const luaL_Reg engineFuncs[] = {
     { "hud_clear", l_hud_clear },
     { "hud_text", l_hud_text },
     { "hud_rect", l_hud_rect },
+    // Particles
+    { "spawn_particles", l_spawn_particles },
+    { "clear_particles", l_clear_particles },
+    { "particle_count", l_particle_count },
     { nullptr, nullptr }
 };
 
@@ -954,6 +991,12 @@ void luaScripting_setHud(lua_State* L, void* hud)
 {
     lua_pushlightuserdata(L, hud);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegHud);
+}
+
+void luaScripting_setParticles(lua_State* L, void* particles)
+{
+    lua_pushlightuserdata(L, particles);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegParticles);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

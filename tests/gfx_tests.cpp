@@ -336,6 +336,7 @@ class MockDevice final : public IDevice
     uint64_t samplerGpuDescriptorHandle(uint32_t) const override { return 0; }
     uint32_t createTypedSrv(TextureHandle, Format) override { return 0; }
     uint32_t createExternalSrv(void*, Format, uint32_t, bool) override { return 0; }
+    TextureHandle adoptTexture(void*, Format, uint32_t, bool) override { return {}; }
     void* srvHeapNative() const override { return nullptr; }
     void* samplerHeapNative() const override { return nullptr; }
     uint64_t rtvHandle(TextureHandle, uint32_t) const override { return 0; }

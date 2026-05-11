@@ -265,6 +265,19 @@ namespace gfx
             bool isCubemap = false
         ) = 0;
 
+        // Adopt an externally-allocated D3D12 resource into gfx ownership. The
+        // resulting TextureHandle behaves like one returned by createTexture():
+        // bindlessSrvIndex(h) works, destroy(h) frees the resource via the gfx
+        // fence-tracked teardown path. Use this when a third-party loader
+        // (WIC, DirectXTK) returns a ComPtr<ID3D12Resource> that the engine
+        // wants to own through the abstraction rather than holding raw.
+        virtual TextureHandle adoptTexture(
+            void* nativeResource,
+            Format format,
+            uint32_t mipLevels = 1,
+            bool isCubemap = false
+        ) = 0;
+
         // Returns the underlying ID3D12DescriptorHeap* for the bindless SRV heap.
         // Needed to call SetDescriptorHeaps with the gfx-owned shader-visible heap.
         virtual void* srvHeapNative() const = 0;

@@ -596,6 +596,12 @@ namespace gfxd3d12
             uint32_t mipLevels = 1,
             bool isCubemap = false
         ) override;
+        gfx::TextureHandle adoptTexture(
+            void* nativeResource,
+            gfx::Format format,
+            uint32_t mipLevels = 1,
+            bool isCubemap = false
+        ) override;
         void* srvHeapNative() const override { return resourceHeap.native(); }
         void* samplerHeapNative() const override { return samplerHeap_.native(); }
         uint64_t rtvHandle(gfx::TextureHandle h, uint32_t arraySlice = 0) const override;

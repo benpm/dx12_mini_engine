@@ -37,6 +37,9 @@ export class LuaScripting
     // Register the Hud instance for engine.hud_* bindings. nullptr disables.
     void setHud(void* hud);
 
+    // Register the ParticleSystem for engine.spawn_particles bindings.
+    void setParticles(void* particles);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

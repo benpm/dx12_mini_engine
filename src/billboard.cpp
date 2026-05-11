@@ -39,6 +39,9 @@ BillboardRenderer::~BillboardRenderer()
         if (instanceBuffer.isValid()) {
             devForDestroy->destroy(instanceBuffer);
         }
+        if (spriteTexture.isValid()) {
+            devForDestroy->destroy(spriteTexture);
+        }
     }
 }
 
@@ -92,19 +95,23 @@ void BillboardRenderer::init(gfx::IDevice& dev, const wchar_t* texturePath)
     auto* queue = static_cast<ID3D12CommandQueue*>(dev.graphicsQueue()->nativeHandle());
     DirectX::ResourceUploadBatch upload(device);
     upload.Begin(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    ComPtr<ID3D12Resource> wicResource;
     chkDX(
         DirectX::CreateWICTextureFromFileEx(
             device, upload, texturePath, 0, D3D12_RESOURCE_FLAG_NONE,
-            DirectX::WIC_LOADER_FORCE_RGBA32 | DirectX::WIC_LOADER_FORCE_SRGB, &spriteTexture
+            DirectX::WIC_LOADER_FORCE_RGBA32 | DirectX::WIC_LOADER_FORCE_SRGB, &wicResource
         )
     );
     auto uploadFuture = upload.End(queue);
     uploadFuture.wait();
 
-    spriteSrvIdx = dev.createExternalSrv(
-        spriteTexture.Get(), gfx::Format::RGBA8UnormSrgb,
-        static_cast<uint32_t>(spriteTexture->GetDesc().MipLevels)
+    // Hand the WIC-allocated resource over to gfx so its lifetime is managed
+    // by the same path as engine-created textures (pendingDestroys, fence-tracked).
+    spriteTexture = dev.adoptTexture(
+        wicResource.Get(), gfx::Format::RGBA8UnormSrgb,
+        static_cast<uint32_t>(wicResource->GetDesc().MipLevels)
     );
+    spriteSrvIdx = dev.bindlessSrvIndex(spriteTexture);
 
     const std::array<QuadVertex, 6> quadVerts = {
         QuadVertex{ { -1.0f, -1.0f }, { 0.0f, 1.0f } },
@@ -157,6 +164,22 @@ void BillboardRenderer::updateInstances(
         mappedInstances[i].color = { lightColor[i].x, lightColor[i].y, lightColor[i].z, 1.0f };
         mappedInstances[i].size = spriteSize;
     }
+}
+
+uint32_t BillboardRenderer::appendParticles(
+    const vec3* positions, const vec4* colors, const float* sizes, uint32_t count
+)
+{
+    uint32_t room = maxInstances > instanceCount ? maxInstances - instanceCount : 0;
+    uint32_t n = std::min(count, room);
+    for (uint32_t i = 0; i < n; ++i) {
+        auto& slot = mappedInstances[instanceCount + i];
+        slot.position = positions[i];
+        slot.color = colors[i];
+        slot.size = sizes[i];
+    }
+    instanceCount += n;
+    return n;
 }
 
 void BillboardRenderer::render(

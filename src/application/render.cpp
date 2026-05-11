@@ -88,6 +88,22 @@ void Application::render()
         animLightPos, animLightColor, static_cast<uint32_t>(PerFrameCB::maxLights)
     );
 
+    // Append particle billboards. The CPU sim runs in update(); here we just
+    // sample the latest positions/colors/sizes and push into the renderer's
+    // remaining instance slots.
+    if (particles.aliveCount() > 0) {
+        thread_local std::vector<vec3> particlePos;
+        thread_local std::vector<vec4> particleCol;
+        thread_local std::vector<float> particleSz;
+        uint32_t cap = particles.aliveCount();
+        particlePos.resize(cap);
+        particleCol.resize(cap);
+        particleSz.resize(cap);
+        uint32_t n =
+            particles.snapshot(particlePos.data(), particleCol.data(), particleSz.data(), cap);
+        billboards.appendParticles(particlePos.data(), particleCol.data(), particleSz.data(), n);
+    }
+
     // Directional light shadow map viewProj
     mat4 lightViewProj{};
     vec4 dirLightDirVec{};  // toward light (negated from UI direction)

@@ -36,6 +36,7 @@ extern void luaScripting_setScenePointers(
 extern void luaScripting_setAudioSystem(lua_State* L, void* audioSystem);
 extern void luaScripting_setApplication(lua_State* L, void* app);
 extern void luaScripting_setHud(lua_State* L, void* hud);
+extern void luaScripting_setParticles(lua_State* L, void* particles);
 extern void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount);
 extern void luaScripting_setSelectedEntity(lua_State* L, uint64_t id);
 extern bool luaScripting_loadFile(lua_State* L, const char* path, int* outRef);
@@ -107,6 +108,13 @@ void LuaScripting::setHud(void* hud)
 {
     if (L) {
         luaScripting_setHud(L, hud);
+    }
+}
+
+void LuaScripting::setParticles(void* particles)
+{
+    if (L) {
+        luaScripting_setParticles(L, particles);
     }
 }
 

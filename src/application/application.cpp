@@ -210,6 +210,7 @@ Application::Application()
     luaScripting.setAudioSystem(&audioSystem);
     luaScripting.setApplication(this);
     luaScripting.setHud(&hud);
+    luaScripting.setParticles(&particles);
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(
@@ -535,6 +536,10 @@ void Application::update()
     // Physics step before ECS so any future RigidBody→Transform sync happens
     // before transform-dependent systems (animation, motion vectors) read it.
     physicsWorld.step(dt);
+
+    // Particle simulation. Output is consumed by the billboard renderer
+    // each frame via a snapshot, see render.cpp for the upload path.
+    particles.update(dt);
 
     // ECS progress (runs systems: store prev transforms, animations)
     scene.progress(dt);
