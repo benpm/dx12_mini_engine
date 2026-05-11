@@ -1,0 +1,12 @@
+{
+  "ENGINE_NAME": "DX12 Mini Engine",
+  "MENU_FILE": "File",
+  "MENU_EDIT": "Edit",
+  "MENU_VIEW": "View",
+  "MENU_RENDER": "Render",
+  "MENU_WORLD": "World",
+  "MENU_TOOLS": "Tools",
+  "CMD_LOAD_SCENE": "Load Scene",
+  "CMD_SAVE_SCENE": "Save Scene",
+  "CMD_QUIT": "Quit"
+}

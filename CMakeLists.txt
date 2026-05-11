@@ -310,6 +310,7 @@ add_library(engine_lib STATIC
     src/lua_scripting_impl.cpp
     src/audio.cpp
     src/physics.cpp
+    src/localisation.cpp
     src/gfx/d3d12_backend.cpp
     src/gfx/d3d12_command.cpp
     src/gfx/d3d12_swapchain.cpp
@@ -345,6 +346,7 @@ target_sources(engine_lib
     src/modules/lua_scripting.ixx
     src/modules/audio.ixx
     src/modules/physics.ixx
+    src/modules/localisation.ixx
     src/modules/application.ixx
     src/modules/window.ixx
     src/modules/gfx.ixx
@@ -494,6 +496,7 @@ target_link_libraries(engine_lib PUBLIC
     kernel32.lib user32.lib
     comdlg32.lib advapi32.lib shell32.lib
     ole32.lib oleaut32.lib
+    dbghelp.lib
     runtimeobject.lib
     Microsoft::DirectXTK12
     spdlog::spdlog

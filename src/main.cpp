@@ -7,6 +7,10 @@
 #include <shellapi.h>
 #include <spdlog/spdlog.h>
 #include <Windows.h>
+#include <dbghelp.h>
+#include <chrono>
+#include <ctime>
+#include <cstdio>
 #include "scene_data.h"
 
 import application;
@@ -19,12 +23,46 @@ import window;
     #define SCENES_DIR "resources/scenes"
 #endif
 
+static void writeMiniDump(EXCEPTION_POINTERS* ep)
+{
+    // Write a minidump next to the executable with timestamped filename so
+    // multiple crashes don't overwrite each other. WithDataSegs + WithThreadInfo
+    // give a useful stack trace + global state at modest size.
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm tm{};
+    localtime_s(&tm, &now);
+    char path[MAX_PATH];
+    std::snprintf(
+        path, sizeof(path), "crash_%04d%02d%02d_%02d%02d%02d.dmp", tm.tm_year + 1900, tm.tm_mon + 1,
+        tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec
+    );
+
+    HANDLE file = CreateFileA(
+        path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr
+    );
+    if (file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION info{};
+    info.ThreadId = GetCurrentThreadId();
+    info.ExceptionPointers = ep;
+    info.ClientPointers = FALSE;
+    MINIDUMP_TYPE type = static_cast<MINIDUMP_TYPE>(
+        MiniDumpWithDataSegs | MiniDumpWithThreadInfo | MiniDumpWithProcessThreadData |
+        MiniDumpWithHandleData
+    );
+    MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file, type, &info, nullptr, nullptr);
+    CloseHandle(file);
+    spdlog::error("Wrote minidump to {}", path);
+}
+
 static LONG WINAPI sehFilter(EXCEPTION_POINTERS* ep)
 {
     spdlog::error(
         "Unhandled SEH exception 0x{:08x} at 0x{:016x}", ep->ExceptionRecord->ExceptionCode,
         reinterpret_cast<uintptr_t>(ep->ExceptionRecord->ExceptionAddress)
     );
+    writeMiniDump(ep);
     spdlog::default_logger()->flush();
     return EXCEPTION_EXECUTE_HANDLER;
 }
