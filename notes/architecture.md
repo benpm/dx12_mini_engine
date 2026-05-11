@@ -36,6 +36,15 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `audio.ixx` | `AudioSystem` class — miniaudio wrapper, `engine.play_sound` Lua binding, listener pose API. Graceful no-op when no audio device available. |
 | `physics.ixx` | `PhysicsWorld` class — Jolt 5.2 wrapper, default MOVING/NON_MOVING layers, temp allocator + thread-pool job system. World steps in `Application::update()` ahead of `scene.progress(dt)`. RigidBody/Collider components and Lua bindings are follow-up work. |
 | `localisation.ixx` | `Localisation` class — flat key→string table loaded from `resources/i18n/<locale>.json`. `tr(key)` returns translation or key itself when missing. |
+| `save_game.ixx` | `SaveGame` namespace — resolves slot names to `%LOCALAPPDATA%\dx12_mini_engine\saves\<name>.json` paths. Pairs with `engine.save_scene/load_scene/save_game/load_game` Lua bindings. |
+| `jobs.ixx` | `JobSystem` class — google/marl scheduler bound on main thread; `schedule(fn)` enqueues fire-and-forget work onto a worker pool sized to `hardware_concurrency - 1`. |
+| `hud.ixx` | `Hud` class — retained list of text/rect elements rendered via ImGui's foreground draw list. Lua bindings: `engine.hud_clear`, `engine.hud_text(x, y, text, color, scale)`, `engine.hud_rect(x, y, w, h, color, filled)`. |
+
+## Tooling
+
+| Target | Purpose |
+|----|----|
+| `asset_cooker` | CLI tool (`tools/asset_cooker.cpp`) that walks an input directory and emits a JSON manifest of every `.glb`: per-asset bounding box, mesh primitive counts, materials, and per-material texture-slot flags. First-pass cooker — binary VB/IB + KTX2/BC7 transcoding is staged for the next iteration. |
 
 ## Build layout
 
