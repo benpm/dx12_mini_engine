@@ -200,6 +200,13 @@ export class Scene
 
     void createMegaBuffers(gfx::IDevice& dev);
     void createDrawDataBuffers(gfx::IDevice& dev);
+
+    // Evaluate the skinning matrices for an Animator at its current time. Fills
+    // outMatrices with one mat4 per joint of the referenced Skeleton. Returns
+    // the joint count (0 if the animator references invalid indices). Matrices
+    // are in skinning form (worldJoint * inverseBindMatrix) so the future
+    // skinned vertex shader can multiply directly.
+    uint32_t computeSkinningMatrices(const Animator& a, std::vector<mat4>& outMatrices) const;
     MeshRef appendToMegaBuffers(
         gfx::IDevice& dev,
         CommandQueue& cmdQueue,

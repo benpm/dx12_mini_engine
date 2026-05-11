@@ -927,6 +927,153 @@ void Scene::buildBlasForMesh(gfx::IDevice& dev, CommandQueue& cmdQueue, MeshRef&
 }
 
 // ---------------------------------------------------------------------------
+// Scene::computeSkinningMatrices — sample animation channels, propagate parent
+// transforms, multiply by inverse bind. CPU-side groundwork; the future GPU
+// skinning shader uploads this matrix array to a structured buffer.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Binary search for the keyframe interval covering `t`. Returns the lower
+    // index and an alpha in [0, 1] for interpolation. Clamps at the ends.
+    void findKeyframe(
+        const std::vector<float>& times, float t, size_t& outLo, float& outAlpha
+    )
+    {
+        if (times.empty()) {
+            outLo = 0;
+            outAlpha = 0.0f;
+            return;
+        }
+        if (t <= times.front()) {
+            outLo = 0;
+            outAlpha = 0.0f;
+            return;
+        }
+        if (t >= times.back()) {
+            outLo = times.size() - 1;
+            outAlpha = 0.0f;  // hold last value
+            return;
+        }
+        // upper_bound returns first > t; lower index is one back.
+        auto it = std::upper_bound(times.begin(), times.end(), t);
+        size_t hi = static_cast<size_t>(it - times.begin());
+        size_t lo = hi - 1;
+        float span = times[hi] - times[lo];
+        outLo = lo;
+        outAlpha = span > 0.0f ? (t - times[lo]) / span : 0.0f;
+    }
+
+    mat4 composeLocal(const SkeletonJoint& j)
+    {
+        // Compose T * R * S using DirectXMath. quaternion is (x, y, z, w).
+        XMVECTOR q = XMVectorSet(
+            j.localRotation.x, j.localRotation.y, j.localRotation.z, j.localRotation.w
+        );
+        XMMATRIX m = XMMatrixScaling(j.localScale.x, j.localScale.y, j.localScale.z) *
+                     XMMatrixRotationQuaternion(q) *
+                     XMMatrixTranslation(j.localTranslation.x, j.localTranslation.y,
+                                         j.localTranslation.z);
+        mat4 out;
+        XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&out), m);
+        return out;
+    }
+}  // namespace
+
+uint32_t Scene::computeSkinningMatrices(
+    const Animator& a, std::vector<mat4>& outMatrices
+) const
+{
+    if (a.skeletonIdx < 0 || a.skeletonIdx >= static_cast<int>(skeletons.size())) {
+        return 0;
+    }
+    const auto& skl = skeletons[a.skeletonIdx];
+    const uint32_t jointCount = static_cast<uint32_t>(skl.joints.size());
+    if (jointCount == 0) {
+        return 0;
+    }
+    outMatrices.assign(jointCount, mat4{});
+
+    // 1) Start from the skeleton's bind-pose TRS (already on each joint).
+    //    For each animation channel that targets a joint, overwrite TRS by
+    //    interpolating between the surrounding keyframes.
+    std::vector<SkeletonJoint> jointsLocal = skl.joints;
+    if (a.currentClip >= 0 && a.currentClip < static_cast<int>(animations.size())) {
+        const auto& clip = animations[a.currentClip];
+        for (const auto& ch : clip.channels) {
+            if (ch.jointIndex < 0 || ch.jointIndex >= static_cast<int>(jointCount) ||
+                ch.timestamps.empty()) {
+                continue;
+            }
+            size_t lo = 0;
+            float alpha = 0.0f;
+            findKeyframe(ch.timestamps, a.time, lo, alpha);
+            const int stride = (ch.path == AnimationChannel::Path::Rotation) ? 4 : 3;
+            const size_t hi = std::min(lo + 1, ch.timestamps.size() - 1);
+            const float* va = &ch.values[lo * stride];
+            const float* vb = &ch.values[hi * stride];
+            switch (ch.path) {
+                case AnimationChannel::Path::Translation: {
+                    jointsLocal[ch.jointIndex].localTranslation = {
+                        va[0] * (1.0f - alpha) + vb[0] * alpha,
+                        va[1] * (1.0f - alpha) + vb[1] * alpha,
+                        va[2] * (1.0f - alpha) + vb[2] * alpha,
+                    };
+                    break;
+                }
+                case AnimationChannel::Path::Scale: {
+                    jointsLocal[ch.jointIndex].localScale = {
+                        va[0] * (1.0f - alpha) + vb[0] * alpha,
+                        va[1] * (1.0f - alpha) + vb[1] * alpha,
+                        va[2] * (1.0f - alpha) + vb[2] * alpha,
+                    };
+                    break;
+                }
+                case AnimationChannel::Path::Rotation: {
+                    XMVECTOR qa = XMVectorSet(va[0], va[1], va[2], va[3]);
+                    XMVECTOR qb = XMVectorSet(vb[0], vb[1], vb[2], vb[3]);
+                    XMVECTOR qs = XMQuaternionSlerp(qa, qb, alpha);
+                    XMFLOAT4 result;
+                    XMStoreFloat4(&result, qs);
+                    jointsLocal[ch.jointIndex].localRotation = { result.x, result.y, result.z,
+                                                                 result.w };
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2) Compose local matrices, then walk parents top-down. The glTF skin
+    //    builder above guarantees that parent indices are strictly less than
+    //    the child index (skin joints are in hierarchy order); if a future
+    //    importer breaks that invariant we'll need an explicit topological sort.
+    std::vector<mat4> world(jointCount);
+    for (uint32_t i = 0; i < jointCount; ++i) {
+        mat4 local = composeLocal(jointsLocal[i]);
+        int parent = jointsLocal[i].parent;
+        if (parent < 0 || parent >= static_cast<int>(i)) {
+            world[i] = local;
+        } else {
+            XMMATRIX p = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&world[parent]));
+            XMMATRIX l = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&local));
+            XMMATRIX w = l * p;  // row-vector math: child applies first
+            XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&world[i]), w);
+        }
+    }
+
+    // 3) Final skinning matrix = world * inverseBind. Vertex shader multiplies
+    //    (sum over influences) skinningMatrix[joint] * vertexLocalPos.
+    for (uint32_t i = 0; i < jointCount; ++i) {
+        XMMATRIX w = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&world[i]));
+        XMMATRIX ib =
+            XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&skl.joints[i].inverseBindMatrix));
+        XMMATRIX sk = ib * w;
+        XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&outMatrices[i]), sk);
+    }
+    return jointCount;
+}
+
+// ---------------------------------------------------------------------------
 // Scene::setupSystems / progress
 // ---------------------------------------------------------------------------
 
