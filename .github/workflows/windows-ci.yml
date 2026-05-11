@@ -43,10 +43,11 @@ jobs:
                   $version = $env:LLVM_VERSION
                   $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/LLVM-$version-win64.exe"
                   $installer = Join-Path $env:RUNNER_TEMP "LLVM-$version-win64.exe"
-                  $installDir = Join-Path $env:RUNNER_TEMP 'llvm'
+                  # Install to C:\Program Files\LLVM (default) so CMakePresets.json's
+                  # hardcoded compiler paths resolve. /D=<unquoted path> must be last.
+                  $installDir = 'C:\Program Files\LLVM'
                   curl.exe -L --fail -o $installer $url
                   if ($LASTEXITCODE -ne 0) { throw "Failed to download $url" }
-                  # NSIS silent install: /S first, /D=<unquoted path> last.
                   $proc = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
                   if ($proc.ExitCode -ne 0) { throw "LLVM installer exited with code $($proc.ExitCode)" }
                   $binDir = Join-Path $installDir 'bin'
@@ -54,6 +55,7 @@ jobs:
                       throw "clang++.exe not found at $binDir"
                   }
                   Add-Content -Path $env:GITHUB_PATH -Value $binDir
+                  & (Join-Path $binDir 'clang++.exe') --version
 
             - name: Bootstrap vcpkg
               shell: pwsh
@@ -131,10 +133,11 @@ jobs:
                   $version = $env:LLVM_VERSION
                   $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/LLVM-$version-win64.exe"
                   $installer = Join-Path $env:RUNNER_TEMP "LLVM-$version-win64.exe"
-                  $installDir = Join-Path $env:RUNNER_TEMP 'llvm'
+                  # Install to C:\Program Files\LLVM (default) so CMakePresets.json's
+                  # hardcoded compiler paths resolve. /D=<unquoted path> must be last.
+                  $installDir = 'C:\Program Files\LLVM'
                   curl.exe -L --fail -o $installer $url
                   if ($LASTEXITCODE -ne 0) { throw "Failed to download $url" }
-                  # NSIS silent install: /S first, /D=<unquoted path> last.
                   $proc = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
                   if ($proc.ExitCode -ne 0) { throw "LLVM installer exited with code $($proc.ExitCode)" }
                   $binDir = Join-Path $installDir 'bin'
@@ -142,6 +145,7 @@ jobs:
                       throw "clang++.exe not found at $binDir"
                   }
                   Add-Content -Path $env:GITHUB_PATH -Value $binDir
+                  & (Join-Path $binDir 'clang++.exe') --version
 
             - name: Bootstrap vcpkg
               shell: pwsh
