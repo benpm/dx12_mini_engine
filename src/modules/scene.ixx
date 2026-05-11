@@ -11,6 +11,7 @@ module;
 #include <string>
 #include <vector>
 #include "material_types.h"
+#include "skeleton_types.h"
 
 export module scene;
 
@@ -21,6 +22,10 @@ export import gfx;
 
 export using ::Material;
 export using ::MaterialPreset;
+export using ::Skeleton;
+export using ::SkeletonJoint;
+export using ::AnimationClip;
+export using ::AnimationChannel;
 
 using Microsoft::WRL::ComPtr;
 
@@ -136,6 +141,12 @@ export class Scene
     // adoptTexture); we hold the TextureHandle so clearScene() can destroy
     // them on demand. Bindless SRV index for each is stored on the Material.
     std::vector<gfx::TextureHandle> ownedTextureHandles;
+
+    // Skeletons + animation clips loaded from glTF. Indices into these vectors
+    // are referenced by Animator components on entities; clearScene wipes both.
+    // GPU skinning consumer is staged for follow-up work.
+    std::vector<Skeleton> skeletons;
+    std::vector<AnimationClip> animations;
 
     // Cached ECS queries
     flecs::query<const Transform, const MeshRef> drawQuery{

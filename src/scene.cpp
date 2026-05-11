@@ -706,8 +706,137 @@ bool Scene::loadGltf(
         }
     }
 
+    // --- Skeletons (glTF skins) ---
+    int skeletonBaseIdx = static_cast<int>(skeletons.size());
+    for (const auto& gSkin : model.skins) {
+        Skeleton sk;
+        sk.name = gSkin.name;
+        sk.joints.reserve(gSkin.joints.size());
+        // Per-joint inverse bind matrices live in a single accessor; mat4 stride.
+        const float* ibmData = nullptr;
+        size_t ibmCount = 0;
+        if (gSkin.inverseBindMatrices >= 0) {
+            const auto& acc = model.accessors[gSkin.inverseBindMatrices];
+            const auto& bv = model.bufferViews[acc.bufferView];
+            ibmData = reinterpret_cast<const float*>(
+                &model.buffers[bv.buffer].data[acc.byteOffset + bv.byteOffset]
+            );
+            ibmCount = acc.count;
+        }
+        // glTF stores joints as node indices. Build a node-index→local-index
+        // map first so parent lookup can be local-space.
+        std::vector<int> nodeToLocal(model.nodes.size(), -1);
+        for (size_t j = 0; j < gSkin.joints.size(); ++j) {
+            nodeToLocal[gSkin.joints[j]] = static_cast<int>(j);
+        }
+        for (size_t j = 0; j < gSkin.joints.size(); ++j) {
+            const auto& gNode = model.nodes[gSkin.joints[j]];
+            SkeletonJoint joint;
+            joint.name = gNode.name;
+            // Find parent: any glTF node that lists this joint in its children
+            // and is itself in the skin's joint list. O(N^2) — fine for now.
+            for (size_t p = 0; p < model.nodes.size(); ++p) {
+                if (nodeToLocal[p] < 0) {
+                    continue;
+                }
+                for (int c : model.nodes[p].children) {
+                    if (c == gSkin.joints[j]) {
+                        joint.parent = nodeToLocal[p];
+                        break;
+                    }
+                }
+                if (joint.parent >= 0) {
+                    break;
+                }
+            }
+            if (gNode.translation.size() == 3) {
+                joint.localTranslation = { (float)gNode.translation[0], (float)gNode.translation[1],
+                                           (float)gNode.translation[2] };
+            }
+            if (gNode.rotation.size() == 4) {
+                joint.localRotation = { (float)gNode.rotation[0], (float)gNode.rotation[1],
+                                        (float)gNode.rotation[2], (float)gNode.rotation[3] };
+            }
+            if (gNode.scale.size() == 3) {
+                joint.localScale = { (float)gNode.scale[0], (float)gNode.scale[1],
+                                     (float)gNode.scale[2] };
+            }
+            if (ibmData && j < ibmCount) {
+                std::memcpy(&joint.inverseBindMatrix, ibmData + j * 16, sizeof(float) * 16);
+            }
+            sk.joints.push_back(std::move(joint));
+        }
+        skeletons.push_back(std::move(sk));
+    }
+
+    // --- Animation clips ---
+    for (const auto& gAnim : model.animations) {
+        AnimationClip clip;
+        clip.name = gAnim.name;
+        for (const auto& gChan : gAnim.channels) {
+            if (gChan.target_node < 0 || gChan.sampler < 0) {
+                continue;
+            }
+            // Map target node → joint index inside the first matching skeleton.
+            int jointIdx = -1;
+            int sklIdx = -1;
+            for (size_t si = 0; si < model.skins.size(); ++si) {
+                const auto& gSkin = model.skins[si];
+                for (size_t j = 0; j < gSkin.joints.size(); ++j) {
+                    if (gSkin.joints[j] == gChan.target_node) {
+                        jointIdx = static_cast<int>(j);
+                        sklIdx = skeletonBaseIdx + static_cast<int>(si);
+                        break;
+                    }
+                }
+                if (jointIdx >= 0) {
+                    break;
+                }
+            }
+            if (jointIdx < 0) {
+                continue;  // Channel targets a non-skin node; skipped for now.
+            }
+
+            AnimationChannel ch;
+            ch.jointIndex = jointIdx;
+            if (gChan.target_path == "translation") {
+                ch.path = AnimationChannel::Path::Translation;
+            } else if (gChan.target_path == "rotation") {
+                ch.path = AnimationChannel::Path::Rotation;
+            } else if (gChan.target_path == "scale") {
+                ch.path = AnimationChannel::Path::Scale;
+            } else {
+                continue;  // weights (morph targets) not yet supported
+            }
+
+            const auto& gSampler = gAnim.samplers[gChan.sampler];
+            // Input (timestamps).
+            const auto& inAcc = model.accessors[gSampler.input];
+            const auto& inBv = model.bufferViews[inAcc.bufferView];
+            const float* inData = reinterpret_cast<const float*>(
+                &model.buffers[inBv.buffer].data[inAcc.byteOffset + inBv.byteOffset]
+            );
+            ch.timestamps.assign(inData, inData + inAcc.count);
+            // Output (values).
+            const auto& outAcc = model.accessors[gSampler.output];
+            const auto& outBv = model.bufferViews[outAcc.bufferView];
+            const float* outData = reinterpret_cast<const float*>(
+                &model.buffers[outBv.buffer].data[outAcc.byteOffset + outBv.byteOffset]
+            );
+            int stride = (ch.path == AnimationChannel::Path::Rotation) ? 4 : 3;
+            ch.values.assign(outData, outData + outAcc.count * stride);
+            if (!ch.timestamps.empty()) {
+                clip.duration = std::max(clip.duration, ch.timestamps.back());
+            }
+            clip.channels.push_back(std::move(ch));
+            (void)sklIdx;  // first-skin assumption — multi-skin clips defer
+        }
+        animations.push_back(std::move(clip));
+    }
+
     spdlog::info(
-        "Loaded GLB: {} entity(ies), {} material(s)", ecsWorld.count<MeshRef>(), materials.size()
+        "Loaded GLB: {} entity(ies), {} material(s), {} skin(s), {} animation(s)",
+        ecsWorld.count<MeshRef>(), materials.size(), model.skins.size(), model.animations.size()
     );
     return true;
 }
@@ -858,6 +987,26 @@ void Scene::setupSystems()
                 float s = ia.scales[i];
                 vec3 p = ia.positions[i];
                 group.transforms[i] = scale(s, s, s) * rot * translate(p.x, p.y, p.z);
+            }
+        });
+
+    // Skeletal animator — advances clip time; joint matrix evaluation +
+    // GPU upload land in the next pass.
+    ecsWorld.system<Animator>("AdvanceAnimators")
+        .kind(flecs::OnUpdate)
+        .each([this](flecs::iter& it, size_t, Animator& a) {
+            if (!a.playing || a.currentClip < 0 ||
+                a.currentClip >= static_cast<int>(animations.size())) {
+                return;
+            }
+            float dur = animations[a.currentClip].duration;
+            if (dur <= 0.0f) {
+                return;
+            }
+            a.time += it.delta_time() * a.playbackSpeed;
+            // Loop the clip.
+            while (a.time >= dur) {
+                a.time -= dur;
             }
         });
 }

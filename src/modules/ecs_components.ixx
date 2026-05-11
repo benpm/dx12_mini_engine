@@ -9,6 +9,7 @@ export import math;
 export using ::Transform;
 export using ::PrevTransform;
 export using ::Animated;
+export using ::Animator;
 export using ::Pickable;
 export using ::LodMesh;
 export using ::BoundingVolume;

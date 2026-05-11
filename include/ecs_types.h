@@ -35,6 +35,18 @@ struct Pickable
 {
 };
 
+// Skeletal animator. References a Skeleton + AnimationClip on the Scene by
+// index and advances `time` each frame. GPU skinning consumer is staged for
+// a follow-up; this component lets us parse + advance clips end-to-end today.
+struct Animator
+{
+    int skeletonIdx = -1;   // index into Scene::skeletons
+    int currentClip = -1;   // index into Scene::animations
+    float time = 0.0f;      // seconds within the clip, wraps at duration
+    float playbackSpeed = 1.0f;
+    bool playing = true;
+};
+
 // Bounding volume for culling
 struct BoundingVolume
 {
