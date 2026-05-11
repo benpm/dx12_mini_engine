@@ -39,6 +39,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `save_game.ixx` | `SaveGame` namespace — resolves slot names to `%LOCALAPPDATA%\dx12_mini_engine\saves\<name>.json` paths. Pairs with `engine.save_scene/load_scene/save_game/load_game` Lua bindings. |
 | `jobs.ixx` | `JobSystem` class — google/marl scheduler bound on main thread; `schedule(fn)` enqueues fire-and-forget work onto a worker pool sized to `hardware_concurrency - 1`. |
 | `hud.ixx` | `Hud` class — retained list of text/rect elements rendered via ImGui's foreground draw list. Lua bindings: `engine.hud_clear`, `engine.hud_text(x, y, text, color, scale)`, `engine.hud_rect(x, y, w, h, color, filled)`. |
+| `particles.ixx` | `ParticleSystem` — CPU-driven particle sim (gravity, life-fade); snapshot pushed into `BillboardRenderer`'s instance buffer each frame. Lua bindings: `engine.spawn_particles`, `engine.clear_particles`, `engine.particle_count`. GPU compute particles future work. |
 
 ## Tooling
 
@@ -110,11 +111,11 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 **`gfx::` Bindless model**: single global SRV/UAV heap (default 65k descriptors) and sampler heap. Bindless root signature: `[32 root constants b0][CBV b1][CBV b2][SRV/UAV descriptor table][sampler descriptor table]`. Enabled by default via `USE_BINDLESS=ON`.
 
 **What still leaks D3D12 in subsystems (private fields, blocked on deeper rewrites):**
-- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only) and `spriteTexture` (WIC-loaded).
-- `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` and `ReStirRenderer::uavHeap`.
-- `ComPtr<ID3D12RootSignature>` and `ComPtr<ID3D12PipelineState>` in Bloom, SSAO, Billboard, Shadow, Outline, ObjectPicker, ReStir (all private). Application keeps `gridRootSig` (grid-specific layout).
+- `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). `spriteTexture` and Scene's glTF PBR textures have migrated to `gfx::adoptTexture` + `TextureHandle`.
+- `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` (needed by `imgui_impl_dx12`) and `ReStirRenderer::uavHeap`.
+- `ComPtr<ID3D12PipelineState>` remaining in Billboard (1 PSO — needs `VertexAttribute` API extension for per-instance streams), SSAO (2 PSOs), Shadow (1), Outline (1), ObjectPicker (1), ReStir (4 compute PSOs). Bloom's four PSOs have migrated to `gfx::PipelineHandle`.
+- `ComPtr<ID3D12RootSignature>` in ReStir (compute-specific layout).
 - `ID3D12CommandQueue*` in `ImGuiLayer::init` — required by `imgui_impl_dx12`.
-- `#ifdef USE_BINDLESS` guards remain in `billboard.cpp`, `bloom.cpp`, `ssao.cpp` (own root sigs) and HLSL shaders (compile-time define).
 
 **ECS Update systems**: Native flecs systems in `Scene::setupSystems()` driven by `scene.progress(dt)`:
 - `StorePrevTransforms` / `StorePrevInstanceTransforms`: motion vector data
