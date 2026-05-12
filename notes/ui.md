@@ -25,7 +25,7 @@ All menu bar menus, action buttons, and window titlebars display Material Icons 
   * **Scripts**: action bindings from `actions.json` with Execute buttons, one-off script path input + Run button.
 
 * **Metrics** (floating window): build mode (Debug/Release), FPS + frame ms, FPS graph (last 5s, collapsible), draw calls, objects, vertices, ECS entity/component counts, subsystem status (shadow/cubemap/SSAO).
-* **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle), Scripted (script path, detach), Physics (RigidBody body ID, live body pos+rotation, Detach Body button). Attach Script input, Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
+* **Entity Inspector**: shown when entity is selected. Tabbed view of Transform (editable position), MeshRef (material properties, albedo override), Animated (speed, orbit, scale), Pickable (remove toggle), Scripted (script path, detach), Physics (RigidBody body ID; live position / rotation / linear velocity / angular velocity; Jump / Stop / Teleport-to-spawn / Detach Body buttons for interactive debugging). Attach Script input, Add Animated/Pickable buttons, Delete button (red). Hover tooltip shows entity ID + material on mouseover.
 * **Title/Description overlay**: when `sceneTitle` / `sceneDescription` are set, drawn directly to foreground via `ImGui::GetForegroundDrawList()` in the bottom-right corner. Title at 1.4× font size, description at normal size, both with 1-pixel drop shadow.
 
 ## Testing

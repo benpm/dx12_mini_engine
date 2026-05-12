@@ -3,6 +3,7 @@ module;
 #include <flecs.h>
 #include <imgui.h>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -101,11 +102,37 @@ void Application::uiInspector()
                         if (rb.bodyId != 0) {
                             float px = 0, py = 0, pz = 0;
                             physicsWorld.getBodyPosition(rb.bodyId, px, py, pz);
-                            ImGui::Text("Body pos: %.2f, %.2f, %.2f", px, py, pz);
+                            ImGui::Text("Position: %.2f, %.2f, %.2f", px, py, pz);
                             float qx = 0, qy = 0, qz = 0, qw = 1;
                             physicsWorld.getBodyRotation(rb.bodyId, qx, qy, qz, qw);
-                            ImGui::Text("Body rot: %.2f, %.2f, %.2f, %.2f", qx, qy, qz, qw);
+                            ImGui::Text("Rotation: %.2f, %.2f, %.2f, %.2f", qx, qy, qz, qw);
+                            float vx = 0, vy = 0, vz = 0;
+                            physicsWorld.getLinearVelocity(rb.bodyId, vx, vy, vz);
+                            ImGui::Text(
+                                "Lin vel:  %.2f, %.2f, %.2f  (|v|=%.2f)", vx, vy, vz,
+                                std::sqrt(vx * vx + vy * vy + vz * vz)
+                            );
+                            float wx = 0, wy = 0, wz = 0;
+                            physicsWorld.getAngularVelocity(rb.bodyId, wx, wy, wz);
+                            ImGui::Text("Ang vel:  %.2f, %.2f, %.2f", wx, wy, wz);
+
+                            ImGui::Separator();
+                            if (ImGui::Button("Jump (impulse +Y)")) {
+                                physicsWorld.applyImpulse(rb.bodyId, 0.0f, 8.0f, 0.0f);
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("Stop")) {
+                                physicsWorld.setLinearVelocity(rb.bodyId, 0, 0, 0);
+                                physicsWorld.setAngularVelocity(rb.bodyId, 0, 0, 0);
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("Teleport to (0,5,0)")) {
+                                physicsWorld.setBodyPosition(rb.bodyId, 0.0f, 5.0f, 0.0f);
+                                physicsWorld.setLinearVelocity(rb.bodyId, 0, 0, 0);
+                                physicsWorld.setAngularVelocity(rb.bodyId, 0, 0, 0);
+                            }
                         }
+                        ImGui::Separator();
                         if (ImGui::Button("Detach Body")) {
                             if (rb.bodyId != 0) {
                                 physicsWorld.destroyBody(rb.bodyId);
