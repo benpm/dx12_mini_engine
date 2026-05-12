@@ -69,6 +69,13 @@ extern "C" unsigned int engine_physics_create_sphere(
     return 0;
 }
 
+extern "C" unsigned int engine_physics_create_capsule(
+    void*, float, float, float, float, float, int, float
+)
+{
+    return 0;
+}
+
 extern "C" void engine_physics_destroy_body(void*, unsigned int) {}
 
 extern "C" void engine_physics_get_body_position(

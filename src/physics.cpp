@@ -85,6 +85,15 @@ PhysicsWorld::BodyId PhysicsWorld::createSphereBody(
     );
 }
 
+PhysicsWorld::BodyId PhysicsWorld::createCapsuleBody(
+    float px, float py, float pz, float halfHeight, float radius, bool dynamic, float mass
+)
+{
+    return static_cast<IPhysicsBackend*>(state)->createCapsuleBody(
+        px, py, pz, halfHeight, radius, dynamic, mass
+    );
+}
+
 PhysicsWorld::BodyId PhysicsWorld::createConvexHullBody(
     const float* points, uint32_t count, uint32_t stride, float px, float py, float pz,
     bool dynamic, float mass, float hullTolerance
@@ -178,6 +187,16 @@ extern "C" unsigned int engine_physics_create_sphere(
     if (!p) return 0;
     return static_cast<PhysicsWorld*>(p)->createSphereBody(
         px, py, pz, radius, dynamic != 0, mass
+    );
+}
+
+extern "C" unsigned int engine_physics_create_capsule(
+    void* p, float px, float py, float pz, float halfHeight, float radius, int dynamic, float mass
+)
+{
+    if (!p) return 0;
+    return static_cast<PhysicsWorld*>(p)->createCapsuleBody(
+        px, py, pz, halfHeight, radius, dynamic != 0, mass
     );
 }
 

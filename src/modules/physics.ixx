@@ -41,6 +41,12 @@ export class PhysicsWorld
     BodyId createSphereBody(float px, float py, float pz, float radius, bool dynamic,
                             float mass = 1.0f);
 
+    // Capsule body (Y-up). Half-height is the cylinder segment between the two
+    // hemispherical caps, NOT including the caps — total height = halfHeight*2
+    // + radius*2. Pass values for a typical 1.8m-tall human as (0.6, 0.3).
+    BodyId createCapsuleBody(float px, float py, float pz, float halfHeight, float radius,
+                             bool dynamic, float mass = 1.0f);
+
     // Build a body around a convex hull from `count` 3-float positions stored
     // `stride` bytes apart. `hullTolerance` controls backend-side simplification
     // (Jolt: passed to ConvexHullShapeSettings). The caller should already have

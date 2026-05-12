@@ -32,6 +32,12 @@ class IPhysicsBackend
         float px, float py, float pz, float radius, bool dynamic, float mass
     ) = 0;
 
+    // Capsule body — radius spheres at the top + bottom of a halfHeight-tall
+    // cylinder along the +Y axis. The canonical shape for character controllers.
+    virtual BodyId createCapsuleBody(
+        float px, float py, float pz, float halfHeight, float radius, bool dynamic, float mass
+    ) = 0;
+
     // Build a body around a convex hull computed from `count` points stored
     // at `stride` bytes apart (so callers can pass `VertexPBR` directly or a
     // tight `vec3` array). `hullTolerance` is a backend hint for how aggressively

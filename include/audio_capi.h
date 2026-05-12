@@ -43,6 +43,10 @@ unsigned int engine_physics_create_box(
 unsigned int engine_physics_create_sphere(
     void* physicsPtr, float px, float py, float pz, float radius, int dynamic, float mass
 );
+unsigned int engine_physics_create_capsule(
+    void* physicsPtr, float px, float py, float pz, float halfHeight, float radius, int dynamic,
+    float mass
+);
 // Convex-hull body creation. positions is a tightly-packed vec3 stream (12B/vert).
 // The backend may further simplify; pass at most 256 points.
 unsigned int engine_physics_create_convex_hull(

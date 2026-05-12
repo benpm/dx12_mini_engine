@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
@@ -213,6 +214,16 @@ class JoltBackend final : public IPhysicsBackend
     {
         if (!ready) return 0;
         JPH::ShapeRefC shape = new JPH::SphereShape(std::max(0.001f, radius));
+        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+    }
+
+    BodyId createCapsuleBody(
+        float px, float py, float pz, float halfHeight, float radius, bool dynamic, float mass
+    ) override
+    {
+        if (!ready) return 0;
+        JPH::ShapeRefC shape =
+            new JPH::CapsuleShape(std::max(0.001f, halfHeight), std::max(0.001f, radius));
         return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 

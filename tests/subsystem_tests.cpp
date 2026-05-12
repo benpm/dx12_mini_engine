@@ -176,6 +176,29 @@ TEST_CASE("PhysicsWorld: applyImpulse sends a body upward")
     CHECK(y > 0.05f);
 }
 
+TEST_CASE("PhysicsWorld: capsule body falls onto floor and rests on its base")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+    w.createBoxBody(0, -0.5f, 0, 50.0f, 0.5f, 50.0f, /*dynamic=*/false);
+
+    // Capsule: halfHeight=0.6 cylinder + radius=0.3 caps = 1.8 m total height.
+    auto capsule = w.createCapsuleBody(
+        0.0f, 4.0f, 0.0f, /*halfHeight=*/0.6f, /*radius=*/0.3f, /*dynamic=*/true, /*mass=*/70.0f
+    );
+    REQUIRE(capsule != 0);
+
+    for (int i = 0; i < 180; ++i) {
+        w.step(1.0f / 60.0f);
+    }
+    float x = 0, y = 0, z = 0;
+    w.getBodyPosition(capsule, x, y, z);
+    // Capsule center at rest should sit at floorTop(0) + radius(0.3) + halfHeight(0.6) = 0.9.
+    // Allow a generous tolerance for solver settling.
+    CHECK(y > 0.5f);
+    CHECK(y < 1.3f);
+}
+
 TEST_CASE("PhysicsWorld: linear/angular velocity get + set round-trip")
 {
     PhysicsWorld w;

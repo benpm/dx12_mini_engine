@@ -900,6 +900,24 @@ static int l_add_sphere_body(lua_State* L)
     return 1;
 }
 
+static int l_add_capsule_body(lua_State* L)
+{
+    float px = (float)luaL_checknumber(L, 1);
+    float py = (float)luaL_checknumber(L, 2);
+    float pz = (float)luaL_checknumber(L, 3);
+    float halfHeight = (float)luaL_optnumber(L, 4, 0.6);  // ~1.2m cylinder ≈ human torso
+    float radius = (float)luaL_optnumber(L, 5, 0.3);
+    bool dynamic = lua_toboolean(L, 6);
+    float mass = (float)luaL_optnumber(L, 7, 70.0);  // ~70kg adult human default
+    lua_pushinteger(
+        L,
+        engine_physics_create_capsule(
+            getPhysics(L), px, py, pz, halfHeight, radius, dynamic ? 1 : 0, mass
+        )
+    );
+    return 1;
+}
+
 static int l_remove_body(lua_State* L)
 {
     unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
@@ -1274,6 +1292,7 @@ static const luaL_Reg engineFuncs[] = {
     // Physics
     { "add_box_body", l_add_box_body },
     { "add_sphere_body", l_add_sphere_body },
+    { "add_capsule_body", l_add_capsule_body },
     { "add_convex_hull_body", l_add_convex_hull_body },
     { "remove_body", l_remove_body },
     { "get_body_position", l_get_body_position },
