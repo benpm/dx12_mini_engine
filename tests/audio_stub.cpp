@@ -23,6 +23,13 @@ extern "C" int engine_app_is_button_down(void* /*app*/, const char* /*name*/)
     return 0;
 }
 
+extern "C" int engine_lua_attach_script(void*, unsigned long long, const char*)
+{
+    return 0;
+}
+
+extern "C" void engine_lua_detach_script(void*, unsigned long long) {}
+
 extern "C" int engine_save_slot_path(const char* /*slot*/, char* outBuf, int outBufSize)
 {
     if (outBuf && outBufSize > 0) {

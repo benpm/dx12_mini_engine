@@ -6,10 +6,17 @@
 -- engine.add_mesh_collider). on_update reads W/A/S/D each frame and
 -- imperatively sets the body's horizontal velocity; vertical velocity is
 -- preserved so gravity still pulls and jumps still arc.
+--
+-- Per-entity scripts return a table with on_create/on_update/on_destroy.
 
+local script = {}
 local move_speed = 4.0  -- horizontal m/s while a direction button is held
 
-function on_update(id, dt)
+function script.on_create(id)
+    engine.log("character_controller: attached to entity " .. id)
+end
+
+function script.on_update(id, dt)
     local body = engine.get_rigid_body(id)
     if body == 0 then return end
 
@@ -22,7 +29,7 @@ function on_update(id, dt)
     if engine.is_button_down("MoveLeft")     then dx = dx - 1.0 end
     if engine.is_button_down("MoveRight")    then dx = dx + 1.0 end
 
-    -- Normalise so diagonals aren't 1.4× faster.
+    -- Normalise so diagonals aren't 1.4x faster.
     local len = math.sqrt(dx * dx + dz * dz)
     if len > 0.0 then
         dx = dx / len * move_speed
@@ -31,3 +38,9 @@ function on_update(id, dt)
 
     engine.set_linear_velocity(body, dx, vy, dz)
 end
+
+function script.on_destroy(id)
+    engine.log("character_controller: detached from entity " .. id)
+end
+
+return script

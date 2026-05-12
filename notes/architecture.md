@@ -24,7 +24,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `object_picking.ixx` | `ObjectPicker` class — ID render pass, readback for entity picking |
 | `terrain.ixx` | `TerrainParams` struct + `generateTerrain()` — Perlin noise heightmap mesh |
 | `config.ixx` | `ConfigData` struct + load/save/merge config.json via glaze |
-| `lua_scripting.ixx` | `LuaScripting` class + `Scripted` component — Lua 5.4 scripting engine |
+| `lua_scripting.ixx` | `LuaScripting` class + `Scripted` component — Lua 5.4 scripting engine. Public `attachScriptById(entityId, path)` / `detachScriptById(entityId)` mirror the editor flow; Lua bindings `engine.attach_script(entity, path)` / `engine.detach_script(entity)` thunk through `engine_lua_attach_script` / `engine_lua_detach_script` C-API entry points (registry slot `kRegLuaSelf` holds the opaque `LuaScripting*`, wired by `LuaScripting::init` via `luaScripting_setSelf`). |
 | `scene_file.ixx` | Scene file serialization — load/save JSON scene files via glaze |
 | `ssao.ixx` | `SsaoRenderer` class — SSAO compute + blur passes (now reads from GBuffer Normal) |
 | `shadow.ixx` | `ShadowRenderer` class — shadow map texture, DSV, PSO, render + reloadPSO |

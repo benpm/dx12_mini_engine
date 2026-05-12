@@ -177,7 +177,30 @@ bool Application::loadContent()
 
     for (const auto& entry : std::filesystem::directory_iterator(MODELS_DIR)) {
         if (entry.path().extension() == ".glb") {
+            // The bundled primitives (`cube.glb`, `sphere.glb`, ...) all have
+            // empty `mesh.name` in their glTF metadata. Without a fix-up the
+            // engine names them `"GLB mesh N"` which makes Lua's
+            // engine.get_mesh_names() unhelpful for scripts that want to spawn
+            // a specific shape. After load, rename any "GLB mesh *" slots that
+            // came from this file to the filename stem.
+            size_t before = scene.spawnableMeshNames.size();
             scene.loadGltf(entry.path().string(), *gfxDevice, cmdQueue, true);
+            std::string stem = entry.path().stem().string();
+            // Capitalise the first letter so names match the look-up calls in
+            // existing scripts (e.g. find_mesh("Cube")).
+            if (!stem.empty() && stem.front() >= 'a' && stem.front() <= 'z') {
+                stem.front() = static_cast<char>(stem.front() - 'a' + 'A');
+            }
+            for (size_t i = before; i < scene.spawnableMeshNames.size(); ++i) {
+                auto& n = scene.spawnableMeshNames[i];
+                if (n.rfind("GLB mesh", 0) == 0) {
+                    if (scene.spawnableMeshNames.size() - before == 1) {
+                        n = stem;
+                    } else {
+                        n = stem + " " + std::to_string(i - before);
+                    }
+                }
+            }
         }
     }
 

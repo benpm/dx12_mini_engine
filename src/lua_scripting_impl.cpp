@@ -39,6 +39,7 @@ static const char* kRegHud = "engine_hud";
 static const char* kRegParticles = "engine_particles";
 static const char* kRegPhysics = "engine_physics";
 static const char* kRegScenePtr = "engine_scene_ptr";  // opaque Scene*
+static const char* kRegLuaSelf = "engine_lua_self";    // opaque LuaScripting*
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -1092,6 +1093,29 @@ static int l_add_convex_hull_body(lua_State* L)
     return 1;
 }
 
+// engine.attach_script(entity_id, "path.lua") -> bool
+static int l_attach_script(lua_State* L)
+{
+    uint64_t entityId = (uint64_t)luaL_checkinteger(L, 1);
+    const char* path = luaL_checkstring(L, 2);
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegLuaSelf);
+    void* luaPtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_lua_attach_script(luaPtr, entityId, path));
+    return 1;
+}
+
+// engine.detach_script(entity_id)
+static int l_detach_script(lua_State* L)
+{
+    uint64_t entityId = (uint64_t)luaL_checkinteger(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegLuaSelf);
+    void* luaPtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    engine_lua_detach_script(luaPtr, entityId);
+    return 0;
+}
+
 // engine.get_rigid_body(entity_id) -> body_id (0 if entity has no RigidBody)
 static int l_get_rigid_body(lua_State* L)
 {
@@ -1336,6 +1360,8 @@ static const luaL_Reg engineFuncs[] = {
     { "set_angular_velocity", l_set_angular_velocity },
     { "attach_rigid_body", l_attach_rigid_body },
     { "get_rigid_body", l_get_rigid_body },
+    { "attach_script", l_attach_script },
+    { "detach_script", l_detach_script },
     { "add_mesh_collider", l_add_mesh_collider },
     { nullptr, nullptr }
 };
@@ -1420,6 +1446,12 @@ void luaScripting_setScenePtr(lua_State* L, void* scene)
 {
     lua_pushlightuserdata(L, scene);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegScenePtr);
+}
+
+void luaScripting_setSelf(lua_State* L, void* lua)
+{
+    lua_pushlightuserdata(L, lua);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegLuaSelf);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

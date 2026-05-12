@@ -59,6 +59,12 @@ export class LuaScripting
     // Detach script from entity (calls on_destroy, removes component)
     void detachScript(flecs::entity e);
 
+    // Resolve an entity-id (uint64) against the bound Scene's ECS world. Used
+    // by Lua-side C-API helpers (engine.attach_script / detach_script) that
+    // only have the id, not the flecs::entity handle.
+    bool attachScriptById(uint64_t entityId, const std::string& scriptPath);
+    void detachScriptById(uint64_t entityId);
+
     // Reload all scripts whose files have changed
     void pollHotReload();
 

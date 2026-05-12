@@ -39,6 +39,7 @@ extern void luaScripting_setHud(lua_State* L, void* hud);
 extern void luaScripting_setParticles(lua_State* L, void* particles);
 extern void luaScripting_setPhysics(lua_State* L, void* physics);
 extern void luaScripting_setScenePtr(lua_State* L, void* scene);
+extern void luaScripting_setSelf(lua_State* L, void* lua);
 extern void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount);
 extern void luaScripting_setSelectedEntity(lua_State* L, uint64_t id);
 extern bool luaScripting_loadFile(lua_State* L, const char* path, int* outRef);
@@ -86,6 +87,9 @@ bool LuaScripting::init(Scene& scene, const std::string& scriptsDir)
         L, &scene.ecsWorld, &scene.materials, &scene.spawnableMeshRefs, &scene.spawnableMeshNames,
         &pendingDestroys
     );
+    // Register a self-pointer so the engine.attach_script / detach_script
+    // Lua bindings can hop back into LuaScripting via the C-API helpers.
+    luaScripting_setSelf(L, this);
 
     initialized = true;
     spdlog::info("Lua scripting initialized (scripts dir: {})", scriptsBasePath);
@@ -294,6 +298,43 @@ void LuaScripting::detachScript(flecs::entity e)
         luaScripting_unref(L, s.luaRef);
     }
     e.remove<Scripted>();
+}
+
+bool LuaScripting::attachScriptById(uint64_t entityId, const std::string& scriptPath)
+{
+    if (!scenePtr) {
+        return false;
+    }
+    flecs::entity e(scenePtr->ecsWorld, entityId);
+    return attachScript(e, scriptPath);
+}
+
+void LuaScripting::detachScriptById(uint64_t entityId)
+{
+    if (!scenePtr) {
+        return;
+    }
+    flecs::entity e(scenePtr->ecsWorld, entityId);
+    detachScript(e);
+}
+
+// C-API helpers used by lua_scripting_impl.cpp's engine.attach_script /
+// detach_script bindings. The impl is in a plain (non-module) TU so it
+// can't call LuaScripting members directly — these wrappers bridge.
+extern "C" int engine_lua_attach_script(void* luaPtr, uint64_t entityId, const char* path)
+{
+    if (!luaPtr || !path) {
+        return 0;
+    }
+    auto* lua = static_cast<LuaScripting*>(luaPtr);
+    return lua->attachScriptById(entityId, path) ? 1 : 0;
+}
+
+extern "C" void engine_lua_detach_script(void* luaPtr, uint64_t entityId)
+{
+    if (auto* lua = static_cast<LuaScripting*>(luaPtr)) {
+        lua->detachScriptById(entityId);
+    }
 }
 
 void LuaScripting::pollHotReload()

@@ -24,6 +24,11 @@ int engine_app_queue_scene_save(void* appPtr, const char* path);
 // Returns 1 if the named button (e.g. "MoveForward", "Exit") is pressed.
 int engine_app_is_button_down(void* appPtr, const char* buttonName);
 
+// Script attach/detach for the Lua side — luaPtr is a LuaScripting* registered
+// at init time. Returns 1 on successful attach.
+int engine_lua_attach_script(void* luaPtr, unsigned long long entityId, const char* path);
+void engine_lua_detach_script(void* luaPtr, unsigned long long entityId);
+
 // Resolve a save-slot name (e.g. "slot1") to a full path under
 // %LOCALAPPDATA%\dx12_mini_engine\saves\<name>.json. Writes the result into
 // outBuf (UTF-8). Returns 1 on success. Caller's outBuf must be at least 260 bytes.
