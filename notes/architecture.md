@@ -114,7 +114,7 @@ The engine is being migrated off raw D3D12 onto a backend-agnostic `gfx::` API i
 - `ComPtr<ID3D12Resource>` for BLAS/TLAS (RT-only). Texture resources (`spriteTexture`, Scene glTF PBR maps, ReStir reservoirs) all migrated through `gfx::adoptTexture` / `createTexture`.
 - `ComPtr<ID3D12DescriptorHeap>` in `ImGuiLayer::srvHeap` (needed by `imgui_impl_dx12`). ReStir's UAV heap is gone.
 - `ComPtr<ID3D12PipelineState>` — **all graphics and compute PSOs in the engine are now `gfx::PipelineHandle`.** Bloom, SSAO, shadow, outline, object_picker, billboard, and the four ReStir compute PSO slots all use gfx.
-- `ComPtr<ID3D12RootSignature>` in ReStir (compute-specific descriptor layout, predates the bindless rewrite).
+- `ComPtr<ID3D12RootSignature>` — **also gone from subsystems.** ReStir's hand-rolled compute root signature was orphaned (its dispatch is still a stub) so it was removed; future ReStir shaders will go through `gfx::createComputePipeline` and inherit the bindless root sig.
 - `ID3D12CommandQueue*` in `ImGuiLayer::init` — required by `imgui_impl_dx12`.
 
 **Recent gfx-API extensions** to support these migrations:

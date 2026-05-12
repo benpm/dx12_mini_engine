@@ -1,7 +1,5 @@
 module;
 
-#include <d3d12.h>
-#include <wrl.h>
 #include <cstdint>
 #include <vector>
 
@@ -47,11 +45,6 @@ export class ReStirRenderer
     // Reservoir UAV textures (RGBA32_UINT, double-buffered for temporal reuse).
     // Migrated to gfx so the resource + bindless UAV slot are managed centrally.
     gfx::TextureHandle reservoirs[2]{};
-
-    // Compute-shader root signature. ReStir defines its own layout (non-bindless)
-    // because the shaders predate the bindless rewrite. Migrating to the engine's
-    // bindless root sig is part of the eventual ReStir shader port.
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSig;
 
     // 4 PSOs (initial / temporal / spatial / resolve) were stubs and never
     // allocated; their ComPtrs are removed in favour of gfx::PipelineHandle

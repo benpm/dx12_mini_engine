@@ -1,19 +1,17 @@
 module;
 
-#include <d3d12.h>
-#include <wrl.h>
-#include <algorithm>
-#include "d3dx12_clean.h"
+#include <cstdint>
 
 module restir;
-
-using Microsoft::WRL::ComPtr;
 
 void ReStirRenderer::createResources(gfx::IDevice& dev, uint32_t width, uint32_t height)
 {
     devForDestroy = &dev;
     createTextures(dev, width, height);
-    createShaders(dev);
+    // createShaders() used to build a compute root signature, but ReStir's
+    // dispatch is still a stub — the root sig was orphaned. When the actual
+    // ReStir shaders land, they'll allocate through gfx::createComputePipeline
+    // and stop needing a hand-rolled D3D12 root sig in this subsystem.
 }
 
 void ReStirRenderer::resize(gfx::IDevice& dev, uint32_t width, uint32_t height)
@@ -71,28 +69,7 @@ void ReStirRenderer::createTextures(gfx::IDevice& dev, uint32_t width, uint32_t 
     }
 }
 
-void ReStirRenderer::createShaders(gfx::IDevice& dev)
+void ReStirRenderer::createShaders(gfx::IDevice& /*dev*/)
 {
-    auto* device = static_cast<ID3D12Device2*>(dev.nativeHandle());
-
-    CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);
-    CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);
-
-    CD3DX12_ROOT_PARAMETER1 params[5];
-    params[0].InitAsDescriptorTable(1, &uavRange);
-    params[1].InitAsDescriptorTable(1, &srvRange);
-    params[2].InitAsShaderResourceView(0, 1);  // TLAS at t0 space1
-    params[3].InitAsConstantBufferView(0, 0);  // PerFrame at b0
-    params[4].InitAsConstants(4, 1, 0);        // ReSTIR params at b1
-
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsd;
-    rsd.Init_1_1(5, params, 0, nullptr);
-
-    ComPtr<ID3DBlob> blob, err;
-    D3DX12SerializeVersionedRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &err);
-    chkDX(device->CreateRootSignature(
-        0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&rootSig)
-    ));
+    // Intentionally a stub now — see createResources().
 }
