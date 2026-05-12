@@ -37,6 +37,16 @@ namespace
         void applyForce(BodyId, float, float, float) override {}
         void applyImpulse(BodyId, float, float, float) override {}
         void setBodyPosition(BodyId, float, float, float, bool) override {}
+        void getLinearVelocity(BodyId, float& vx, float& vy, float& vz) const override
+        {
+            vx = vy = vz = 0.0f;
+        }
+        void setLinearVelocity(BodyId, float, float, float) override {}
+        void getAngularVelocity(BodyId, float& wx, float& wy, float& wz) const override
+        {
+            wx = wy = wz = 0.0f;
+        }
+        void setAngularVelocity(BodyId, float, float, float) override {}
         bool raycast(float, float, float, float, float, float, float, float& hx, float& hy,
                      float& hz, float& hd) const override
         {

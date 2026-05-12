@@ -176,6 +176,29 @@ TEST_CASE("PhysicsWorld: applyImpulse sends a body upward")
     CHECK(y > 0.05f);
 }
 
+TEST_CASE("PhysicsWorld: linear/angular velocity get + set round-trip")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    auto box = w.createBoxBody(0, 5.0f, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/true, 1.0f);
+    REQUIRE(box != 0);
+
+    // Linear velocity round-trip.
+    w.setLinearVelocity(box, 1.5f, -2.0f, 0.5f);
+    float vx = 0, vy = 0, vz = 0;
+    w.getLinearVelocity(box, vx, vy, vz);
+    CHECK(vx == doctest::Approx(1.5f));
+    CHECK(vy == doctest::Approx(-2.0f));
+    CHECK(vz == doctest::Approx(0.5f));
+
+    // Angular velocity round-trip.
+    w.setAngularVelocity(box, 0.0f, 3.14f, 0.0f);
+    float wx = 0, wy = 0, wz = 0;
+    w.getAngularVelocity(box, wx, wy, wz);
+    CHECK(wy == doctest::Approx(3.14f));
+}
+
 TEST_CASE("PhysicsWorld: setBodyPosition teleports the body")
 {
     PhysicsWorld w;

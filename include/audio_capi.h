@@ -66,6 +66,18 @@ void engine_physics_apply_impulse(void* physicsPtr, unsigned int id, float ix, f
 void engine_physics_set_body_position(
     void* physicsPtr, unsigned int id, float px, float py, float pz
 );
+void engine_physics_get_linear_velocity(
+    void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ
+);
+void engine_physics_set_linear_velocity(
+    void* physicsPtr, unsigned int id, float vx, float vy, float vz
+);
+void engine_physics_get_angular_velocity(
+    void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ
+);
+void engine_physics_set_angular_velocity(
+    void* physicsPtr, unsigned int id, float wx, float wy, float wz
+);
 
 // Particle ops. particlesPtr is the address of a ParticleSystem instance.
 void engine_particles_emit(

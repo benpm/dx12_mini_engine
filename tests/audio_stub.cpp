@@ -106,6 +106,26 @@ extern "C" void engine_physics_apply_force(void*, unsigned int, float, float, fl
 extern "C" void engine_physics_apply_impulse(void*, unsigned int, float, float, float) {}
 extern "C" void engine_physics_set_body_position(void*, unsigned int, float, float, float) {}
 
+extern "C" void engine_physics_get_linear_velocity(
+    void*, unsigned int, float* x, float* y, float* z
+)
+{
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (z) *z = 0;
+}
+extern "C" void engine_physics_set_linear_velocity(void*, unsigned int, float, float, float) {}
+
+extern "C" void engine_physics_get_angular_velocity(
+    void*, unsigned int, float* x, float* y, float* z
+)
+{
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (z) *z = 0;
+}
+extern "C" void engine_physics_set_angular_velocity(void*, unsigned int, float, float, float) {}
+
 extern "C" unsigned int engine_physics_create_convex_hull(
     void*, const float*, unsigned int, unsigned int, float, float, float, int, float, float
 )

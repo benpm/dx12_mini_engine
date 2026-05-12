@@ -125,6 +125,26 @@ void PhysicsWorld::setBodyPosition(BodyId id, float px, float py, float pz, bool
     static_cast<IPhysicsBackend*>(state)->setBodyPosition(id, px, py, pz, activate);
 }
 
+void PhysicsWorld::getLinearVelocity(BodyId id, float& vx, float& vy, float& vz) const
+{
+    static_cast<IPhysicsBackend*>(state)->getLinearVelocity(id, vx, vy, vz);
+}
+
+void PhysicsWorld::setLinearVelocity(BodyId id, float vx, float vy, float vz)
+{
+    static_cast<IPhysicsBackend*>(state)->setLinearVelocity(id, vx, vy, vz);
+}
+
+void PhysicsWorld::getAngularVelocity(BodyId id, float& wx, float& wy, float& wz) const
+{
+    static_cast<IPhysicsBackend*>(state)->getAngularVelocity(id, wx, wy, wz);
+}
+
+void PhysicsWorld::setAngularVelocity(BodyId id, float wx, float wy, float wz)
+{
+    static_cast<IPhysicsBackend*>(state)->setAngularVelocity(id, wx, wy, wz);
+}
+
 bool PhysicsWorld::raycast(
     float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance, float& hitX,
     float& hitY, float& hitZ, float& hitDistance
@@ -232,6 +252,50 @@ extern "C" void engine_physics_set_body_position(
 {
     if (auto* w = static_cast<PhysicsWorld*>(p)) {
         w->setBodyPosition(id, px, py, pz);
+    }
+}
+
+extern "C" void engine_physics_get_linear_velocity(
+    void* p, unsigned int id, float* outX, float* outY, float* outZ
+)
+{
+    float x = 0, y = 0, z = 0;
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->getLinearVelocity(id, x, y, z);
+    }
+    if (outX) *outX = x;
+    if (outY) *outY = y;
+    if (outZ) *outZ = z;
+}
+
+extern "C" void engine_physics_set_linear_velocity(
+    void* p, unsigned int id, float vx, float vy, float vz
+)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->setLinearVelocity(id, vx, vy, vz);
+    }
+}
+
+extern "C" void engine_physics_get_angular_velocity(
+    void* p, unsigned int id, float* outX, float* outY, float* outZ
+)
+{
+    float x = 0, y = 0, z = 0;
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->getAngularVelocity(id, x, y, z);
+    }
+    if (outX) *outX = x;
+    if (outY) *outY = y;
+    if (outZ) *outZ = z;
+}
+
+extern "C" void engine_physics_set_angular_velocity(
+    void* p, unsigned int id, float wx, float wy, float wz
+)
+{
+    if (auto* w = static_cast<PhysicsWorld*>(p)) {
+        w->setAngularVelocity(id, wx, wy, wz);
     }
 }
 

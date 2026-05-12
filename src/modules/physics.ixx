@@ -76,6 +76,13 @@ export class PhysicsWorld
     // and respawn logic.
     void setBodyPosition(BodyId id, float px, float py, float pz, bool activate = true);
 
+    // Linear / angular velocity. Setting is direct — no impulse calculation;
+    // useful for character controllers that drive bodies imperatively.
+    void getLinearVelocity(BodyId id, float& vx, float& vy, float& vz) const;
+    void setLinearVelocity(BodyId id, float vx, float vy, float vz);
+    void getAngularVelocity(BodyId id, float& wx, float& wy, float& wz) const;
+    void setAngularVelocity(BodyId id, float wx, float wy, float wz);
+
    private:
     // Opaque pointer to the active IPhysicsBackend. The header defining that
     // interface lives in include/physics_backend.h; physics.cpp's factory

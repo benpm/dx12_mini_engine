@@ -299,6 +299,38 @@ class JoltBackend final : public IPhysicsBackend
         );
     }
 
+    void getLinearVelocity(BodyId id, float& vx, float& vy, float& vz) const override
+    {
+        vx = vy = vz = 0.0f;
+        if (!ready || id == 0) return;
+        JPH::Vec3 v = system->GetBodyInterface().GetLinearVelocity(toJoltId(id));
+        vx = v.GetX();
+        vy = v.GetY();
+        vz = v.GetZ();
+    }
+
+    void setLinearVelocity(BodyId id, float vx, float vy, float vz) override
+    {
+        if (!ready || id == 0) return;
+        system->GetBodyInterface().SetLinearVelocity(toJoltId(id), JPH::Vec3(vx, vy, vz));
+    }
+
+    void getAngularVelocity(BodyId id, float& wx, float& wy, float& wz) const override
+    {
+        wx = wy = wz = 0.0f;
+        if (!ready || id == 0) return;
+        JPH::Vec3 w = system->GetBodyInterface().GetAngularVelocity(toJoltId(id));
+        wx = w.GetX();
+        wy = w.GetY();
+        wz = w.GetZ();
+    }
+
+    void setAngularVelocity(BodyId id, float wx, float wy, float wz) override
+    {
+        if (!ready || id == 0) return;
+        system->GetBodyInterface().SetAngularVelocity(toJoltId(id), JPH::Vec3(wx, wy, wz));
+    }
+
     bool raycast(float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
                  float& hitX, float& hitY, float& hitZ, float& hitDistance) const override
     {

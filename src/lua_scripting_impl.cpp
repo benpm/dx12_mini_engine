@@ -960,6 +960,48 @@ static int l_set_body_position(lua_State* L)
     return 0;
 }
 
+static int l_get_linear_velocity(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float x = 0, y = 0, z = 0;
+    engine_physics_get_linear_velocity(getPhysics(L), id, &x, &y, &z);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    lua_pushnumber(L, z);
+    return 3;
+}
+
+static int l_set_linear_velocity(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float vx = (float)luaL_checknumber(L, 2);
+    float vy = (float)luaL_checknumber(L, 3);
+    float vz = (float)luaL_checknumber(L, 4);
+    engine_physics_set_linear_velocity(getPhysics(L), id, vx, vy, vz);
+    return 0;
+}
+
+static int l_get_angular_velocity(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float x = 0, y = 0, z = 0;
+    engine_physics_get_angular_velocity(getPhysics(L), id, &x, &y, &z);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    lua_pushnumber(L, z);
+    return 3;
+}
+
+static int l_set_angular_velocity(lua_State* L)
+{
+    unsigned int id = (unsigned int)luaL_checkinteger(L, 1);
+    float wx = (float)luaL_checknumber(L, 2);
+    float wy = (float)luaL_checknumber(L, 3);
+    float wz = (float)luaL_checknumber(L, 4);
+    engine_physics_set_angular_velocity(getPhysics(L), id, wx, wy, wz);
+    return 0;
+}
+
 // engine.add_convex_hull_body(mesh_idx, px, py, pz, scale=1.0, dynamic=true,
 //                             mass=1.0, max_points=32, tolerance=0.05) -> body_id
 // Looks up the mesh's CPU-cached positions, sub-samples to max_points, scales
@@ -1240,6 +1282,10 @@ static const luaL_Reg engineFuncs[] = {
     { "apply_force", l_apply_force },
     { "apply_impulse", l_apply_impulse },
     { "set_body_position", l_set_body_position },
+    { "get_linear_velocity", l_get_linear_velocity },
+    { "set_linear_velocity", l_set_linear_velocity },
+    { "get_angular_velocity", l_get_angular_velocity },
+    { "set_angular_velocity", l_set_angular_velocity },
     { "attach_rigid_body", l_attach_rigid_body },
     { "add_mesh_collider", l_add_mesh_collider },
     { nullptr, nullptr }

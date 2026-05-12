@@ -53,6 +53,14 @@ class IPhysicsBackend
     virtual void applyImpulse(BodyId id, float ix, float iy, float iz) = 0;
     virtual void setBodyPosition(BodyId id, float px, float py, float pz, bool activate) = 0;
 
+    // Linear / angular velocity get + set. Used by character controllers,
+    // bullets, projectiles, anywhere a script wants to override or sample
+    // the body's motion. No-op on static bodies.
+    virtual void getLinearVelocity(BodyId id, float& vx, float& vy, float& vz) const = 0;
+    virtual void setLinearVelocity(BodyId id, float vx, float vy, float vz) = 0;
+    virtual void getAngularVelocity(BodyId id, float& wx, float& wy, float& wz) const = 0;
+    virtual void setAngularVelocity(BodyId id, float wx, float wy, float wz) = 0;
+
     virtual bool raycast(
         float ox, float oy, float oz, float dx, float dy, float dz, float maxDistance,
         float& hitX, float& hitY, float& hitZ, float& hitDistance
