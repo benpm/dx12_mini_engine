@@ -41,6 +41,15 @@ export class PhysicsWorld
     BodyId createSphereBody(float px, float py, float pz, float radius, bool dynamic,
                             float mass = 1.0f);
 
+    // Build a body around a convex hull from `count` 3-float positions stored
+    // `stride` bytes apart. `hullTolerance` controls backend-side simplification
+    // (Jolt: passed to ConvexHullShapeSettings). The caller should already have
+    // simplified the input to ~32 points or fewer for a stress-friendly hull;
+    // the backend enforces a hard cap (Jolt: 256 points).
+    BodyId createConvexHullBody(const float* points, uint32_t count, uint32_t stride, float px,
+                                float py, float pz, bool dynamic, float mass = 1.0f,
+                                float hullTolerance = 0.05f);
+
     // Destroys + unregisters the body. Safe to call on an invalid id.
     void destroyBody(BodyId id);
 

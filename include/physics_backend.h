@@ -31,6 +31,17 @@ class IPhysicsBackend
     virtual BodyId createSphereBody(
         float px, float py, float pz, float radius, bool dynamic, float mass
     ) = 0;
+
+    // Build a body around a convex hull computed from `count` points stored
+    // at `stride` bytes apart (so callers can pass `VertexPBR` directly or a
+    // tight `vec3` array). `hullTolerance` is a backend hint for how aggressively
+    // to simplify; Jolt interprets it directly. Returns 0 if the hull is
+    // degenerate (fewer than 4 unique points, all colinear, etc.).
+    virtual BodyId createConvexHullBody(
+        const float* points, uint32_t count, uint32_t stride, float px, float py, float pz,
+        bool dynamic, float mass, float hullTolerance
+    ) = 0;
+
     virtual void destroyBody(BodyId id) = 0;
 
     virtual void getBodyPosition(BodyId id, float& px, float& py, float& pz) const = 0;

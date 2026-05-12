@@ -386,4 +386,13 @@ void Application::applySceneData(const SceneFileData& d)
         }
         spdlog::info("Spawned {} instance groups from scene file", d.instanceGroups.size());
     }
+
+    // Run the scene's startup Lua script once content is in place. Path is
+    // resolved against SCRIPTS_DIR by LuaScripting::executeScript.
+    if (!d.runtime.startupScript.empty() && contentLoaded) {
+        spdlog::info("Running scene startup script: {}", d.runtime.startupScript);
+        if (!luaScripting.executeScript(d.runtime.startupScript)) {
+            spdlog::warn("Startup script '{}' failed", d.runtime.startupScript);
+        }
+    }
 }

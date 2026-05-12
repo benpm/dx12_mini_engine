@@ -20,6 +20,7 @@ module;
 #include <map>
 #include <string>
 #include <vector>
+#include "audio_capi.h"
 #include "d3dx12_clean.h"
 #include "resource.h"
 
@@ -289,6 +290,19 @@ MeshRef Scene::appendToMegaBuffers(
     ref.indexCount = numIndices;
     ref.materialIndex = materialIdx;
 
+    // Retain the position stream on CPU so collider generation (convex hulls,
+    // triangle meshes, raycast-as-geometry) can read mesh geometry without
+    // having to round-trip through the GPU. Stripped of normals/UVs to keep
+    // the footprint to 12 bytes/vert.
+    {
+        std::vector<vec3> positions;
+        positions.reserve(numVerts);
+        for (const auto& v : vertices) {
+            positions.push_back(v.position);
+        }
+        meshVertexCache.emplace(ref.vertexOffset, std::move(positions));
+    }
+
     megaVBUsed += numVerts;
     megaIBUsed += numIndices;
 
@@ -315,6 +329,7 @@ void Scene::clearScene(CommandQueue& cmdQueue)
     ecsWorld.delete_with<InstanceGroup>();
     spawnableMeshRefs.clear();
     spawnableMeshNames.clear();
+    meshVertexCache.clear();
     spawnTimer = 0.0f;
 
     // Release adopted PBR textures back to gfx. Safe to call destroy on each
@@ -1306,4 +1321,36 @@ void Scene::updateTLAS(gfx::IDevice& dev, CommandQueue& cmdQueue, uint32_t curBa
     cmdList->ResourceBarrier(1, &barrier);
 
     cmdQueue.execCmdList(cmdList);
+}
+
+// ---------------------------------------------------------------------------
+// C API consumed by lua_scripting_impl.cpp — needs Scene's full definition,
+// so it lives in this TU rather than the plain-cpp Lua side.
+// ---------------------------------------------------------------------------
+
+extern "C" int engine_scene_get_mesh_positions(
+    void* scenePtr, int meshIdx, const float** outData, unsigned int* outCount
+)
+{
+    if (outData) {
+        *outData = nullptr;
+    }
+    if (outCount) {
+        *outCount = 0;
+    }
+    auto* scene = static_cast<Scene*>(scenePtr);
+    if (!scene || meshIdx < 0 || meshIdx >= static_cast<int>(scene->spawnableMeshRefs.size())) {
+        return 0;
+    }
+    const auto* positions = scene->getMeshPositions(scene->spawnableMeshRefs[meshIdx]);
+    if (!positions || positions->empty()) {
+        return 0;
+    }
+    if (outData) {
+        *outData = reinterpret_cast<const float*>(positions->data());
+    }
+    if (outCount) {
+        *outCount = static_cast<unsigned int>(positions->size());
+    }
+    return 1;
 }

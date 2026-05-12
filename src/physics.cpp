@@ -85,6 +85,16 @@ PhysicsWorld::BodyId PhysicsWorld::createSphereBody(
     );
 }
 
+PhysicsWorld::BodyId PhysicsWorld::createConvexHullBody(
+    const float* points, uint32_t count, uint32_t stride, float px, float py, float pz,
+    bool dynamic, float mass, float hullTolerance
+)
+{
+    return static_cast<IPhysicsBackend*>(state)->createConvexHullBody(
+        points, count, stride, px, py, pz, dynamic, mass, hullTolerance
+    );
+}
+
 void PhysicsWorld::destroyBody(BodyId id)
 {
     static_cast<IPhysicsBackend*>(state)->destroyBody(id);
@@ -148,6 +158,19 @@ extern "C" unsigned int engine_physics_create_sphere(
     if (!p) return 0;
     return static_cast<PhysicsWorld*>(p)->createSphereBody(
         px, py, pz, radius, dynamic != 0, mass
+    );
+}
+
+extern "C" unsigned int engine_physics_create_convex_hull(
+    void* p, const float* positions, unsigned int count, unsigned int stride, float px, float py,
+    float pz, int dynamic, float mass, float hullTolerance
+)
+{
+    if (!p || !positions || count < 4) {
+        return 0;
+    }
+    return static_cast<PhysicsWorld*>(p)->createConvexHullBody(
+        positions, count, stride, px, py, pz, dynamic != 0, mass, hullTolerance
     );
 }
 

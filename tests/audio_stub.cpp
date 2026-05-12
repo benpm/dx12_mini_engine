@@ -105,3 +105,19 @@ extern "C" int engine_physics_raycast(
 extern "C" void engine_physics_apply_force(void*, unsigned int, float, float, float) {}
 extern "C" void engine_physics_apply_impulse(void*, unsigned int, float, float, float) {}
 extern "C" void engine_physics_set_body_position(void*, unsigned int, float, float, float) {}
+
+extern "C" unsigned int engine_physics_create_convex_hull(
+    void*, const float*, unsigned int, unsigned int, float, float, float, int, float, float
+)
+{
+    return 0;
+}
+
+extern "C" int engine_scene_get_mesh_positions(
+    void*, int, const float** outData, unsigned int* outCount
+)
+{
+    if (outData) *outData = nullptr;
+    if (outCount) *outCount = 0;
+    return 0;
+}

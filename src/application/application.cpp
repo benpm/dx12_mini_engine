@@ -212,6 +212,7 @@ Application::Application()
     luaScripting.setHud(&hud);
     luaScripting.setParticles(&particles);
     luaScripting.setPhysics(&physicsWorld);
+    luaScripting.setScenePtr(&scene);
     std::string actionsPath = std::string(SCRIPTS_DIR) + "/actions.json";
     luaScripting.loadActionBindings(actionsPath);
     this->imguiLayer.init(

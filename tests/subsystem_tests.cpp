@@ -104,6 +104,56 @@ TEST_CASE("PhysicsWorld: dynamic body rotates as it falls")
     CHECK(len2 == doctest::Approx(1.0f).epsilon(0.001));
 }
 
+TEST_CASE("PhysicsWorld: convex-hull body falls onto floor and settles")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    // Static floor at y=0, half-thickness 0.5.
+    auto floor = w.createBoxBody(0, -0.5f, 0, 50.0f, 0.5f, 50.0f, /*dynamic=*/false);
+    REQUIRE(floor != 0);
+
+    // Tetrahedron centered at origin, side ~1. 4 points → minimum hull.
+    const float points[] = {
+        0.0f,  0.5f, 0.0f,
+       -0.5f, -0.5f, -0.5f,
+        0.5f, -0.5f, -0.5f,
+        0.0f, -0.5f,  0.5f,
+    };
+    auto hull = w.createConvexHullBody(
+        points, 4, sizeof(float) * 3, 0.0f, 5.0f, 0.0f, /*dynamic=*/true, /*mass=*/1.0f,
+        /*tolerance=*/0.01f
+    );
+    REQUIRE(hull != 0);
+
+    float x0 = 0, y0 = 0, z0 = 0;
+    w.getBodyPosition(hull, x0, y0, z0);
+    CHECK(y0 == doctest::Approx(5.0f));
+
+    // Two seconds at 60 Hz; tetrahedron should fall and settle above the floor.
+    for (int i = 0; i < 120; ++i) {
+        w.step(1.0f / 60.0f);
+    }
+    float x1 = 0, y1 = 0, z1 = 0;
+    w.getBodyPosition(hull, x1, y1, z1);
+    CHECK(y1 < y0);
+    CHECK(y1 > -1.0f);  // not through the floor
+}
+
+TEST_CASE("PhysicsWorld: convex hull rejects degenerate (< 4 points) input")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    const float pts[] = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+    auto bad =
+        w.createConvexHullBody(pts, 3, sizeof(float) * 3, 0, 5, 0, true, 1.0f, 0.05f);
+    CHECK(bad == 0);
+
+    auto null = w.createConvexHullBody(nullptr, 100, sizeof(float) * 3, 0, 5, 0, true, 1.0f, 0.05f);
+    CHECK(null == 0);
+}
+
 TEST_CASE("PhysicsWorld: applyImpulse sends a body upward")
 {
     PhysicsWorld w;

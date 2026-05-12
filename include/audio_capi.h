@@ -26,6 +26,15 @@ int engine_app_queue_scene_save(void* appPtr, const char* path);
 // outBuf (UTF-8). Returns 1 on success. Caller's outBuf must be at least 260 bytes.
 int engine_save_slot_path(const char* slotName, char* outBuf, int outBufSize);
 
+// Scene mesh-data introspection. scenePtr is the address of a Scene instance.
+// On success: outData points at the mesh's tight-packed vec3 position stream
+// (12 bytes/vert), outCount is the vertex count. Returns 1 on success, 0 if the
+// mesh index is out of range or the position cache hasn't been populated.
+// Pointer is owned by Scene and stays valid until clearScene().
+int engine_scene_get_mesh_positions(
+    void* scenePtr, int meshIdx, const float** outData, unsigned int* outCount
+);
+
 // Physics ops. physicsPtr is the address of a PhysicsWorld instance.
 unsigned int engine_physics_create_box(
     void* physicsPtr, float px, float py, float pz, float hx, float hy, float hz, int dynamic,
@@ -34,6 +43,13 @@ unsigned int engine_physics_create_box(
 unsigned int engine_physics_create_sphere(
     void* physicsPtr, float px, float py, float pz, float radius, int dynamic, float mass
 );
+// Convex-hull body creation. positions is a tightly-packed vec3 stream (12B/vert).
+// The backend may further simplify; pass at most 256 points.
+unsigned int engine_physics_create_convex_hull(
+    void* physicsPtr, const float* positions, unsigned int count, unsigned int stride, float px,
+    float py, float pz, int dynamic, float mass, float hullTolerance
+);
+
 void engine_physics_destroy_body(void* physicsPtr, unsigned int id);
 void engine_physics_get_body_position(
     void* physicsPtr, unsigned int id, float* outX, float* outY, float* outZ

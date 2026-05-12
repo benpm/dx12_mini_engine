@@ -38,6 +38,7 @@ static const char* kRegApp = "engine_app";
 static const char* kRegHud = "engine_hud";
 static const char* kRegParticles = "engine_particles";
 static const char* kRegPhysics = "engine_physics";
+static const char* kRegScenePtr = "engine_scene_ptr";  // opaque Scene*
 
 // Helper: retrieve Scene* from Lua registry
 static flecs::world* getEcsWorld(lua_State* L)
@@ -959,6 +960,68 @@ static int l_set_body_position(lua_State* L)
     return 0;
 }
 
+// engine.add_convex_hull_body(mesh_idx, px, py, pz, scale=1.0, dynamic=true,
+//                             mass=1.0, max_points=32, tolerance=0.05) -> body_id
+// Looks up the mesh's CPU-cached positions, sub-samples to max_points, scales
+// each sample, and hands the result to engine_physics_create_convex_hull.
+static int l_add_convex_hull_body(lua_State* L)
+{
+    int meshIdx = (int)luaL_checkinteger(L, 1);
+    float px = (float)luaL_checknumber(L, 2);
+    float py = (float)luaL_checknumber(L, 3);
+    float pz = (float)luaL_checknumber(L, 4);
+    float scale = (float)luaL_optnumber(L, 5, 1.0);
+    bool dynamic = lua_isnoneornil(L, 6) ? true : lua_toboolean(L, 6) != 0;
+    float mass = (float)luaL_optnumber(L, 7, 1.0);
+    int maxPoints = (int)luaL_optinteger(L, 8, 32);
+    float tolerance = (float)luaL_optnumber(L, 9, 0.05);
+
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegScenePtr);
+    void* scenePtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    const float* allPositions = nullptr;
+    unsigned int totalCount = 0;
+    if (!engine_scene_get_mesh_positions(scenePtr, meshIdx, &allPositions, &totalCount)) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    // Sub-sample to at most maxPoints by stride, then scale each sample. This
+    // keeps Jolt's hull build cheap and gives Lua a knob over hull fidelity.
+    if (maxPoints < 4) maxPoints = 4;
+    if (maxPoints > 256) maxPoints = 256;
+    unsigned int step = totalCount <= (unsigned int)maxPoints
+                            ? 1
+                            : totalCount / (unsigned int)maxPoints;
+    if (step == 0) step = 1;
+
+    // Storage on the stack is fine here — even at the 256 cap that's 3 KB.
+    float scaled[256 * 3];
+    unsigned int sampled = 0;
+    for (unsigned int i = 0; i < totalCount && sampled < (unsigned int)maxPoints; i += step) {
+        scaled[sampled * 3 + 0] = allPositions[i * 3 + 0] * scale;
+        scaled[sampled * 3 + 1] = allPositions[i * 3 + 1] * scale;
+        scaled[sampled * 3 + 2] = allPositions[i * 3 + 2] * scale;
+        ++sampled;
+    }
+    if (sampled < 4) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegPhysics);
+    void* physicsPtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    unsigned int body = engine_physics_create_convex_hull(
+        physicsPtr, scaled, sampled, sizeof(float) * 3, px, py, pz, dynamic ? 1 : 0, mass,
+        tolerance
+    );
+    lua_pushinteger(L, body);
+    return 1;
+}
+
 static int l_attach_rigid_body(lua_State* L)
 {
     auto* w = getEcsWorld(L);
@@ -1068,6 +1131,7 @@ static const luaL_Reg engineFuncs[] = {
     // Physics
     { "add_box_body", l_add_box_body },
     { "add_sphere_body", l_add_sphere_body },
+    { "add_convex_hull_body", l_add_convex_hull_body },
     { "remove_body", l_remove_body },
     { "get_body_position", l_get_body_position },
     { "get_body_rotation", l_get_body_rotation },
@@ -1153,6 +1217,12 @@ void luaScripting_setPhysics(lua_State* L, void* physics)
 {
     lua_pushlightuserdata(L, physics);
     lua_setfield(L, LUA_REGISTRYINDEX, kRegPhysics);
+}
+
+void luaScripting_setScenePtr(lua_State* L, void* scene)
+{
+    lua_pushlightuserdata(L, scene);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRegScenePtr);
 }
 
 void luaScripting_setFrameData(lua_State* L, float dt, float time, int frameCount)

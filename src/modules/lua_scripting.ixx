@@ -43,6 +43,10 @@ export class LuaScripting
     // Register the PhysicsWorld for engine.add_box_body / raycast / etc.
     void setPhysics(void* physics);
 
+    // Register the Scene instance so Lua bindings (convex-hull body construction
+    // in particular) can look up cached mesh positions.
+    void setScenePtr(void* scene);
+
     // Called each frame from Application::update()
     void updateScriptedEntities(float dt, float time, int frameCount);
 

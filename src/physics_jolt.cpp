@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -171,7 +172,10 @@ class JoltBackend final : public IPhysicsBackend
             JPH::RegisterTypes();
             g_joltInitialised = true;
         }
-        tempAlloc = std::make_unique<JPH::TempAllocatorImpl>(10 * 1024 * 1024);
+        // 64 MB scratch — enough for 1000+ dynamic bodies through the broadphase
+        // and constraint solver. Default 10 MB OOMs at ~512 bodies under our
+        // physics_stress workload; this gives plenty of headroom.
+        tempAlloc = std::make_unique<JPH::TempAllocatorImpl>(64 * 1024 * 1024);
         jobSystem = std::make_unique<JPH::JobSystemThreadPool>(
             JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
             std::max(1u, std::thread::hardware_concurrency() - 1)
@@ -209,6 +213,37 @@ class JoltBackend final : public IPhysicsBackend
     {
         if (!ready) return 0;
         JPH::ShapeRefC shape = new JPH::SphereShape(std::max(0.001f, radius));
+        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+    }
+
+    BodyId createConvexHullBody(
+        const float* points, uint32_t count, uint32_t stride, float px, float py, float pz,
+        bool dynamic, float mass, float hullTolerance
+    ) override
+    {
+        if (!ready || !points || count < 4) {
+            return 0;  // need at least 4 non-coplanar points for a valid hull
+        }
+        // Repack into JPH::Vec3 with hard cap on cMaxPointsInHull (256).
+        uint32_t cap = std::min<uint32_t>(count, JPH::ConvexHullShape::cMaxPointsInHull);
+        JPH::Array<JPH::Vec3> jolt;
+        jolt.reserve(cap);
+        const uint32_t step = stride == 0 ? sizeof(float) * 3 : stride;
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(points);
+        for (uint32_t i = 0; i < cap; ++i) {
+            const float* p = reinterpret_cast<const float*>(base + i * step);
+            jolt.emplace_back(p[0], p[1], p[2]);
+        }
+        JPH::ConvexHullShapeSettings hullSettings(jolt);
+        hullSettings.mHullTolerance = hullTolerance > 0.0f ? hullTolerance : 1.0e-3f;
+        JPH::ShapeSettings::ShapeResult result = hullSettings.Create();
+        if (result.HasError()) {
+            spdlog::warn(
+                "JoltBackend: ConvexHullShape::Create failed ({})", result.GetError().c_str()
+            );
+            return 0;
+        }
+        JPH::ShapeRefC shape = result.Get();
         return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 
@@ -286,10 +321,14 @@ class JoltBackend final : public IPhysicsBackend
     }
 
    private:
-    static constexpr JPH::uint maxBodies = 4096;
+    // Sized to comfortably host the 1000-body physics_stress scene with
+    // overlap-induced pair counts. Body pairs scale roughly as N * neighbours
+    // so 1000 tightly-packed bodies need O(20-30k) pair slots; constraints
+    // need ~O(bodies) when everything is in contact.
+    static constexpr JPH::uint maxBodies = 16384;
     static constexpr JPH::uint numBodyMutexes = 0;
-    static constexpr JPH::uint maxBodyPairs = 4096;
-    static constexpr JPH::uint maxContactConstraints = 1024;
+    static constexpr JPH::uint maxBodyPairs = 65536;
+    static constexpr JPH::uint maxContactConstraints = 16384;
 
     std::unique_ptr<JPH::TempAllocator> tempAlloc;
     std::unique_ptr<JPH::JobSystem> jobSystem;

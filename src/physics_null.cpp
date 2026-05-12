@@ -18,6 +18,12 @@ namespace
             return 0;
         }
         BodyId createSphereBody(float, float, float, float, bool, float) override { return 0; }
+        BodyId createConvexHullBody(
+            const float*, uint32_t, uint32_t, float, float, float, bool, float, float
+        ) override
+        {
+            return 0;
+        }
         void destroyBody(BodyId) override {}
         void getBodyPosition(BodyId, float& px, float& py, float& pz) const override
         {

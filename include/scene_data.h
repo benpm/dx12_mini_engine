@@ -113,6 +113,9 @@ struct RuntimeData
     // Clear default loadContent entities (teapots + auto-instanced primitives) before
     // applying scene entities — useful for showcase scenes that supply their own content.
     bool clearOnLoad = false;
+    // Optional Lua script path (relative to SCRIPTS_DIR) executed once after the
+    // scene is fully applied. Lets showcase scenes spawn entities procedurally.
+    std::string startupScript;
 };
 
 struct SceneFileData

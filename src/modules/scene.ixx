@@ -9,6 +9,7 @@ module;
 #include <map>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "material_types.h"
 #include "skeleton_types.h"
@@ -128,6 +129,17 @@ export class Scene
     int selectedMaterialIdx = 0;
     std::vector<MeshRef> spawnableMeshRefs;
     std::vector<std::string> spawnableMeshNames;
+
+    // CPU-side mesh vertex positions kept around after upload so callers can
+    // build colliders (convex hulls, triangle meshes, etc.) from the same
+    // geometry the renderer sees. Keyed by `MeshRef::vertexOffset` because
+    // that's unique per-mesh inside the mega-VB. Cleared by clearScene().
+    std::unordered_map<uint32_t, std::vector<vec3>> meshVertexCache;
+    const std::vector<vec3>* getMeshPositions(const MeshRef& mesh) const
+    {
+        auto it = meshVertexCache.find(mesh.vertexOffset);
+        return it == meshVertexCache.end() ? nullptr : &it->second;
+    }
 
     // Stored once during createMegaBuffers so clearScene() and the destructor
     // can release gfx-owned textures without re-threading the device through

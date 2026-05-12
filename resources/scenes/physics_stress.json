@@ -1,0 +1,119 @@
+{
+    "title": "Physics Stress",
+    "description": "1000 convex-hull bodies falling onto a floor",
+    "camera": {
+        "fov": 1.1,
+        "nearPlane": 0.1,
+        "farPlane": 600.0,
+        "yaw": 0.9,
+        "pitch": 0.55,
+        "radius": 45.0
+    },
+    "bloom": {
+        "threshold": 1.7,
+        "intensity": 0.1,
+        "tonemapMode": 2
+    },
+    "dirLight": {
+        "dir": { "x": 0.4, "y": -0.7, "z": 0.6 },
+        "brightness": 3.0,
+        "color": { "x": 1.0, "y": 0.95, "z": 0.85 }
+    },
+    "fog": {
+        "startY": -30.0,
+        "density": 0.05,
+        "color": { "x": 0.05, "y": 0.05, "z": 0.08 }
+    },
+    "shadow": {
+        "enabled": true,
+        "bias": 0.0002,
+        "rasterDepthBias": 1000,
+        "rasterSlopeBias": 1.0,
+        "rasterBiasClamp": 0.0,
+        "lightDistance": 40.0,
+        "orthoSize": 30.0,
+        "nearPlane": 0.1,
+        "farPlane": 100.0
+    },
+    "cubemap": {
+        "enabled": false,
+        "resolution": 128,
+        "nearPlane": 0.1,
+        "farPlane": 100.0
+    },
+    "pointLights": {
+        "brightness": 0.0,
+        "ambient": 0.06,
+        "lights": [{}, {}, {}, {}, {}, {}, {}, {}]
+    },
+    "spawning": {
+        "stopped": true,
+        "autoStop": false,
+        "stopFrameMs": 10.0,
+        "batchSize": 0
+    },
+    "display": {
+        "vsync": true,
+        "animateEntities": false,
+        "lightAnimSpeed": 0.0,
+        "showBillboards": false,
+        "showGrid": true,
+        "gridMajorSize": 5.0,
+        "gridSubdivisions": 5
+    },
+    "terrain": {
+        "gridSize": 32,
+        "worldSize": 50.0,
+        "heightScale": 0.0,
+        "octaves": 1,
+        "frequency": 0.02,
+        "seed": 42,
+        "materialAlbedo": { "x": 0.08, "y": 0.10, "z": 0.12, "w": 1.0 },
+        "materialRoughness": 0.8,
+        "positionY": -200.0
+    },
+    "bgColor": { "x": 0.04, "y": 0.04, "z": 0.06 },
+    "materials": [
+        {
+            "name": "Diffuse",
+            "albedo": { "x": 0.8, "y": 0.8, "z": 0.8, "w": 1.0 },
+            "roughness": 0.5,
+            "metallic": 0.0,
+            "emissiveStrength": 0.0,
+            "reflective": false,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        },
+        {
+            "name": "Metal",
+            "albedo": { "x": 0.7, "y": 0.7, "z": 0.75, "w": 1.0 },
+            "roughness": 0.3,
+            "metallic": 1.0,
+            "emissiveStrength": 0.0,
+            "reflective": false,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        },
+        {
+            "name": "Mirror",
+            "albedo": { "x": 0.9, "y": 0.9, "z": 0.9, "w": 1.0 },
+            "roughness": 0.05,
+            "metallic": 1.0,
+            "emissiveStrength": 0.0,
+            "reflective": false,
+            "emissive": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+        }
+    ],
+    "extraGlbs": [],
+    "entities": [],
+    "instanceGroups": [],
+    "runtime": {
+        "useWarp": false,
+        "hideWindow": false,
+        "screenshotFrame": 0,
+        "exitAfterScreenshot": false,
+        "spawnPerFrame": 0,
+        "skipImGui": false,
+        "singleTeapotMode": false,
+        "clearOnLoad": false,
+        "startupScript": "physics_stress.lua"
+    }
+}

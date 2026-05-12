@@ -49,5 +49,7 @@ Lua 5.4 (FetchContent, compiled as static C lib). Module in `lua_scripting.ixx` 
 ## Example Lua Scripts (`resources/scripts/`)
 
 * **Per-entity**: `orbit.lua` (Y-axis orbit), `bounce.lua` (vertical bounce with squash/stretch), `pulse_emissive.lua` (pulsing glow)
-* **One-shot actions**: `spawn_grid.lua` (5x5 entity grid), `randomize_colors.lua` (random albedo on all MeshRef entities), `delete_all.lua` (destroy all MeshRef entities), `physics_demo.lua` (static floor + stack of dynamic boxes attached to mesh entities via Jolt)
+* **One-shot actions**: `spawn_grid.lua` (5x5 entity grid), `randomize_colors.lua` (random albedo on all MeshRef entities), `delete_all.lua` (destroy all MeshRef entities), `physics_demo.lua` (static floor + stack of dynamic boxes attached to mesh entities via Jolt), `physics_stress.lua` (1000-entity convex-hull stress — 10×10×10 grid of dynamic bodies; hulls built from `engine.add_convex_hull_body` sub-sampling mesh positions; teapots/plane/torus filtered for stability)
 * **Action bindings**: `resources/scripts/actions.json` maps action names to script paths
+* **`RuntimeData::startupScript`**: optional Lua path in a scene file's `runtime` block. Fired from `Application::applySceneData` once content is loaded so showcase scenes drive themselves — see `resources/scenes/physics_stress.json`.
+* **Scenes**: `physics_stress.json` boots the 1000-body stress automatically via `startupScript`. Camera and lighting are tuned to view the full 30×30 m falling grid.

@@ -19,6 +19,10 @@
         {
             "name": "Physics Demo",
             "script": "physics_demo.lua"
+        },
+        {
+            "name": "Physics Stress 1000",
+            "script": "physics_stress.lua"
         }
     ]
 }
