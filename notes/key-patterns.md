@@ -1,5 +1,26 @@
 # Key Patterns / Pitfalls
 
+## Physics — body spawn budgets and Jolt limits
+
+The Jolt backend (`src/physics_jolt.cpp`) has four critical compile-time caps that need to be scaled with body count:
+
+- **`maxBodies`** (16384) — total bodies, dynamic + static. Going over makes `BodyInterface::CreateAndAddBody` return invalid IDs silently.
+- **`maxBodyPairs`** (65536) — broadphase pair-overlap queue. When tight clusters of bodies have overlapping AABBs, this fills up fast; overflow doesn't crash but degrades performance as Jolt falls back to inline narrowphase.
+- **`maxContactConstraints`** (16384) — solver work. A stack of N bodies in contact needs O(N) constraints; under-sizing causes simulation instability.
+- **`TempAllocator` size** (64 MB) — per-step scratch. **Default 10 MB OOMs around ~500 dynamic bodies under the physics_stress workload.** When this fails it logs `[jolt] TempAllocator: Out of memory` and the step silently produces garbage / no work. **First thing to check when bodies disappear at scale.**
+
+## Physics — spawn-overlap explosion
+
+Dynamic bodies whose collision shapes overlap at spawn frame trigger Jolt's penetration resolver, which applies extreme impulses to separate them — bodies fly off in apparently random directions and end up off-screen. Symptoms: entities visible without physics, invisible the moment `RigidBody` is attached. **Always confirm spawn-grid spacing > 2 × (mesh half-extent × scale)** for all participating meshes. For glTF primitives, `resources/models/*.glb` extents are usually ±1 m, but `torus.glb` is ±1.35 m and `teapot` (built-in) is ±3 m — see `physics_stress.lua` for the filter pattern that excludes them.
+
+## Physics — degenerate convex hulls
+
+`JPH::ConvexHullShape` accepts ≥ 4 points but produces undefined behaviour if all points are coplanar (zero-volume hull → zero inertia tensor → bodies teleport). `plane.glb`'s flat geometry hits this. Filter such meshes before passing positions to `engine.add_convex_hull_body` / `add_mesh_collider`.
+
+## Lua entity-destroy and GizmoState
+
+`engine.destroy_entity` on an entity that has a `GizmoArrow` component leaves `GizmoState::arrows[]` holding dead flecs handles. The next `gizmo.update()` access segfaults. `delete_all.lua` and `physics_stress.lua` both document this — if a script needs to wipe scene content, filter out gizmo arrows or rebuild the gizmo afterwards via `gizmo.init()`.
+
 ## GPU upload buffer lifetime
 
 Intermediate upload heaps from `UpdateSubresources` **must** stay alive until after `cmdQueue.waitForFenceVal()`. Uploads are tracked in `Scene::pendingUploads` as fence-keyed batches (`trackUploadBatch` / `retireCompletedUploads`) and retired in `Application::update()` once `CommandQueue::completedFenceValue()` has advanced.
