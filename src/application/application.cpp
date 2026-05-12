@@ -281,13 +281,16 @@ Application::~Application()
         if (cubemapDepth.isValid()) {
             gfxDevice->destroy(cubemapDepth);
         }
+        if (occlusionReadback.isValid()) {
+            gfxDevice->destroy(occlusionReadback);
+        }
     }
 }
 
 void Application::ensureOcclusionQueryResources(uint32_t maxQueries)
 {
     if (this->occlusionQueryCapacity >= maxQueries && this->occlusionQueryHeap &&
-        this->occlusionReadback) {
+        this->occlusionReadback.isValid()) {
         return;
     }
 
@@ -303,14 +306,14 @@ void Application::ensureOcclusionQueryResources(uint32_t maxQueries)
     heapDesc.Count = maxQueries;
     chkDX(device->CreateQueryHeap(&heapDesc, IID_PPV_ARGS(&this->occlusionQueryHeap)));
 
-    const uint64_t readbackBytes = sizeof(uint64_t) * maxQueries;
-    const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_READBACK);
-    const auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(readbackBytes);
-    chkDX(device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-        IID_PPV_ARGS(&this->occlusionReadback)
-    ));
-    this->occlusionReadback->SetName(L"occlusion_query_readback");
+    if (this->occlusionReadback.isValid()) {
+        this->gfxDevice->destroy(this->occlusionReadback);
+    }
+    gfx::BufferDesc rbDesc{};
+    rbDesc.size = sizeof(uint64_t) * maxQueries;
+    rbDesc.usage = gfx::BufferUsage::Readback;
+    rbDesc.debugName = "occlusion_query_readback";
+    this->occlusionReadback = this->gfxDevice->createBuffer(rbDesc);
 
     this->occlusionQueryCapacity = maxQueries;
     this->occlusionPendingEntityIds.reserve(maxQueries);
@@ -320,17 +323,14 @@ void Application::ensureOcclusionQueryResources(uint32_t maxQueries)
 void Application::pollOcclusionResults()
 {
     if (this->occlusionPendingFence == 0 || this->occlusionPendingQueryCount == 0 ||
-        !this->occlusionReadback) {
+        !this->occlusionReadback.isValid()) {
         return;
     }
     if (!this->cmdQueue.isFenceComplete(this->occlusionPendingFence)) {
         return;
     }
 
-    const uint64_t bytesToRead = sizeof(uint64_t) * this->occlusionPendingQueryCount;
-    D3D12_RANGE readRange{ 0, static_cast<SIZE_T>(bytesToRead) };
-    void* mapped = nullptr;
-    chkDX(this->occlusionReadback->Map(0, &readRange, &mapped));
+    void* mapped = this->gfxDevice->map(this->occlusionReadback);
     const auto* results = static_cast<const uint64_t*>(mapped);
 
     const uint32_t resultCount = std::min(
@@ -344,8 +344,7 @@ void Application::pollOcclusionResults()
         }
     }
 
-    D3D12_RANGE writeRange{ 0, 0 };
-    this->occlusionReadback->Unmap(0, &writeRange);
+    this->gfxDevice->unmap(this->occlusionReadback);
     this->occlusionPendingFence = 0;
     this->occlusionPendingQueryCount = 0;
     this->occlusionPendingEntityIds.clear();

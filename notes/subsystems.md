@@ -115,7 +115,7 @@ update()  →  render()
                   └─ Present pass     (Transition backbuffer to PRESENT state)
 ```
 
-**Occlusion culling**: D3D12 binary occlusion query heap + readback buffer. G-Buffer pass wraps each draw in a binary query. Scene/G-Buffer/ID passes use filtered `visibleSceneDrawCmds`; shadow/cubemap passes use the full frustum-visible list. `occlusionRefreshInterval` is 8 frames.
+**Occlusion culling**: D3D12 binary occlusion query heap + `gfx::BufferHandle` readback buffer (`BufferUsage::Readback`, mapped via `gfxDevice->map/unmap`). G-Buffer pass wraps each draw in a binary query. Scene/G-Buffer/ID passes use filtered `visibleSceneDrawCmds`; shadow/cubemap passes use the full frustum-visible list. `occlusionRefreshInterval` is 8 frames. `ResolveQueryData` still needs a raw `ID3D12Resource*` so the resolve site grabs it via `gfxDevice->nativeResource(occlusionReadback)`.
 
 **Shadow mapping**: 2048×2048 `R32_TYPELESS`/`D32_FLOAT` depth texture. Orthographic projection from directional light. 3×3 PCF via `SampleCmpLevelZero`. Shadow PSO uses front-face culling + depth bias.
 

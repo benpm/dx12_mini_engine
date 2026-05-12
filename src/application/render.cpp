@@ -156,8 +156,9 @@ void Application::render()
     }
 
     const bool recordOcclusionQueries =
-        this->occlusionCullingEnabled && this->occlusionQueryHeap && this->occlusionReadback &&
-        this->occlusionPendingFence == 0 && !visibleSceneDrawCmds.empty();
+        this->occlusionCullingEnabled && this->occlusionQueryHeap &&
+        this->occlusionReadback.isValid() && this->occlusionPendingFence == 0 &&
+        !visibleSceneDrawCmds.empty();
     if (recordOcclusionQueries) {
         this->occlusionPendingQueryCount = 0;
         this->occlusionPendingEntityIds.clear();
@@ -527,9 +528,12 @@ void Application::render()
                 }
             }
             if (recordOcclusionQueries && occlusionQueryIndex > 0) {
+                auto* readbackResource = static_cast<ID3D12Resource*>(
+                    this->gfxDevice->nativeResource(this->occlusionReadback)
+                );
                 cmd->ResolveQueryData(
                     this->occlusionQueryHeap.Get(), D3D12_QUERY_TYPE_BINARY_OCCLUSION, 0,
-                    occlusionQueryIndex, this->occlusionReadback.Get(), 0
+                    occlusionQueryIndex, readbackResource, 0
                 );
                 this->occlusionPendingQueryCount = occlusionQueryIndex;
             }

@@ -236,7 +236,7 @@ export class Application
     static constexpr uint32_t occlusionRefreshInterval = 8;
     uint64_t occlusionFrameIndex = 0;
     Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusionQueryHeap;
-    Microsoft::WRL::ComPtr<ID3D12Resource> occlusionReadback;
+    gfx::BufferHandle occlusionReadback;
     uint32_t occlusionQueryCapacity = 0;
     uint32_t occlusionPendingQueryCount = 0;
     uint64_t occlusionPendingFence = 0;
