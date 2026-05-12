@@ -11,7 +11,7 @@ From-scratch DirectX 12 renderer. C++23 modules, Clang, Windows-only.
 | `window.ixx` | Singleton HWND + tearing detection. Device creation has moved to the `gfx` abstraction (see below). |
 | `gfx.ixx` | Backend-agnostic graphics abstraction (`gfx::IDevice`, `IQueue`, `ISwapChain`, `ICommandList`). Thin re-export of `include/gfx.h` for `import gfx;` clients. D3D12 backend is in `src/gfx/*.cpp`. |
 | `application.ixx` | Main Application class — orchestrates subsystems, render loop, input, UI |
-| `scene.ixx` | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading |
+| `scene.ixx` | `Scene` class — ECS world, mega-buffers, draw-data, materials, mesh loading. Owns `std::vector<Skeleton>` + `std::vector<AnimationClip>` (parsed from glTF skins/animations) and a `computeSkinningMatrices(Animator&, out)` evaluator that interpolates the animator's current clip and returns one skinning matrix per joint (`world * inverseBind`). The flecs `AdvanceAnimators` system steps `Animator::time` each frame; GPU consumer (skinned vertex shader + joint matrix structured buffer + skinned PSO) is staged for follow-up. Unit-tested via 3 doctest cases in `tests/subsystem_tests.cpp` (bind-pose identity, single-joint Y rotation, out-of-range skeletonIdx rejected). |
 | `bloom.ixx` | `BloomRenderer` class — HDR RT, bloom mip chain, root sig, PSOs |
 | `imgui_layer.ixx` | `ImGuiLayer` class — descriptor heap, init/shutdown, Dracula style |
 | `command_queue.ixx` | ID3D12CommandQueue + fence sync + command allocator pooling |

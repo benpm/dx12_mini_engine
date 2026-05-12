@@ -18,6 +18,8 @@ import physics;
 import jobs;
 import hud;
 import save_game;
+import scene;
+import ecs_components;
 
 TEST_CASE("AudioSystem: init/destroy is safe even if no device available")
 {
@@ -360,6 +362,95 @@ TEST_CASE("ParticleSystem: snapshot copies live state into output arrays")
     CHECK(positions[0].x == doctest::Approx(1.0f));
     CHECK(positions[0].y == doctest::Approx(2.0f));
     CHECK(positions[0].z == doctest::Approx(3.0f));
+}
+
+TEST_CASE("Scene: computeSkinningMatrices identity at bind pose")
+{
+    Scene s;
+    Skeleton sk;
+    sk.name = "single";
+    SkeletonJoint j;
+    j.parent = -1;
+    j.localTranslation = { 0.0f, 0.0f, 0.0f };
+    j.localRotation = { 0.0f, 0.0f, 0.0f, 1.0f };
+    j.localScale = { 1.0f, 1.0f, 1.0f };
+    // Identity inverse-bind => bind pose world * inverseBind = identity.
+    std::memset(&j.inverseBindMatrix, 0, sizeof(mat4));
+    j.inverseBindMatrix.m[0][0] = 1.0f;
+    j.inverseBindMatrix.m[1][1] = 1.0f;
+    j.inverseBindMatrix.m[2][2] = 1.0f;
+    j.inverseBindMatrix.m[3][3] = 1.0f;
+    sk.joints.push_back(j);
+    s.skeletons.push_back(std::move(sk));
+
+    Animator a;
+    a.skeletonIdx = 0;
+    a.currentClip = -1;  // no clip => pure bind pose
+    a.time = 0.0f;
+
+    std::vector<mat4> mats;
+    uint32_t n = s.computeSkinningMatrices(a, mats);
+    REQUIRE(n == 1);
+    // Bind pose with identity inverseBind: result should be identity.
+    CHECK(mats[0].m[0][0] == doctest::Approx(1.0f));
+    CHECK(mats[0].m[1][1] == doctest::Approx(1.0f));
+    CHECK(mats[0].m[2][2] == doctest::Approx(1.0f));
+    CHECK(mats[0].m[3][3] == doctest::Approx(1.0f));
+    CHECK(mats[0].m[0][1] == doctest::Approx(0.0f));
+    CHECK(mats[0].m[3][0] == doctest::Approx(0.0f));
+}
+
+TEST_CASE("Scene: animation channel rotates a single joint")
+{
+    Scene s;
+    Skeleton sk;
+    SkeletonJoint j;
+    j.parent = -1;
+    j.localRotation = { 0.0f, 0.0f, 0.0f, 1.0f };
+    std::memset(&j.inverseBindMatrix, 0, sizeof(mat4));
+    j.inverseBindMatrix.m[0][0] = 1.0f;
+    j.inverseBindMatrix.m[1][1] = 1.0f;
+    j.inverseBindMatrix.m[2][2] = 1.0f;
+    j.inverseBindMatrix.m[3][3] = 1.0f;
+    sk.joints.push_back(j);
+    s.skeletons.push_back(std::move(sk));
+
+    AnimationClip clip;
+    clip.name = "spin";
+    clip.duration = 1.0f;
+    AnimationChannel ch;
+    ch.jointIndex = 0;
+    ch.path = AnimationChannel::Path::Rotation;
+    ch.timestamps = { 0.0f, 1.0f };
+    // Quat from identity to 90deg around Y: (0, sin(45deg), 0, cos(45deg)).
+    const float c = std::cos(0.7853981633f);
+    const float ss = std::sin(0.7853981633f);
+    ch.values = { 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, ss, 0.0f, c };
+    clip.channels.push_back(std::move(ch));
+    s.animations.push_back(std::move(clip));
+
+    Animator a;
+    a.skeletonIdx = 0;
+    a.currentClip = 0;
+    a.time = 1.0f;  // end of clip — full 90deg
+
+    std::vector<mat4> mats;
+    uint32_t n = s.computeSkinningMatrices(a, mats);
+    REQUIRE(n == 1);
+    // 90deg Y rotation: m[0][0] ~ 0, m[0][2] ~ -1, m[2][0] ~ 1, m[2][2] ~ 0 (row-vector math).
+    CHECK(std::abs(mats[0].m[0][0]) < 0.001f);
+    CHECK(std::abs(mats[0].m[2][2]) < 0.001f);
+    CHECK(std::abs(mats[0].m[0][2] + mats[0].m[2][0]) < 0.001f);  // one is +1, other -1
+    CHECK(std::abs(std::abs(mats[0].m[0][2]) - 1.0f) < 0.001f);
+}
+
+TEST_CASE("Scene: computeSkinningMatrices rejects out-of-range skeleton index")
+{
+    Scene s;
+    Animator a;
+    a.skeletonIdx = 42;  // no skeletons loaded
+    std::vector<mat4> mats;
+    CHECK(s.computeSkinningMatrices(a, mats) == 0);
 }
 
 TEST_CASE("SaveGame: slot path is under LocalAppData and is reproducible")
