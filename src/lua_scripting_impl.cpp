@@ -1041,6 +1041,107 @@ static int l_attach_rigid_body(lua_State* L)
     return 1;
 }
 
+// engine.add_mesh_collider(entity, dynamic=true, mass=1.0, maxPoints=32,
+//                          tolerance=0.05) -> body_id
+// Pulls the entity's MeshRef + Transform, finds the matching slot in
+// Scene::spawnableMeshRefs, builds a convex-hull body sized to match the
+// entity's world transform (position + uniform scale), and attaches it.
+// One-stop for "make this rendered entity solid" — wraps add_convex_hull_body
+// + attach_rigid_body so script callers don't have to thread the mesh index
+// and world pose around manually.
+static int l_add_mesh_collider(lua_State* L)
+{
+    auto* w = getEcsWorld(L);
+    auto* refs = getSpawnableMeshRefs(L);
+    if (!w || !refs) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    uint64_t entityId = (uint64_t)luaL_checkinteger(L, 1);
+    bool dynamic = lua_isnoneornil(L, 2) ? true : lua_toboolean(L, 2) != 0;
+    float mass = (float)luaL_optnumber(L, 3, 1.0);
+    int maxPoints = (int)luaL_optinteger(L, 4, 32);
+    float tolerance = (float)luaL_optnumber(L, 5, 0.05);
+
+    flecs::entity e(*w, entityId);
+    if (!e.is_alive() || !e.has<Transform>() || !e.has<MeshRef>()) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    auto tf = e.get<Transform>();
+    auto mr = e.get<MeshRef>();
+
+    // Find the mesh index that matches this MeshRef. The vertex+index offsets
+    // uniquely identify a mesh in the mega-buffer.
+    int meshIdx = -1;
+    for (size_t i = 0; i < refs->size(); ++i) {
+        if ((*refs)[i].vertexOffset == mr.vertexOffset
+            && (*refs)[i].indexOffset == mr.indexOffset) {
+            meshIdx = static_cast<int>(i);
+            break;
+        }
+    }
+    if (meshIdx < 0) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    // Extract translation + uniform scale from the world matrix (same approach
+    // as Application's RigidBody → Transform sync).
+    float px = tf.world._41;
+    float py = tf.world._42;
+    float pz = tf.world._43;
+    float scale = std::sqrt(
+        tf.world._11 * tf.world._11 + tf.world._12 * tf.world._12 +
+        tf.world._13 * tf.world._13
+    );
+    if (scale == 0.0f) scale = 1.0f;
+
+    // Sub-sample positions and feed them through the existing convex-hull path.
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegScenePtr);
+    void* scenePtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    const float* allPositions = nullptr;
+    unsigned int totalCount = 0;
+    if (!engine_scene_get_mesh_positions(scenePtr, meshIdx, &allPositions, &totalCount) ||
+        totalCount < 4) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    if (maxPoints < 4) maxPoints = 4;
+    if (maxPoints > 256) maxPoints = 256;
+    unsigned int step = totalCount <= (unsigned int)maxPoints
+                            ? 1
+                            : totalCount / (unsigned int)maxPoints;
+    if (step == 0) step = 1;
+    float scaled[256 * 3];
+    unsigned int sampled = 0;
+    for (unsigned int i = 0; i < totalCount && sampled < (unsigned int)maxPoints; i += step) {
+        scaled[sampled * 3 + 0] = allPositions[i * 3 + 0] * scale;
+        scaled[sampled * 3 + 1] = allPositions[i * 3 + 1] * scale;
+        scaled[sampled * 3 + 2] = allPositions[i * 3 + 2] * scale;
+        ++sampled;
+    }
+    if (sampled < 4) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegPhysics);
+    void* physicsPtr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    unsigned int body = engine_physics_create_convex_hull(
+        physicsPtr, scaled, sampled, sizeof(float) * 3, px, py, pz, dynamic ? 1 : 0, mass,
+        tolerance
+    );
+    if (body != 0) {
+        e.set(RigidBody{ body });
+    }
+    lua_pushinteger(L, body);
+    return 1;
+}
+
 static int l_raycast(lua_State* L)
 {
     float ox = (float)luaL_checknumber(L, 1);
@@ -1140,6 +1241,7 @@ static const luaL_Reg engineFuncs[] = {
     { "apply_impulse", l_apply_impulse },
     { "set_body_position", l_set_body_position },
     { "attach_rigid_body", l_attach_rigid_body },
+    { "add_mesh_collider", l_add_mesh_collider },
     { nullptr, nullptr }
 };
 

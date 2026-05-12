@@ -83,16 +83,16 @@ for iy = 0, side - 1 do
             local mat_idx = total % 3   -- cycle Diffuse/Metal/Mirror
             local entity = engine.spawn_entity(mesh_idx, mat_idx, x, y, z, scale)
 
-            local body = engine.add_convex_hull_body(
-                mesh_idx, x, y, z, scale, true, mass, hull_points, hull_tolerance
-            )
+            -- One-call: builds a convex hull from this entity's MeshRef
+            -- positions, scaled by the entity's transform, attached to it.
+            local body = engine.add_mesh_collider(entity, true, mass, hull_points, hull_tolerance)
             if body == 0 then
                 -- Mesh either had no cached positions or degenerate hull —
                 -- fall back to a box collider so the entity still simulates.
                 hull_failures = hull_failures + 1
                 body = engine.add_box_body(x, y, z, 0.3, 0.3, 0.3, true, mass)
+                engine.attach_rigid_body(entity, body)
             end
-            engine.attach_rigid_body(entity, body)
             total = total + 1
         end
     end
