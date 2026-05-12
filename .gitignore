@@ -7,3 +7,5 @@ config.json
 resources/external_scenes
 *.txt
 .obsidian
+*.dmp
+.claude/

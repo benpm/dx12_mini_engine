@@ -12,6 +12,11 @@ if mesh_count == 0 then
     return
 end
 
+-- Default scene entities (teapots, primitives, gizmo arrows) are intentionally
+-- left in place — destroying GizmoArrow entities here invalidates persistent
+-- handles in GizmoState and segfaults the next gizmo.update().
+-- Camera is framed so the 1000-body grid dominates regardless.
+
 -- Build a list of mesh indices that are safe for hull-bodied stress.
 -- Skipped because they wreck the simulation:
 --   * teapot / teapot companion — too wide (~3m hull) → bodies overlap
@@ -54,13 +59,15 @@ local side = 10
 -- step > 2 * (mesh_extent * scale) keeps hulls non-overlapping at spawn so
 -- the broadphase doesn't get hammered with stacked overlaps on frame 0.
 -- Spacing chosen so that even the largest remaining mesh (sphere/icosphere
--- at ±1m mesh-local, scaled to ±0.4m) leaves a comfortable >1m gap between
+-- at ±1m mesh-local, scaled by `scale`) leaves a >0.5 m gap between
 -- adjacent hulls at spawn — keeps the broadphase quiet on frame 0.
-local x_step = 3.0
-local z_step = 3.0
-local y_step = 2.0
-local y_start = 3.0
-local scale = 0.4
+-- After ~3 seconds of fall+settle the pile compresses considerably so the
+-- final scene reads as a dense rubble heap rather than a sparse cloud.
+local x_step = 2.2
+local z_step = 2.2
+local y_step = 1.6
+local y_start = 4.0
+local scale = 0.45
 local mass = 1.0
 local hull_points = 24
 local hull_tolerance = 0.05

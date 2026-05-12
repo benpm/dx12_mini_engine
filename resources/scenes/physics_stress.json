@@ -2,12 +2,12 @@
     "title": "Physics Stress",
     "description": "1000 convex-hull bodies falling onto a floor",
     "camera": {
-        "fov": 1.1,
+        "fov": 0.95,
         "nearPlane": 0.1,
-        "farPlane": 600.0,
+        "farPlane": 400.0,
         "yaw": 0.9,
-        "pitch": 0.55,
-        "radius": 45.0
+        "pitch": 0.45,
+        "radius": 20.0
     },
     "bloom": {
         "threshold": 1.7,
@@ -108,7 +108,7 @@
     "runtime": {
         "useWarp": false,
         "hideWindow": false,
-        "screenshotFrame": 0,
+        "screenshotFrame": 180,
         "exitAfterScreenshot": false,
         "spawnPerFrame": 0,
         "skipImGui": false,

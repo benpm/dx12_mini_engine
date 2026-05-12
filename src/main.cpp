@@ -165,10 +165,18 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
         }
         sceneData.runtime.useWarp = true;
         sceneData.runtime.hideWindow = true;
-        sceneData.runtime.screenshotFrame = 10;
+        // Honour a scene-defined screenshotFrame > 0 (lets showcase scenes
+        // request a later snapshot once their startup script has had time to
+        // settle). Default to 10 if the scene didn't specify one.
+        if (sceneData.runtime.screenshotFrame <= 0) {
+            sceneData.runtime.screenshotFrame = 10;
+        }
         sceneData.runtime.exitAfterScreenshot = true;
         sceneData.runtime.skipImGui = true;
-        spdlog::info("--test: forcing WARP + headless + screenshot at frame 10 + exit");
+        spdlog::info(
+            "--test: forcing WARP + headless + screenshot at frame {} + exit",
+            sceneData.runtime.screenshotFrame
+        );
     }
 
     bool useWarp = hasSceneFile && sceneData.runtime.useWarp;
