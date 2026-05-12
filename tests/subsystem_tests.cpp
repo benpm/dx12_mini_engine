@@ -104,6 +104,46 @@ TEST_CASE("PhysicsWorld: dynamic body rotates as it falls")
     CHECK(len2 == doctest::Approx(1.0f).epsilon(0.001));
 }
 
+TEST_CASE("PhysicsWorld: bodyCount tracks create + destroy")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+    CHECK(w.bodyCount() == 0);
+
+    auto a = w.createBoxBody(0, 0, 0, 0.5f, 0.5f, 0.5f, true);
+    auto b = w.createSphereBody(2, 0, 0, 0.5f, true);
+    auto c = w.createCapsuleBody(-2, 0, 0, 0.5f, 0.3f, true);
+    CHECK(w.bodyCount() == 3);
+
+    w.destroyBody(b);
+    CHECK(w.bodyCount() == 2);
+
+    w.destroyBody(a);
+    w.destroyBody(c);
+    CHECK(w.bodyCount() == 0);
+
+    // Destroying an already-removed id should be a no-op rather than crash.
+    w.destroyBody(a);
+    CHECK(w.bodyCount() == 0);
+}
+
+TEST_CASE("PhysicsWorld: raycast finds the nearest of two bodies")
+{
+    PhysicsWorld w;
+    REQUIRE(w.isReady());
+
+    // Two boxes along the +Y ray from the origin: one at y=2, one at y=5.
+    // Cast straight up should hit the closer one (bottom face at y=1.5).
+    w.createBoxBody(0, 2.0f, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/false);
+    w.createBoxBody(0, 5.0f, 0, 0.5f, 0.5f, 0.5f, /*dynamic=*/false);
+
+    float hx = 0, hy = 0, hz = 0, hd = 0;
+    bool hit = w.raycast(0, 0, 0, 0, 1, 0, /*maxDistance=*/10.0f, hx, hy, hz, hd);
+    REQUIRE(hit);
+    CHECK(hy == doctest::Approx(1.5f).epsilon(0.01));  // bottom face of first box
+    CHECK(hd == doctest::Approx(1.5f).epsilon(0.01));
+}
+
 TEST_CASE("PhysicsWorld: convex-hull body falls onto floor and settles")
 {
     PhysicsWorld w;

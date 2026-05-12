@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <memory>
 #include <thread>
+#include <unordered_set>
 
 #include "physics_backend.h"
 
@@ -201,12 +202,21 @@ class JoltBackend final : public IPhysicsBackend
 
     uint32_t bodyCount() const override { return ready ? system->GetNumBodies() : 0; }
 
+    // Helper: every body-create path goes through this so liveBodies tracking
+    // is uniform regardless of which shape was used.
+    BodyId registerBody(JPH::BodyID jid)
+    {
+        BodyId id = toEngineId(jid);
+        liveBodies.insert(id);
+        return id;
+    }
+
     BodyId createBoxBody(float px, float py, float pz, float hx, float hy, float hz, bool dynamic,
                          float mass) override
     {
         if (!ready) return 0;
         JPH::ShapeRefC shape = new JPH::BoxShape(JPH::Vec3(hx, hy, hz));
-        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+        return registerBody(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 
     BodyId createSphereBody(float px, float py, float pz, float radius, bool dynamic, float mass)
@@ -214,7 +224,7 @@ class JoltBackend final : public IPhysicsBackend
     {
         if (!ready) return 0;
         JPH::ShapeRefC shape = new JPH::SphereShape(std::max(0.001f, radius));
-        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+        return registerBody(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 
     BodyId createCapsuleBody(
@@ -224,7 +234,7 @@ class JoltBackend final : public IPhysicsBackend
         if (!ready) return 0;
         JPH::ShapeRefC shape =
             new JPH::CapsuleShape(std::max(0.001f, halfHeight), std::max(0.001f, radius));
-        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+        return registerBody(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 
     BodyId createConvexHullBody(
@@ -255,15 +265,24 @@ class JoltBackend final : public IPhysicsBackend
             return 0;
         }
         JPH::ShapeRefC shape = result.Get();
-        return toEngineId(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
+        return registerBody(createBodyImpl(*system, shape, JPH::Vec3(px, py, pz), dynamic, mass));
     }
 
     void destroyBody(BodyId id) override
     {
         if (!ready || id == 0) return;
+        // liveBodies tracks ids handed out by this backend so double-destroy
+        // is a guaranteed no-op. Calling Jolt's RemoveBody/DestroyBody on an
+        // already-recycled slot corrupts internal state.
+        auto it = liveBodies.find(id);
+        if (it == liveBodies.end()) return;
+        liveBodies.erase(it);
+
         auto& bi = system->GetBodyInterface();
         JPH::BodyID jid = toJoltId(id);
-        bi.RemoveBody(jid);
+        if (bi.IsAdded(jid)) {
+            bi.RemoveBody(jid);
+        }
         bi.DestroyBody(jid);
     }
 
@@ -379,6 +398,10 @@ class JoltBackend final : public IPhysicsBackend
     ObjectVsBroadPhaseLayerFilterImpl objVsBP;
     ObjectLayerPairFilterImpl objVsObj;
     std::unique_ptr<JPH::PhysicsSystem> system;
+    // Set of BodyIds we've handed out and haven't yet destroyed. Lets
+    // destroyBody() be idempotent — calling it twice on the same id is a
+    // no-op rather than corrupting Jolt's body slot recycler.
+    std::unordered_set<BodyId> liveBodies;
     bool ready = false;
 };
 
