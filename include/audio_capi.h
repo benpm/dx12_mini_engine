@@ -21,6 +21,9 @@ int engine_audio_play_sound(void* audioSystemPtr, const char* path, float volume
 int engine_app_queue_scene_load(void* appPtr, const char* path);
 int engine_app_queue_scene_save(void* appPtr, const char* path);
 
+// Returns 1 if the named button (e.g. "MoveForward", "Exit") is pressed.
+int engine_app_is_button_down(void* appPtr, const char* buttonName);
+
 // Resolve a save-slot name (e.g. "slot1") to a full path under
 // %LOCALAPPDATA%\dx12_mini_engine\saves\<name>.json. Writes the result into
 // outBuf (UTF-8). Returns 1 on success. Caller's outBuf must be at least 260 bytes.

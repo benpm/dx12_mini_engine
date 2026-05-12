@@ -1098,6 +1098,30 @@ void Application::flush()
     this->cmdQueue.flush();
 }
 
+bool Application::isButtonDown(const std::string& name) const
+{
+    // Name → Button table. Hard-coded to mirror the mappings created in
+    // Application's input setup; if the Button enum grows, add entries here.
+    struct Entry { const char* name; gainput::UserButtonId id; };
+    static const Entry table[] = {
+        { "MoveForward", Button::MoveForward },
+        { "MoveBackward", Button::MoveBackward },
+        { "MoveLeft", Button::MoveLeft },
+        { "MoveRight", Button::MoveRight },
+        { "LeftClick", Button::LeftClick },
+        { "RightClick", Button::RightClick },
+        { "ScrollUp", Button::ScrollUp },
+        { "ScrollDown", Button::ScrollDown },
+        { "Exit", Button::Exit },
+    };
+    for (const auto& e : table) {
+        if (name == e.name) {
+            return inputMap.GetBool(e.id);
+        }
+    }
+    return false;
+}
+
 // C API consumed by non-module TUs (e.g. lua_scripting_impl.cpp) so they can
 // queue scene save/load without importing the application module.
 extern "C" int engine_app_queue_scene_load(void* appPtr, const char* path)
@@ -1108,6 +1132,15 @@ extern "C" int engine_app_queue_scene_load(void* appPtr, const char* path)
     }
     app->queueSceneLoad(path);
     return 1;
+}
+
+extern "C" int engine_app_is_button_down(void* appPtr, const char* name)
+{
+    auto* app = static_cast<Application*>(appPtr);
+    if (!app || !name) {
+        return 0;
+    }
+    return app->isButtonDown(name) ? 1 : 0;
 }
 
 extern "C" int engine_app_queue_scene_save(void* appPtr, const char* path)

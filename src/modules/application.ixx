@@ -72,6 +72,12 @@ export class Application
     void queueSceneLoad(const std::string& path) { pendingSceneLoad = path; }
     void queueSceneSave(const std::string& path) { pendingSceneSave = path; }
 
+    // Polls the engine's input map for a button by name (e.g. "MoveForward",
+    // "MoveBackward", "LeftClick", "Exit"). Returns false if the name is unknown
+    // or the button isn't currently pressed. Used by Lua scripts to drive
+    // character controllers, debug toggles, etc.
+    bool isButtonDown(const std::string& buttonName) const;
+
    private:
     constexpr static uint8_t nBuffers = 3u;
     bool useWarp = false;

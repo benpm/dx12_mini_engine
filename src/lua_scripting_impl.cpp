@@ -759,6 +759,16 @@ static int l_load_scene(lua_State* L)
     return 1;
 }
 
+static int l_is_button_down(lua_State* L)
+{
+    const char* name = luaL_checkstring(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, kRegApp);
+    void* app = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushboolean(L, engine_app_is_button_down(app, name));
+    return 1;
+}
+
 static int l_save_game(lua_State* L)
 {
     const char* slot = luaL_checkstring(L, 1);
@@ -1082,6 +1092,24 @@ static int l_add_convex_hull_body(lua_State* L)
     return 1;
 }
 
+// engine.get_rigid_body(entity_id) -> body_id (0 if entity has no RigidBody)
+static int l_get_rigid_body(lua_State* L)
+{
+    auto* w = getEcsWorld(L);
+    if (!w) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    uint64_t entityId = (uint64_t)luaL_checkinteger(L, 1);
+    flecs::entity e(*w, entityId);
+    if (!e.is_alive() || !e.has<RigidBody>()) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    lua_pushinteger(L, e.get<RigidBody>().bodyId);
+    return 1;
+}
+
 static int l_attach_rigid_body(lua_State* L)
 {
     auto* w = getEcsWorld(L);
@@ -1279,6 +1307,7 @@ static const luaL_Reg engineFuncs[] = {
     // Scene save/load
     { "save_scene", l_save_scene },
     { "load_scene", l_load_scene },
+    { "is_button_down", l_is_button_down },
     { "save_game", l_save_game },
     { "load_game", l_load_game },
     // HUD
@@ -1306,6 +1335,7 @@ static const luaL_Reg engineFuncs[] = {
     { "get_angular_velocity", l_get_angular_velocity },
     { "set_angular_velocity", l_set_angular_velocity },
     { "attach_rigid_body", l_attach_rigid_body },
+    { "get_rigid_body", l_get_rigid_body },
     { "add_mesh_collider", l_add_mesh_collider },
     { nullptr, nullptr }
 };

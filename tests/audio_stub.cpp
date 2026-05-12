@@ -18,6 +18,11 @@ extern "C" int engine_app_queue_scene_save(void* /*app*/, const char* /*path*/)
     return 0;
 }
 
+extern "C" int engine_app_is_button_down(void* /*app*/, const char* /*name*/)
+{
+    return 0;
+}
+
 extern "C" int engine_save_slot_path(const char* /*slot*/, char* outBuf, int outBufSize)
 {
     if (outBuf && outBufSize > 0) {
