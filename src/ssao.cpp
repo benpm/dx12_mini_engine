@@ -66,6 +66,9 @@ SsaoRenderer::~SsaoRenderer()
         if (noiseTexture.isValid()) {
             devForDestroy->destroy(noiseTexture);
         }
+        if (noiseUploadBuf.isValid()) {
+            devForDestroy->destroy(noiseUploadBuf);
+        }
         if (cbvBuffer.isValid()) {
             devForDestroy->destroy(cbvBuffer);
         }
@@ -229,26 +232,24 @@ void SsaoRenderer::createResources(
         UINT64 uploadSize = 0;
         device->GetCopyableFootprints(&noiseDesc, 0, 1, 0, &noiseFp, nullptr, nullptr, &uploadSize);
 
-        const CD3DX12_HEAP_PROPERTIES uhp(D3D12_HEAP_TYPE_UPLOAD);
-        const CD3DX12_RESOURCE_DESC ubDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
-        device->CreateCommittedResource(
-            &uhp, D3D12_HEAP_FLAG_NONE, &ubDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&noiseUploadBuf)
-        );
+        gfx::BufferDesc ud{};
+        ud.size = uploadSize;
+        ud.usage = gfx::BufferUsage::Upload;
+        ud.debugName = "ssao_noise_upload";
+        noiseUploadBuf = dev.createBuffer(ud);
 
         XMFLOAT2 noiseData[16];
         for (int i = 0; i < 16; ++i) {
             noiseData[i] = { dist(rng) * 2.0f - 1.0f, dist(rng) * 2.0f - 1.0f };
         }
-        void* mapped = nullptr;
-        noiseUploadBuf->Map(0, nullptr, &mapped);
+        void* mapped = dev.map(noiseUploadBuf);
         uint8_t* dst = static_cast<uint8_t*>(mapped) + noiseFp.Offset;
         for (uint32_t row = 0; row < 4; ++row) {
             memcpy(
                 dst + row * noiseFp.Footprint.RowPitch, &noiseData[row * 4], 4 * sizeof(XMFLOAT2)
             );
         }
-        noiseUploadBuf->Unmap(0, nullptr);
+        dev.unmap(noiseUploadBuf);
         noisePendingUpload = true;
 
         // SRV for noiseTexture auto-created by gfx backend (RG32Float + ShaderResource)
@@ -289,7 +290,7 @@ void SsaoRenderer::render(
 
     if (noisePendingUpload) {
         D3D12_TEXTURE_COPY_LOCATION src = {};
-        src.pResource = noiseUploadBuf.Get();
+        src.pResource = static_cast<ID3D12Resource*>(devForDestroy->nativeResource(noiseUploadBuf));
         src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.PlacedFootprint = noiseFp;
         D3D12_TEXTURE_COPY_LOCATION dst = {};

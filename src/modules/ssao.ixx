@@ -52,7 +52,7 @@ export class SsaoRenderer
     gfx::TextureHandle ssaoRT{};
     gfx::TextureHandle ssaoBlurRT{};
     gfx::TextureHandle noiseTexture{};
-    Microsoft::WRL::ComPtr<ID3D12Resource> noiseUploadBuf;
+    gfx::BufferHandle noiseUploadBuf{};
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT noiseFp = {};
     bool noisePendingUpload = false;
     gfx::BufferHandle cbvBuffer{};
