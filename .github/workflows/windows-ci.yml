@@ -86,7 +86,7 @@ jobs:
               shell: pwsh
               run: |
                   Remove-Item log.txt, screenshot.png -ErrorAction SilentlyContinue
-                  & .\build\Debug\main.exe --test
+                  & .\build\Debug\main.exe resources/scenes/test.json
                   if ($LASTEXITCODE -ne 0) {
                     exit $LASTEXITCODE
                   }
