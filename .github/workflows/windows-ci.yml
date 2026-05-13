@@ -20,6 +20,9 @@ env:
     RELEASE_NAME: Latest Windows Build
     RELEASE_ARCHIVE_NAME: dx12-mini-engine-windows-x64.zip
     RELEASE_SCREENSHOT_NAME: screenshot.png
+    # Opt in to Node.js 24 for JavaScript actions (Node 20 is being removed
+    # from the runner on 2026-09-16; default flips on 2026-06-02).
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
     debug-test:
