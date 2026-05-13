@@ -209,6 +209,8 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
 
         MSG msg = {};
         spdlog::info("Entering main loop...");
+        uint64_t frameTicks = 0;
+        const bool traceFrames = hasSceneFile && sceneData.runtime.screenshotFrame > 0;
         while (msg.message != WM_QUIT) {
             if (::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE) != 0) {
                 ::TranslateMessage(&msg);
@@ -222,12 +224,22 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR,
                     break;
                 }
 
+                if (traceFrames) {
+                    spdlog::info("[trace] frame tick {} update->", frameTicks);
+                }
                 inputManager.Update();
                 app.update();
+                if (traceFrames) {
+                    spdlog::info("[trace] frame tick {} render->", frameTicks);
+                }
                 app.render();
+                if (traceFrames) {
+                    spdlog::info("[trace] frame tick {} done", frameTicks);
+                }
+                ++frameTicks;
             }
         }
-        spdlog::info("Main loop exited");
+        spdlog::info("Main loop exited after {} frame ticks", frameTicks);
     } catch (const std::exception& e) {
         spdlog::warn("Fatal exception: {}", e.what());
         exitCode = -1;
