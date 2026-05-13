@@ -121,6 +121,14 @@ Application::Application()
     this->clientWidth = win->width;
     this->clientHeight = win->height;
 
+    // WARP doesn't tolerate the occlusion-query readback path reliably (CI
+    // crashes mid-frame around frame 4). Hardware queues are fine, so we only
+    // disable for WARP runs.
+    if (win->useWarp) {
+        this->occlusionCullingEnabled = false;
+        spdlog::info("WARP detected: disabling hardware occlusion culling");
+    }
+
     // Register callbacks so WndProc can drive the render loop without importing application
     win->callbackCtx = this;
     win->onPaintFn = [](void* ctx) {
