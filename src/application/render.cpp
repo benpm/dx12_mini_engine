@@ -37,10 +37,20 @@ void Application::render()
     PROFILE_ZONE();
     PROFILE_GPU_COLLECT(g_tracyD3d12Ctx);
 
+    const bool traceRender = this->runtimeConfig.screenshotFrame > 0;
+    auto traceR = [&](const char* tag) {
+        if (traceRender) {
+            spdlog::info("[trace.render] {} (curBackBufIdx={})", tag, this->curBackBufIdx);
+        }
+    };
+
+    traceR("start");
     const uint64_t frameReadyFence = this->frameFenceValues[this->curBackBufIdx];
     if (frameReadyFence != 0 && !this->cmdQueue.isFenceComplete(frameReadyFence)) {
         PROFILE_ZONE_NAMED("Frame Wait");
+        traceR("frame fence wait");
         this->cmdQueue.waitForFenceVal(frameReadyFence);
+        traceR("frame fence wait done");
     }
     // Read back picked entity from previous frame if the copy's fence has completed.
     {
@@ -874,17 +884,21 @@ void Application::render()
     );
 
     // Execute the graph
+    traceR("before renderGraph.execute");
     {
         // Wrap the legacy ID3D12GraphicsCommandList2 in a gfx::ICommandList
         // adapter so the render graph can speak the abstract interface.
         auto cmdAdapter = gfx::wrapNativeCommandList(gfxDevice.get(), cmdList.Get());
         renderGraph.execute(*cmdAdapter);
     }
+    traceR("after renderGraph.execute");
 
     this->lastFrameVertexCount = currentVertexCount;
     this->lastFrameDrawCalls = currentDrawCalls;
 
+    traceR("before execCmdList");
     uint64_t submitFenceValue = this->cmdQueue.execCmdList(cmdList);
+    traceR("after execCmdList");
     this->frameFenceValues[this->curBackBufIdx] = submitFenceValue;
     picker.setPendingReadbackFence(submitFenceValue);
     if (this->occlusionPendingQueryCount > 0 && this->occlusionPendingFence == 0) {
@@ -895,7 +909,9 @@ void Application::render()
     PROFILE_GPU_NEW_FRAME(g_tracyD3d12Ctx);
 
     const bool presentVsync = this->vsync && !this->runtimeConfig.skipImGui;
+    traceR("before present");
     this->gfxSwapChain->present(presentVsync);
+    traceR("after present");
     this->curBackBufIdx = this->gfxSwapChain->currentIndex();
     this->occlusionFrameIndex++;
     PROFILE_FRAME_MARK;
