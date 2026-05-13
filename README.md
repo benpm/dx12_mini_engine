@@ -6,6 +6,8 @@ Engine prototype for DX12 experimentation!
 
  ![](screenshot.png)
 
+ [![Windows CI](https://github.com/benpm/dx12_mini_engine/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/benpm/dx12_mini_engine/actions/workflows/windows-ci.yml)
+
 ## Features
 - DirectX 12 renderer with C++23 modules, render graph orchestration, bindless gfx abstraction, HDR bloom, SSAO, shadows, outlines, object picking, translation gizmo, dynamic cubemap reflections, and hardware-query occlusion culling.
 - Flecs ECS scene model with LOD meshes, instancing, terrain generation, Lua scripting, configurable hotkeys, and JSON scene/config serialization.
